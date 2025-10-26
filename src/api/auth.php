@@ -1,4 +1,5 @@
 <?php
+//Sve nazive kolona treba provjeriti
 include "../../config/dbconnection.php"; // ovde trebaš imati $pdo = new PDO(...);
 session_start();
 
