@@ -21,12 +21,12 @@ try {
     exit;
 }
 
-$sql = "SELECT * FROM faculty";
-$stmt = $pdo->query($sql);
+// $sql = "SELECT * FROM faculty";
+// $stmt = $pdo->query($sql);
 
-$rows = $stmt->fetchAll();
+// $rows = $stmt->fetchAll();
 
-foreach ($rows as $row) {
-    print_r($row);
-    echo "<br>";
-}
+// foreach ($rows as $row) {
+//     print_r($row);
+//     echo "<br>";
+// }
