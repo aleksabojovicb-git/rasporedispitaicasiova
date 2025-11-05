@@ -149,12 +149,21 @@ document.addEventListener('DOMContentLoaded', function() {
             console.log('Sign in data:', data);
             alert('Sign in form submitted! Check console for data.');
             
-            // Here you would typically send data to your backend
-            // fetch('/api/auth/login', {
-            //     method: 'POST',
-            //     headers: { 'Content-Type': 'application/json' },
-            //     body: JSON.stringify(data)
-            // });
+            fetch('../../src/api/auth.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: "login",
+                    password: data.password,
+                    email: data.email,
+                })
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.status=="success") {
+                    console.log("logovan");
+                } 
+            });
         }
     });
 
@@ -164,17 +173,32 @@ document.addEventListener('DOMContentLoaded', function() {
         if (validateForm(this)) {
             const formData = new FormData(this);
             const data = Object.fromEntries(formData);
-            delete data.confirm; // Remove confirm password from data
+            delete data.confirm; 
             
             console.log('Sign up data:', data);
             alert('Sign up form submitted! Check console for data.');
             
-            // Here you would typically send data to your backend
-            // fetch('/api/auth/register', {
-            //     method: 'POST',
-            //     headers: { 'Content-Type': 'application/json' },
-            //     body: JSON.stringify(data)
-            // });
+            fetch('../../src/api/auth.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: "register",
+                    password: data.password,
+                    email: data.email,
+                    first_name: data.first_name,
+                    last_name: data.last_name
+                })
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.status == "success") {
+                    // console.log("test2",result);
+                    window.location.href = "../../public/views/authorization.php";
+                }else if(result.status=="userExist"){
+                    console.log("user already exist");
+                }
+            });
+
         }
     });
 });
