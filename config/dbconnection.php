@@ -20,3 +20,13 @@ try {
     echo "Greska pri konekciji: " . $e->getMessage();
     exit;
 }
+
+// $sql = "SELECT * FROM faculty";
+// $stmt = $pdo->query($sql);
+
+// $rows = $stmt->fetchAll();
+
+// foreach ($rows as $row) {
+//     print_r($row);
+//     echo "<br>";
+// }
