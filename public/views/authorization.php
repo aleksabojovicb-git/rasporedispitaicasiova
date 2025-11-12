@@ -94,3 +94,37 @@
   <script src="../assets/js/auth-form.js"></script>
 </body>
 </html>
+
+<?php
+require '../../config/dbconnection.php';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['email'], $_POST['first_name'], $_POST['last_name'], $_POST['password'])) {
+    $email = $_POST['email'];
+    $firstName = $_POST['first_name'];
+    $lastName = $_POST['last_name'];
+    $password = $_POST['password'];
+
+    $stmt = $pdo->prepare("SELECT email FROM professor WHERE email = ?");
+    $stmt->execute([$email]);
+
+    if ($stmt->rowCount() == 0) {
+        echo json_encode(['success' => false, 'message' => 'Ne mozete se registrovati sa ovom email adresom. Molimo korisite email adresu univerziteta.']);
+    } else {
+        try {
+            $fullName = $firstName . ' ' . $lastName;
+            $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
+
+            $updateStmt = $pdo->prepare("UPDATE professor SET full_name = ?, password = ? WHERE email = ?");
+            $updateResult = $updateStmt->execute([$fullName, $hashedPassword, $email]);
+
+            if ($updateResult) {
+                echo json_encode(['success' => true, 'message' => 'Registration successful']);
+            } else {
+                echo json_encode(['success' => false, 'message' => 'Error updating professor data']);
+            }
+        } catch (PDOException $e) {
+            echo json_encode(['success' => false, 'message' => 'Greska pri registraciji: ' . $e->getMessage()]);
+        }
+    }
+    exit;
+}

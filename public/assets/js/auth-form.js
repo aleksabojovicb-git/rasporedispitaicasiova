@@ -201,4 +201,32 @@ document.addEventListener('DOMContentLoaded', function() {
 
         }
     });
+
+    signupForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+
+        if (validateForm(this)) {
+            const formData = new FormData(this);
+
+            fetch(window.location.href, {
+                method: 'POST',
+                body: formData
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        alert(data.message);
+                        // Optionally redirect to login tab or another page
+                        switchTab('signin');
+                    } else {
+                        // Show error message for unauthorized email
+                        showError('su-email', data.message);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('An error occurred during registration.');
+                });
+        }
+    });
 });

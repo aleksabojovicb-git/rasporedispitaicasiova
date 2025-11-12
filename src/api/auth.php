@@ -10,7 +10,6 @@ session_start();
 
     $data = json_decode(file_get_contents('php://input'), true);
     $action = $data['action'];
-
     if ($action === "register") {
         $email = trim($data['email']);
         $passwordHash = password_hash($data['password'], PASSWORD_DEFAULT);
@@ -47,8 +46,8 @@ session_start();
 
         // ADMIN SHOULDN'T BE ADDED THROUGH REGISTRATION FORM
         $registerStmt = $pdo->prepare("
-            INSERT INTO user_account (username, role_enum, password_hash, is_active,  professor_id)
-            VALUES (:username, 'PROFESSOR', :password, true,  :professor_id)
+            INSERT INTO user_account (username, role_enum, password_hash, is_active, professor_id)
+            VALUES (:username, 'PROFESSOR', :password, true, :professor_id)
         ");
 
         $success = $registerStmt->execute([
@@ -66,7 +65,6 @@ session_start();
     } elseif ($action === "login") {
         $email = trim($data['email']);
         $password = trim($data['password']);
-
         $userStmt = $pdo->prepare("SELECT ua.id, ua.username, ua.password_hash, ua.role_enum, ua.professor_id
                                 FROM user_account ua
                                 JOIN professor p ON ua.professor_id = p.id
