@@ -46,8 +46,8 @@ session_start();
 
         // ADMIN SHOULDN'T BE ADDED THROUGH REGISTRATION FORM
         $registerStmt = $pdo->prepare("
-            INSERT INTO user_account (username, role_enum, password_hash, is_active, student_id, professor_id)
-            VALUES (:username, 'PROFESSOR', :password, true, NULL, :professor_id)
+            INSERT INTO user_account (username, role_enum, password_hash, is_active, professor_id)
+            VALUES (:username, 'PROFESSOR', :password, true, :professor_id)
         ");
 
         $success = $registerStmt->execute([
