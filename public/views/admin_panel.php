@@ -89,6 +89,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $error = "Greška pri dodavanju događaja: " . $e->getMessage();
                 }
                 break;
+                
 
             // Brisanje i deaktiviranje
             case 'delete_professor':
@@ -159,6 +160,204 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $pdo->rollBack();
                         $error = "Greška pri brisanju događaja: " . $e->getMessage();
                     }
+                }
+                break;
+
+                // ****  update  **** 
+
+                case 'update_profesor':
+
+                    $fields=[];
+                    $params=[];
+                
+                    if(isset($_POST['full_name'])){
+                        $fields[]="full_name = ?";
+                        $params[]=$_POST['full_name'];
+                    }
+                    if(isset($_POST['email'])){
+                        $fields[]="email = ?";
+                        $params[]=$_POST['email'];
+                    }
+                    if (!isset($_POST['profesor_id'])) {
+                        throw new Exception("Profesorov ID nije validan.");
+                    }
+
+                    $params[] = (int)$_POST['profesor_id'];
+
+                    if (empty($fields)) {
+                        throw new Exception("Nema podataka za ažuriranje.");
+                    }
+
+                    
+                    try {
+                        $stmt = $pdo->prepare("UPDATE professor SET ". implode(', ',$fields) ." WHERE id=?");
+                        $stmt->execute($params);
+                        header("Location: ?page=profesori&success=1&message=" . urlencode("Profesor je uspješno ažuriran."));
+                        exit;
+                    } catch (PDOException $e) {
+                        $error = "Greška pri ažuriranju profesora: " . $e->getMessage();
+                    }
+                break;
+
+            case 'update_predmet':
+                    $fields=[];
+                    $params=[];
+
+                    if(isset($_POST['name'])){
+                        $fields[] = "name = ?";
+                        $params[] = $_POST['name'];
+                    }
+                    if(isset($_POST['semester'])){
+                        $fields[] = "semester = ?";
+                        $params[] = $_POST['semester'];
+                    }
+                    if(isset($_POST['code'])){
+                        $fields[] = "code = ?";
+                        $params[] = $_POST['code'];
+                    }
+                    if(isset($_POST['is_optional'])){
+                        $fields[] = "is_optional = ?";
+                        $params[] = isset($_POST['is_optional']) ? 1 : 0;
+                    }
+
+                    if (!isset($_POST['course_id'])) {
+                        throw new Exception("Course ID nije validan.");
+                    }
+
+                    $params[] = (int)$_POST['course_id'];
+                    
+                    if (empty($fields)) {
+                        throw new Exception("Nema podataka za ažuriranje.");
+                    }
+
+
+                try {
+                    $stmt = $pdo->prepare("UPDATE course SET ". implode(', ',$fields) ." WHERE id=?");
+                    $stmt->execute($params);
+                    header("Location: ?page=predmeti&success=1&message=" . urlencode("Predmet je uspješno ažuriran."));
+                    exit;
+                } catch (PDOException $e) {
+                    $error = "Greška pri ažuriranju predmeta: " . $e->getMessage();
+                }
+                break;
+
+            case 'update_sala':
+                    $fields=[];
+                    $params=[];
+
+                    if(isset($_POST['code'])){
+                        $fields[] = "code = ?";
+                        $params[] = $_POST['code'];
+                    }
+                    if(isset($_POST['capacity'])){
+                        $fields[] = "capacity = ?";
+                        $params[] = $_POST['capacity'];
+                    }
+                    if(isset($_POST['is_computer_lab'])){
+                        $fields[] = "is_computer_lab = ?";
+                        $params[] = isset($_POST['is_computer_lab']) ? 1 : 0;
+                    }
+
+                    if (!isset($_POST['sala_id'])) {
+                        throw new Exception("Sala ID nije validan.");
+                    }
+
+                    $params[] = (int)$_POST['sala_id'];
+
+                     if (empty($fields)) {
+                        throw new Exception("Nema podataka za ažuriranje.");
+                    }
+
+                try {
+                    $stmt = $pdo->prepare("UPDATE room SET ". implode(', ',$fields) ." WHERE id=?");
+                    $stmt->execute($params);
+                    header("Location: ?page=sale&success=1&message=" . urlencode("Sala je uspješno ažurirana."));
+                    exit;
+                } catch (PDOException $e) {
+                    $error = "Greška pri ažuriranju sale: " . $e->getMessage();
+                }
+                break;
+
+            case 'update_dogadjaj':
+                $fields=[];
+                $params=[];
+
+                $fields2=[];
+                $params2=[];
+
+                if(isset($_POST['course_id'])){
+                    $fields[] = "course_id = ?";
+                    $params[] = $_POST['course_id'];
+                }
+                if(isset($_POST['professor_id'])){
+                    $fields2[] = "professor_id = ?";
+                    $params2[] = $_POST['professor_id'];
+                }
+                if(isset($_POST['type'])){
+                    $fields[] = "type = ?";
+                    $params[] = $_POST['type'];
+                }
+                if(isset($_POST['starts_at'])){
+                    $fields[] = "starts_at = ?";
+                    $params[] = $_POST['starts_at'];
+                }
+                if(isset($_POST['ends_at'])){
+                    $fields[] = "ends_at = ?";
+                    $params[] = $_POST['ends_at'];
+                }
+                if(isset($_POST['is_online'])){
+                    $fields[] = "is_online = ?";
+                    $params[] = isset($_POST['is_online']) ? 1 : 0;
+                }
+                if(isset($_POST['room_id'])){
+                    $fields[] = "room_id = ?";
+                    $params[] = $_POST['room_id'];
+                }
+                if(isset($_POST['notes'])){
+                    $fields[] = "notes = ?";
+                    $params[] = $_POST['notes'];
+                }
+                if(isset($_POST['is_published'])){
+                    $fields[] = "is_published = ?";
+                    $params[] = isset($_POST['is_published']) ? 1 : 0;
+                }
+
+                if (!isset($_POST['dogadjaj_id'])) {
+                    throw new Exception("Dogadjaj ID nije validan.");
+                }
+                if (!isset($_POST['event_professor_id'])) {
+                    throw new Exception("Evenet professor ID nije validan.");
+                }
+
+                $params[] = (int)$_POST['dogadjaj_id'];
+
+                if (empty($fields)) {
+                    throw new Exception("Nema podataka za ažuriranje.");
+                }
+
+
+                try {
+                    $pdo->beginTransaction();
+
+                    $stmt = $pdo->prepare("UPDATE academic_event SET ". implode(', ',$fields) ." WHERE id=?");
+                    $stmt->execute($params);
+
+                    $event_id = (int)$_POST['dogadjaj_id'];;
+
+                    $fields2[] = "event_id = ?";
+                    $params2[] = $event_id;
+                    $params2[] = (int)$_POST['event_professor_id'];
+
+                    // UPDATE veze događaj-profesor
+                    $stmt = $pdo->prepare("UPDATE event_professor SET ". implode(', ',$fields2) ." WHERE id=?");
+                    $stmt->execute($params2);
+
+                    $pdo->commit();
+                    header("Location: ?page=dogadjaji&success=1&message=" . urlencode("Događaj je uspješno ažuriran."));
+                    exit;
+                } catch (PDOException $e) {
+                    $pdo->rollBack();
+                    $error = "Greška pri ažuriranju događaja: " . $e->getMessage();
                 }
                 break;
         }
