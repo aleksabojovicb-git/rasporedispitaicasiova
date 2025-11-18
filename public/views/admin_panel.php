@@ -186,7 +186,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <li><a href="?page=predmeti">Predmeti</a></li>
             <li><a href="?page=dogadjaji">Događaji</a></li>
             <li><a href="?page=sale">Sale</a></li>
-            <li><a href="?logout=true">Odjava</a></li>
+            <li><a href="?logout=true">Rasporedi</a></li>
         </ul>
     </nav>
 </header>
@@ -535,9 +535,94 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             echo "</table>";
             break;
             default:
-            echo "<h2>Dobrodošli u Admin Panel</h2>";
-            echo "<p>Odaberite sekciju iz menija iznad.</p>";
-    }
+                echo "<h2>Dobrodošli u Admin Panel</h2>";
+                echo "<p>Odaberite opciju ispod da generišete raspored časova:</p>";
+
+                echo "<button id='generate-schedule' class='option-button'>Generiši raspored časova</button>";
+
+                echo "<div id='schedule-container' style='margin-top:20px; display:none;'>";
+                echo "<div style='text-align:right; margin-bottom:10px;'>
+            <label for='year-select'>Godina:</label>
+            <select id='year-select'>
+                <option value='1'>1. godina</option>
+                <option value='2'>2. godina</option>
+                <option value='3'>3. godina</option>
+                <option value='4'>4. godina</option>
+            </select>
+            <button id='save-pdf'>Save as PDF</button>
+          </div>";
+
+                echo "<table id='schedule-table' border='1' cellpadding='5' style='width:100%; border-collapse: collapse; text-align:center;'>
+            <thead>
+                <tr>
+                    <th>Vreme</th>
+                    <th>Ponedeljak</th>
+                    <th>Utorak</th>
+                    <th>Sreda</th>
+                    <th>Četvrtak</th>
+                    <th>Petak</th>
+                </tr>
+            </thead>
+            <tbody>
+            </tbody>
+          </table>";
+                echo "</div>";
+                ?>
+
+                <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+                <script>
+                    const times = [];
+                    const start = new Date('1970-01-01T09:15');
+                    const end = new Date('1970-01-01T21:15');
+                    let current = new Date(start);
+                    while (current <= end) {
+                        times.push(current.toTimeString().slice(0,5));
+                        current.setHours(current.getHours()+1);
+                    }
+
+                    const days = ['pon', 'uto', 'sre', 'cet', 'pet'];
+
+                    document.getElementById('generate-schedule').addEventListener('click', () => {
+                        const container = document.getElementById('schedule-container');
+                        const tbody = document.querySelector('#schedule-table tbody');
+                        tbody.innerHTML = '';
+
+                        const year = document.getElementById('year-select').value;
+
+                        times.forEach(time => {
+                            const tr = document.createElement('tr');
+
+                            const tdTime = document.createElement('td');
+                            tdTime.textContent = time;
+                            tr.appendChild(tdTime);
+
+                            days.forEach(day => {
+                                const td = document.createElement('td');
+                                td.id = `${time}-${day}-${year}`;
+                                td.className = 'schedule-cell';
+                                tr.appendChild(td);
+                            });
+
+                            tbody.appendChild(tr);
+                        });
+
+                        container.style.display = 'block';
+                    });
+
+                    document.getElementById('save-pdf').addEventListener('click', () => {
+                        const { jsPDF } = window.jspdf;
+                        const doc = new jsPDF();
+                        doc.text("Raspored časova", 10, 10);
+
+                        const table = document.getElementById('schedule-table');
+                        doc.autoTable({ html: table, startY: 20 });
+                        doc.save('raspored.pdf');
+                    });
+                </script>
+                <?php
+                break;
+
+            }
     ?>
 </main>
 

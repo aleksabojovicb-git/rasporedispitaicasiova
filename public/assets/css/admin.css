@@ -192,3 +192,92 @@ footer {
     background: #003f88;
     color: white;
 }
+#generate-schedule {
+    background: #0056b3;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 6px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: 0.3s;
+    margin-bottom: 15px;
+}
+
+#generate-schedule:hover {
+    background: #003f88;
+}
+
+#schedule-container {
+    background: white;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+}
+
+#year-select {
+    padding: 6px 10px;
+    border-radius: 6px;
+    border: 1px solid #ccd6e0;
+    margin-right: 10px;
+    transition: 0.3s;
+}
+
+#year-select:focus {
+    border-color: #0056b3;
+    box-shadow: 0 0 4px rgba(0, 86, 179, 0.4);
+}
+
+#save-pdf {
+    background: #0096c7;
+    color: white;
+    border: none;
+    padding: 7px 15px;
+    border-radius: 6px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: 0.3s;
+}
+
+#save-pdf:hover {
+    background: #0077a5;
+}
+
+#schedule-table {
+    margin-top: 15px;
+    width: 100%;
+    border-collapse: collapse;
+    text-align: center;
+}
+
+#schedule-table th {
+    background: #0056b3;
+    color: white;
+    padding: 12px;
+    font-weight: 600;
+}
+
+#schedule-table td {
+    border: 1px solid #e6e6e6;
+    padding: 10px;
+    min-width: 80px;
+    height: 40px;
+    vertical-align: middle;
+}
+
+#schedule-table tr:nth-child(even) td {
+    background: #f2f6ff;
+}
+
+#schedule-table tr:hover td {
+    background: #e4edff;
+}
+
+.schedule-cell {
+    cursor: pointer;
+    transition: 0.3s;
+}
+
+.schedule-cell:hover {
+    background: #cfe4ff;
+}
