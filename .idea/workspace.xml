@@ -4,14 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="9e2a725b-ce2b-469e-bd20-a66a6b53efa2" name="Changes" comment="Merge branch 'main' of https://github.com/aleksabojovicb-git/rasporedispitaicasiova into Backend-Luka&#10;&#10;# Conflicts:&#10;#&#9;.idea/workspace.xml">
-      <change afterPath="$PROJECT_DIR$/public/assets/css/admin.css" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/public/assets/js/admin.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/public/views/admin_panel.php" beforeDir="false" afterPath="$PROJECT_DIR$/public/views/admin_panel.php" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/api/auth.php" beforeDir="false" afterPath="$PROJECT_DIR$/src/api/auth.php" afterDir="false" />
-    </list>
+    <list default="true" id="9e2a725b-ce2b-469e-bd20-a66a6b53efa2" name="Changes" comment="add profesor profile page" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -35,19 +28,19 @@
     </option>
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
-  <component name="GitHubPullRequestSearchHistory">{
-    &quot;lastFilter&quot;: {
-    &quot;state&quot;: &quot;OPEN&quot;,
-    &quot;assignee&quot;: &quot;Lukaa21&quot;
-    }
-    }</component>
-  <component name="GithubPullRequestsUISettings">{
-    &quot;selectedUrlAndAccountId&quot;: {
-    &quot;url&quot;: &quot;https://github.com/aleksabojovicb-git/rasporedispitaicasiova.git&quot;,
-    &quot;accountId&quot;: &quot;d43dd82d-578c-4375-8eb3-d5cdce2269e6&quot;
-    }
-    }</component>
-  <component name="PhpWorkspaceProjectConfiguration" interpreter_name="PHP" />
+  <component name="GitHubPullRequestSearchHistory"><![CDATA[{
+  "lastFilter": {
+    "state": "OPEN",
+    "assignee": "Lukaa21"
+  }
+}]]></component>
+  <component name="GithubPullRequestsUISettings"><![CDATA[{
+  "selectedUrlAndAccountId": {
+    "url": "https://github.com/aleksabojovicb-git/rasporedispitaicasiova.git",
+    "accountId": "265b5b1b-9de9-4e32-a874-2883ed2f19b5"
+  }
+}]]></component>
+  <component name="PhpWorkspaceProjectConfiguration" interpreter_name="$PROJECT_DIR$/../../php/php.exe" />
   <component name="ProjectColorInfo">{
     &quot;associatedIndex&quot;: 1
     }</component>
@@ -66,7 +59,7 @@
     "PHP Script.dbconnection.php.executor": "Run",
     "RunOnceActivity.ShowReadmeOnStart": "true",
     "RunOnceActivity.git.unshallow": "true",
-    "git-widget-placeholder": "Backend-Luka",
+    "git-widget-placeholder": "feature/profesor-profile",
     "node.js.detected.package.eslint": "true",
     "node.js.detected.package.tslint": "true",
     "node.js.selected.package.eslint": "(autodetect)",
@@ -78,6 +71,7 @@
 }]]></component>
   <component name="RecentsManager">
     <key name="MoveFile.RECENT_KEYS">
+      <recent name="C:\xampp\htdocs\rasporedispitaicasiova\public\assets\css" />
       <recent name="C:\Users\Luka\PhpstormProjects\rasporedispitaicasiova\config" />
       <recent name="C:\Users\Luka\PhpstormProjects\rasporedispitaicasiova" />
     </key>
@@ -104,6 +98,9 @@
       <workItem from="1761465447709" duration="681000" />
       <workItem from="1761939726088" duration="1137000" />
       <workItem from="1762164102047" duration="5250000" />
+      <workItem from="1763547428608" duration="1143000" />
+      <workItem from="1763548605891" duration="1099000" />
+      <workItem from="1763583991350" duration="3633000" />
     </task>
     <task id="LOCAL-00001" summary="Povezivanje baze podataka sa backendom">
       <option name="closed" value="true" />
@@ -129,7 +126,23 @@
       <option name="project" value="LOCAL" />
       <updated>1762895411131</updated>
     </task>
-    <option name="localTasksCounter" value="4" />
+    <task id="LOCAL-00004" summary="add profesor profile page">
+      <option name="closed" value="true" />
+      <created>1763587084163</created>
+      <option name="number" value="00004" />
+      <option name="presentableId" value="LOCAL-00004" />
+      <option name="project" value="LOCAL" />
+      <updated>1763587084163</updated>
+    </task>
+    <task id="LOCAL-00005" summary="add profesor profile page">
+      <option name="closed" value="true" />
+      <created>1763587314809</created>
+      <option name="number" value="00005" />
+      <option name="presentableId" value="LOCAL-00005" />
+      <option name="project" value="LOCAL" />
+      <updated>1763587314809</updated>
+    </task>
+    <option name="localTasksCounter" value="6" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -149,6 +162,7 @@
   <component name="VcsManagerConfiguration">
     <MESSAGE value="Povezivanje baze podataka sa backendom" />
     <MESSAGE value="Merge branch 'main' of https://github.com/aleksabojovicb-git/rasporedispitaicasiova into Backend-Luka&#10;&#10;# Conflicts:&#10;#&#9;.idea/workspace.xml" />
-    <option name="LAST_COMMIT_MESSAGE" value="Merge branch 'main' of https://github.com/aleksabojovicb-git/rasporedispitaicasiova into Backend-Luka&#10;&#10;# Conflicts:&#10;#&#9;.idea/workspace.xml" />
+    <MESSAGE value="add profesor profile page" />
+    <option name="LAST_COMMIT_MESSAGE" value="add profesor profile page" />
   </component>
 </project>
