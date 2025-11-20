@@ -1,4 +1,5 @@
 <?php
+//Zabrana pristupa ako nije admin
 session_start();
 require_once __DIR__ . '/../../config/dbconnection.php';
 
@@ -182,11 +183,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <h1>Admin Panel</h1>
     <nav>
         <ul>
+            <li><a href="index.php">
+                <img src="../../img/fit-logo.jpeg" alt="logo" id="logo">
+            </a></li>
+            <li><a href="index.php">Pocetna stranica</a></li>
             <li><a href="?page=profesori">Profesori</a></li>
             <li><a href="?page=predmeti">Predmeti</a></li>
             <li><a href="?page=dogadjaji">Događaji</a></li>
             <li><a href="?page=sale">Sale</a></li>
-            <li><a href="?logout=true">Rasporedi</a></li>
+            <li><a href="logout.php">Odjavi se</a></li>
         </ul>
     </nav>
 </header>
