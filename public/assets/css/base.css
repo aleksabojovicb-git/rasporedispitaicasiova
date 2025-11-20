@@ -3,8 +3,8 @@ html,body{height:100%}
 body{
   margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, "Noto Sans", "Liberation Sans", sans-serif;
   background: radial-gradient(1200px 800px at 80% -20%, rgba(59,130,246,.25), transparent),
-              radial-gradient(1200px 800px at -10% 120%, rgba(34,197,94,.20), transparent),
-              var(--bg);
+  radial-gradient(1200px 800px at -10% 120%, rgba(34,197,94,.20), transparent),
+  var(--bg);
   background-repeat: no-repeat;
   background-size: cover;
   background-attachment: fixed;
@@ -12,8 +12,8 @@ body{
   line-height:1.5;
 }
 
-.container{ 
-  min-height:100%; padding: 32px 16px; 
+.container{
+  min-height:100%; padding: 32px 16px;
 }
 
 .card{
@@ -26,6 +26,3 @@ body{
 
 .title{font-size: 28px; font-weight: 800; letter-spacing:.2px; margin: 0 0 6px}
 .subtitle{color:var(--muted); margin:0 0 18px}
-
-
-
