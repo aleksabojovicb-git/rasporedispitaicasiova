@@ -1,3 +1,4 @@
+
 /* Fields */
 .field{ margin-bottom: 14px; }
 label{ font-size: 13px; color: var(--muted); margin-bottom:6px }
@@ -14,7 +15,7 @@ input:focus{ border-color: var(--accent); box-shadow: var(--focus-ring); }
 .pwd-wrap input[type="password"] { padding-right: 44px; }
 .toggle-eye{ position:absolute; top:45px; right:4px; transform: translateY(-50%);
   background: transparent; border:0; color: var(--muted); cursor: pointer;
-  padding: 8px; 
+  padding: 8px;
   border-top-right-radius: 8px;
   border-bottom-right-radius: 8px;}
 .toggle-eye:focus{ outline:none; box-shadow: var(--focus-ring); }
@@ -36,17 +37,17 @@ input:focus{ border-color: var(--accent); box-shadow: var(--focus-ring); }
 .btn.secondary:hover{ background: rgba(255,255,255,.10); border-color: rgba(255,255,255,.15); }
 
 .header-section{ position: relative; margin-bottom: 12px; }
-.top-register{ 
-  position: absolute; 
-  top: 0; 
-  right: 0; 
-  padding: 8px 16px; 
-  font-size: 14px; 
+.top-register{
+  position: absolute;
+  top: 0;
+  right: 0;
+  padding: 8px 16px;
+  font-size: 14px;
   font-weight: 600;
   transform: translateY(-2px);
   transition: all 0.3s ease;
 }
-.top-register:hover{ 
-  transform: translateY(-4px); 
-  box-shadow: 0 4px 12px rgba(255,255,255,.1); 
+.top-register:hover{
+  transform: translateY(-4px);
+  box-shadow: 0 4px 12px rgba(255,255,255,.1);
 }
