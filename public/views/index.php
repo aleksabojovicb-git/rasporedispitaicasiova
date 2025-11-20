@@ -13,7 +13,7 @@
 <nav id="nav-menu">
     <ul>
         <li><a href="index.php">
-            <img src="../../img/fit-logo.jpeg" alt="logo" id="logo">
+            <img src="../../img/fit-logo.png" alt="logo" id="logo">
         </a></li>
         <li id="nav-item"><a href="admin_panel.php">Admin panel</a></li>
         <li id="nav-item"><a href="profesor_profile.php">Profesor page</a></li>

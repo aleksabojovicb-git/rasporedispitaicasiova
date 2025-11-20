@@ -19,6 +19,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 } catch (PDOException $e) {
                     $error = "Greška pri dodavanju profesora: " . $e->getMessage();
                 }
+
                 break;
 
             case 'add_predmet':
@@ -184,7 +185,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <nav>
         <ul>
             <li><a href="index.php">
-                <img src="../../img/fit-logo.jpeg" alt="logo" id="logo">
+                <img src="../../img/fit-logo.png" alt="logo" id="logo">
             </a></li>
             <li><a href="index.php">Pocetna stranica</a></li>
             <li><a href="?page=profesori">Profesori</a></li>

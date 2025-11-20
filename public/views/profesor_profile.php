@@ -136,7 +136,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <nav>
             <ul>
             <li><a href="index.php">
-                <img src="../../img/fit-logo.jpeg" alt="logo" id="logo">
+                <img src="../../img/fit-logo.png" alt="logo" id="logo">
             </a></li>
             <li><a href="index.php">Pocetna stranica</a></li>
             <li><a href="logout.php">Odjavi se</a></li>
