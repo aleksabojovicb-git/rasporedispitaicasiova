@@ -172,8 +172,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin Panel - Raspored Ispita</title>
-    <link rel="stylesheet" href="../assets/css/style.css">
-    <link rel="stylesheet" href="../assets/css/admin.css">
+    <link rel="stylesheet" href="../assets/css/admin.css" />
+    <link rel="stylesheet" href="../assets/css/base.css" />
+    <link rel="stylesheet" href="../assets/css/fields.css" />
+    <link rel="stylesheet" href="../assets/css/colors.css" />
+    <link rel="stylesheet" href="../assets/css/stacks.css" />
+    <link rel="stylesheet" href="../assets/css/tabs.css" />
+    <link rel="stylesheet" href="../assets/css/table.css" />
+
     <script src="../assets/js/admin.js" defer></script>
 </head>
 <body>
@@ -217,7 +223,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <h2>Upravljanje Profesorima</h2>
             <button class="action-button add-button" onclick="toggleForm('profesorForm')">+ Dodaj Profesora</button>
 
-            <div id="profesorForm" class="form-container">
+            <div id="profesorForm" class="form-container" style="display: none">
                 <h3>Novi profesor</h3>
                 <form method="post">
                     <input type="hidden" name="action" value="add_profesor">
@@ -275,7 +281,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             <h2>Upravljanje Predmetima</h2>
             <button class="action-button add-button" onclick="toggleForm('predmetForm')">+ Dodaj Predmet</button>
-            <div id="predmetForm" class="form-container">
+            <div id="predmetForm" class="form-container" style="display: none">
                 <h3>Novi predmet</h3>
                 <form method="post">
                     <input type="hidden" name="action" value="add_predmet">
@@ -343,7 +349,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <button class="action-button add-button" onclick="toggleForm('dogadjajForm')">+ Dodaj Događaj</button>
             <?php
 
-            echo "<div id='dogadjajForm' class='form-container'>";
+            echo "<div id='dogadjajForm' class='form-container' style='display: none'>";
             echo "<h3>Novi događaj</h3>";
             echo "<form method='post'>";
             echo "<input type='hidden' name='action' value='add_dogadjaj'>";
@@ -476,7 +482,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <h2>Upravljanje Salama</h2>
             <button class="action-button add-button" onclick="toggleForm('salaForm')">+ Dodaj Salu</button>
 
-            <div id="salaForm" class="form-container">
+            <div id="salaForm" class="form-container" style='display: none'>
                 <h3>Nova sala</h3>
                 <form method="post">
                     <input type="hidden" name="action" value="add_sala">
@@ -542,13 +548,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 echo "<div id='schedule-container' style='margin-top:20px; display:none;'>";
                 echo "<div style='text-align:right; margin-bottom:10px;'>
-            <label for='year-select'>Godina:</label>
+           <div> <label for='year-select'>Godina:</label>
             <select id='year-select'>
                 <option value='1'>1. godina</option>
                 <option value='2'>2. godina</option>
                 <option value='3'>3. godina</option>
                 <option value='4'>4. godina</option>
-            </select>
+            </select></div>
             <button id='save-pdf'>Save as PDF</button>
           </div>";
 
@@ -556,7 +562,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <thead>
                 <tr>
                     <th>Vreme</th>
-                    <th>Ponedeljak</th>
+                    <th>Ponedjeljak</th>
                     <th>Utorak</th>
                     <th>Sreda</th>
                     <th>Četvrtak</th>
