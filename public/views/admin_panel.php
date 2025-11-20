@@ -188,6 +188,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <h1>Admin Panel</h1>
     <nav>
         <ul>
+            <li><a href="index.php">Pocetna</a></li>
             <li><a href="?page=profesori">Profesori</a></li>
             <li><a href="?page=predmeti">Predmeti</a></li>
             <li><a href="?page=dogadjaji">Događaji</a></li>

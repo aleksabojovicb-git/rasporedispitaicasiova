@@ -127,9 +127,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Profil Profesora</title>
-    <link rel="stylesheet" href="./../assets/css/profesor_profile.css">
-    <link rel="stylesheet" href="../assets/css/admin.css">
-    <link rel="stylesheet" href="../assets/css/style.css">
+    <link rel="stylesheet" href="../assets/css/profesor_profile.css">
+    <link rel="stylesheet" href="../assets/css/admin.css" />
+    <link rel="stylesheet" href="../assets/css/base.css" />
+    <link rel="stylesheet" href="../assets/css/fields.css" />
+    <link rel="stylesheet" href="../assets/css/colors.css" />
+    <link rel="stylesheet" href="../assets/css/stacks.css" />
+    <link rel="stylesheet" href="../assets/css/tabs.css" />
+    <link rel="stylesheet" href="../assets/css/table.css" />
 </head>
 <body>
     <header>
