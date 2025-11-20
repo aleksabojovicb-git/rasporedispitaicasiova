@@ -12,17 +12,16 @@
 <body>
 <nav id="nav-menu">
     <ul>
-        <li id="nav-item"><a href="admin_panel.php">admin</a></li>
-        <li id="nav-item"><a href="">Profesori</a></li>
-        <li id="nav-item"><a href="">Predmeti</a></li>
-        <li id="nav-item"><a href="">Profil</a></li>
-        <li id="nav-item"><a href="">Odjavi se</a></li>
+        <li><a href="index.php">
+            <img src="../../img/fit-logo.jpeg" alt="logo" id="logo">
+        </a></li>
+        <li id="nav-item"><a href="admin_panel.php">Admin panel</a></li>
+        <li id="nav-item"><a href="profesor_profile.php">Profesor page</a></li>
+        <li id="nav-item"><a href="logout.php">Odjavi se</a></li>
     </ul>
 </nav>
 <main>
     <h1>Dobrodošli na početnu stranicu!</h1>
-    <a href="login.php">login</a>
-    <a href="register.php">register</a>
 </main>
 
 <div id="footer"></div>
