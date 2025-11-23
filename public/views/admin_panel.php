@@ -9,7 +9,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             case 'add_profesor':
                 $full_name = $_POST['full_name'];
                 $email = $_POST['email'];
-                
+
                 try {
                     $stmt = $pdo->prepare("INSERT INTO professor (full_name, email, is_active) VALUES (?, ?, TRUE)");
                     $stmt->execute([$full_name, $email]);
@@ -41,7 +41,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $code = $_POST['code'];
                 $capacity = $_POST['capacity'];
                 $is_computer_lab = isset($_POST['is_computer_lab']) ? 1 : 0;
-            
+
                 try {
                     $stmt = $pdo->prepare("INSERT INTO room (code, capacity, is_computer_lab, is_active) 
                                           VALUES (?, ?, ?, TRUE)");
@@ -72,7 +72,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                            is_online, room_id, notes, is_published, is_canceled, locked_by_admin) 
                                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, FALSE, FALSE)");
                     $stmt->execute([$course_id, $professor_id, $type, $starts_at, $ends_at,
-                                   $is_online, $room_id, $notes, $is_published]);
+                        $is_online, $room_id, $notes, $is_published]);
 
                     $event_id = $pdo->lastInsertId();
 
@@ -123,7 +123,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }
                 break;
-                
+
             case 'delete_sala':
                 if (isset($_POST['id']) && is_numeric($_POST['id'])) {
                     $id = (int)$_POST['id'];
@@ -371,8 +371,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin Panel - Raspored Ispita</title>
-    <link rel="stylesheet" href="../assets/css/style.css">
-    <link rel="stylesheet" href="../assets/css/admin.css">
+    <link rel="stylesheet" href="../assets/css/admin.css" />
+    <link rel="stylesheet" href="../assets/css/base.css" />
+    <link rel="stylesheet" href="../assets/css/fields.css" />
+    <link rel="stylesheet" href="../assets/css/colors.css" />
+    <link rel="stylesheet" href="../assets/css/stacks.css" />
+    <link rel="stylesheet" href="../assets/css/tabs.css" />
+    <link rel="stylesheet" href="../assets/css/table.css" />
+
     <script src="../assets/js/admin.js" defer></script>
 </head>
 <body>
@@ -381,11 +387,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <h1>Admin Panel</h1>
     <nav>
         <ul>
+            <li><a href="index.php">Pocetna</a></li>
             <li><a href="?page=profesori">Profesori</a></li>
             <li><a href="?page=predmeti">Predmeti</a></li>
             <li><a href="?page=dogadjaji">Događaji</a></li>
             <li><a href="?page=sale">Sale</a></li>
-            <li><a href="?logout=true">Odjava</a></li>
+            <li><a href="?logout=true">Rasporedi</a></li>
         </ul>
     </nav>
 </header>
@@ -398,11 +405,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <?php if (isset($_GET['success'])): ?>
         <div class="success">
             <?php
-                if (isset($_GET['message'])) {
-                    echo htmlspecialchars($_GET['message']);
-                } else {
-                    echo "Operacija je uspješno izvršena!";
-                }
+            if (isset($_GET['message'])) {
+                echo htmlspecialchars($_GET['message']);
+            } else {
+                echo "Operacija je uspješno izvršena!";
+            }
             ?>
         </div>
     <?php endif; ?>
@@ -411,99 +418,99 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $page = isset($_GET['page']) ? $_GET['page'] : 'pocetna';
 
     switch ($page) {
-        case 'profesori':
-            ?>
-            <h2>Upravljanje Profesorima</h2>
-            <button class="action-button add-button" onclick="toggleForm('profesorForm')">+ Dodaj Profesora</button>
+    case 'profesori':
+    ?>
+    <h2>Upravljanje Profesorima</h2>
+    <button class="action-button add-button" onclick="toggleForm('profesorForm')">+ Dodaj Profesora</button>
 
-            <div id="profesorForm" class="form-container">
-                <h3>Novi profesor</h3>
-                <form method="post">
-                    <input type="hidden" name="action" value="add_profesor">
-                    
-                    <label for="full_name">Ime i prezime:</label>
-                    <input type="text" id="full_name" name="full_name" required>
-                    
-                    <label for="email">Email:</label>
-                    <input type="email" id="email" name="email" required>
-                    
-                    <button type="submit">Sačuvaj</button>
-                </form>
-            </div>
+    <div id="profesorForm" class="form-container" style="display: none">
+        <h3>Novi profesor</h3>
+        <form method="post">
+            <input type="hidden" name="action" value="add_profesor">
 
-            <table border="1" cellpadding="5">
-                <tr>
-                    <th>ID</th>
-                    <th>Ime i prezime</th>
-                    <th>Email</th>
-                    <th>Status</th>
-                    <th>Akcije</th>
-                </tr>
-            <?php
+            <label for="full_name">Ime i prezime:</label>
+            <input type="text" id="full_name" name="full_name" required>
 
-            try {
-                $stmt = $pdo->query("SELECT * FROM professor ORDER BY id");
-                while ($row = $stmt->fetch()) {
-                    echo "<tr>";
-                    echo "<td>" . htmlspecialchars($row['id']) . "</td>";
-                    echo "<td>" . htmlspecialchars($row['full_name']) . "</td>";
-                    echo "<td>" . htmlspecialchars($row['email']) . "</td>";
-                    echo "<td>" . ($row['is_active'] ? 'Aktivan' : 'Neaktivan') . "</td>";
-                    echo "<td>
+            <label for="email">Email:</label>
+            <input type="email" id="email" name="email" required>
+
+            <button type="submit">Sačuvaj</button>
+        </form>
+    </div>
+
+    <table border="1" cellpadding="5">
+        <tr>
+            <th>ID</th>
+            <th>Ime i prezime</th>
+            <th>Email</th>
+            <th>Status</th>
+            <th>Akcije</th>
+        </tr>
+        <?php
+
+        try {
+            $stmt = $pdo->query("SELECT * FROM professor ORDER BY id");
+            while ($row = $stmt->fetch()) {
+                echo "<tr>";
+                echo "<td>" . htmlspecialchars($row['id']) . "</td>";
+                echo "<td>" . htmlspecialchars($row['full_name']) . "</td>";
+                echo "<td>" . htmlspecialchars($row['email']) . "</td>";
+                echo "<td>" . ($row['is_active'] ? 'Aktivan' : 'Neaktivan') . "</td>";
+                echo "<td>
                         <button class='action-button edit-button'>Uredi</button>";
-                    
-                    // Ako je profesor neaktivan ne moze imati deaktiviraj dugme
-                    if ($row['is_active']) {
-                        echo "<form id='delete-profesor-{$row['id']}' style='display:inline' method='post' action='{$_SERVER['PHP_SELF']}'>
+
+                // Ako je profesor neaktivan ne moze imati deaktiviraj dugme
+                if ($row['is_active']) {
+                    echo "<form id='delete-profesor-{$row['id']}' style='display:inline' method='post' action='{$_SERVER['PHP_SELF']}'>
                             <input type='hidden' name='action' value='delete_professor'>
                             <input type='hidden' name='id' value='{$row['id']}'>
                             <button type='button' class='action-button delete-button' onclick=\"submitDeleteForm({$row['id']}, 'delete_professor', 'profesor')\">Deaktiviraj</button>
                         </form>";
-                    }
-
-                    echo "</td>";
-                    echo "</tr>";
                 }
-            } catch (PDOException $e) {
-                echo "<tr><td colspan='5'>Greška pri dohvaćanju profesora: " . $e->getMessage() . "</td></tr>";
+
+                echo "</td>";
+                echo "</tr>";
             }
-            echo "</table>";
-            break;
-            case 'predmeti':
-            ?>
+        } catch (PDOException $e) {
+            echo "<tr><td colspan='5'>Greška pri dohvaćanju profesora: " . $e->getMessage() . "</td></tr>";
+        }
+        echo "</table>";
+        break;
+        case 'predmeti':
+        ?>
 
-            <h2>Upravljanje Predmetima</h2>
-            <button class="action-button add-button" onclick="toggleForm('predmetForm')">+ Dodaj Predmet</button>
-            <div id="predmetForm" class="form-container">
-                <h3>Novi predmet</h3>
-                <form method="post">
-                    <input type="hidden" name="action" value="add_predmet">
-                    
-                    <label for="name">Naziv predmeta:</label>
-                    <input type="text" id="name" name="name" required>
-                    
-                    <label for="code">Šifra predmeta:</label>
-                    <input type="text" id="code" name="code" required>
-                    
-                    <label for="semester">Semestar:</label>
-                    <input type="number" id="semester" name="semester" min="1" max="6" required>
-                    
-                    <label for="is_optional">Izborni predmet:</label>
-                    <input type="checkbox" id="is_optional" name="is_optional">
-                    
-                    <button type="submit">Sačuvaj</button>
-                </form>
-            </div>
+        <h2>Upravljanje Predmetima</h2>
+        <button class="action-button add-button" onclick="toggleForm('predmetForm')">+ Dodaj Predmet</button>
+        <div id="predmetForm" class="form-container" style="display: none">
+            <h3>Novi predmet</h3>
+            <form method="post">
+                <input type="hidden" name="action" value="add_predmet">
 
-            <table border="1" cellpadding="5">
-                <tr>
-                    <th>ID</th>
-                    <th>Naziv</th>
-                    <th>Šifra</th>
-                    <th>Semestar</th>
-                    <th>Status</th>
-                    <th>Akcije</th>
-                </tr>
+                <label for="name">Naziv predmeta:</label>
+                <input type="text" id="name" name="name" required>
+
+                <label for="code">Šifra predmeta:</label>
+                <input type="text" id="code" name="code" required>
+
+                <label for="semester">Semestar:</label>
+                <input type="number" id="semester" name="semester" min="1" max="6" required>
+
+                <label for="is_optional">Izborni predmet:</label>
+                <input type="checkbox" id="is_optional" name="is_optional">
+
+                <button type="submit">Sačuvaj</button>
+            </form>
+        </div>
+
+        <table border="1" cellpadding="5">
+            <tr>
+                <th>ID</th>
+                <th>Naziv</th>
+                <th>Šifra</th>
+                <th>Semestar</th>
+                <th>Status</th>
+                <th>Akcije</th>
+            </tr>
             <?php
 
             try {
@@ -517,7 +524,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     echo "<td>" . ($row['is_active'] ? 'Aktivan' : 'Neaktivan') . "</td>";
                     echo "<td>
                         <button class='action-button edit-button'>Uredi</button>";
-                        
+
                     // Ako je predmet neaktivan ne moze imati deaktiviraj dugme
                     if ($row['is_active']) {
                         echo "<form id='delete-predmet-{$row['id']}' style='display:inline' method='post' action='{$_SERVER['PHP_SELF']}'>
@@ -542,7 +549,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <button class="action-button add-button" onclick="toggleForm('dogadjajForm')">+ Dodaj Događaj</button>
             <?php
 
-            echo "<div id='dogadjajForm' class='form-container'>";
+            echo "<div id='dogadjajForm' class='form-container' style='display: none'>";
             echo "<h3>Novi događaj</h3>";
             echo "<form method='post'>";
             echo "<input type='hidden' name='action' value='add_dogadjaj'>";
@@ -628,33 +635,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <th>Napomena</th>
                     <th>Akcije</th>
                 </tr>
-            <?php
+                <?php
 
-            try {
-                $stmt = $pdo->query("
+                try {
+                    $stmt = $pdo->query("
                     SELECT e.*, c.name as course_name, r.code as room_code 
                     FROM academic_event e
                     LEFT JOIN course c ON e.course_id = c.id
                     LEFT JOIN room r ON e.room_id = r.id
                     ORDER BY e.starts_at DESC
                 ");
-                while ($row = $stmt->fetch()) {
-                    $event_type = '';
-                    switch ($row['type_enum']) {
-                        case 'EXAM': $event_type = 'Ispit'; break;
-                        case 'COLLOQUIUM': $event_type = 'Kolokvijum'; break;
-                    }
+                    while ($row = $stmt->fetch()) {
+                        $event_type = '';
+                        switch ($row['type_enum']) {
+                            case 'EXAM': $event_type = 'Ispit'; break;
+                            case 'COLLOQUIUM': $event_type = 'Kolokvijum'; break;
+                        }
 
-                    echo "<tr>";
-                    echo "<td>" . htmlspecialchars($row['id']) . "</td>";
-                    echo "<td>" . htmlspecialchars($row['course_name']) . "</td>";
-                    echo "<td>" . $event_type . "</td>";
-                    echo "<td>" . date('d.m.Y H:i', strtotime($row['starts_at'])) . "</td>";
-                    echo "<td>" . date('d.m.Y H:i', strtotime($row['ends_at'])) . "</td>";
-                    echo "<td>" . ($row['is_online'] ? 'Online' : htmlspecialchars($row['room_code'])) . "</td>";
-                    echo "<td>" . ($row['is_canceled'] ? 'Otkazan' : ($row['is_published'] ? 'Objavljen' : 'Neobjavljeno')) . "</td>";
-                    echo "<td>" . htmlspecialchars($row['notes']) . "</td>";
-                    echo "<td>
+                        echo "<tr>";
+                        echo "<td>" . htmlspecialchars($row['id']) . "</td>";
+                        echo "<td>" . htmlspecialchars($row['course_name']) . "</td>";
+                        echo "<td>" . $event_type . "</td>";
+                        echo "<td>" . date('d.m.Y H:i', strtotime($row['starts_at'])) . "</td>";
+                        echo "<td>" . date('d.m.Y H:i', strtotime($row['ends_at'])) . "</td>";
+                        echo "<td>" . ($row['is_online'] ? 'Online' : htmlspecialchars($row['room_code'])) . "</td>";
+                        echo "<td>" . ($row['is_canceled'] ? 'Otkazan' : ($row['is_published'] ? 'Objavljen' : 'Neobjavljeno')) . "</td>";
+                        echo "<td>" . htmlspecialchars($row['notes']) . "</td>";
+                        echo "<td>
                         <button class='action-button edit-button'>Uredi</button> 
                         <form id='delete-dogadjaj-{$row['id']}' style='display:inline' method='post' action='{$_SERVER['PHP_SELF']}'>
                             <input type='hidden' name='action' value='delete_dogadjaj'>
@@ -662,82 +669,167 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <button type='button' class='action-button delete-button' onclick=\"submitDeleteForm({$row['id']}, 'delete_dogadjaj', 'dogadjaj')\">Obriši</button>
                         </form>
                     </td>";
-                    echo "</tr>";
+                        echo "</tr>";
+                    }
+                } catch (PDOException $e) {
+                    echo "<tr><td colspan='8'>Greška pri dohvaćanju događaja: " . $e->getMessage() . "</td></tr>";
                 }
-            } catch (PDOException $e) {
-                echo "<tr><td colspan='8'>Greška pri dohvaćanju događaja: " . $e->getMessage() . "</td></tr>";
-            }
-            echo "</table>";
-            break;
-            case 'sale':
-            ?>
+                echo "</table>";
+                break;
+                case 'sale':
+                ?>
 
-            <h2>Upravljanje Salama</h2>
-            <button class="action-button add-button" onclick="toggleForm('salaForm')">+ Dodaj Salu</button>
+                <h2>Upravljanje Salama</h2>
+                <button class="action-button add-button" onclick="toggleForm('salaForm')">+ Dodaj Salu</button>
 
-            <div id="salaForm" class="form-container">
-                <h3>Nova sala</h3>
-                <form method="post">
-                    <input type="hidden" name="action" value="add_sala">
-                    
-                    <label for="code">Oznaka sale:</label>
-                    <input type="text" id="code" name="code" required>
-                    
-                    <label for="capacity">Kapacitet:</label>
-                    <input type="number" id="capacity" name="capacity" min="1" required>
-                    
-                    <label for="is_computer_lab">Računarska sala:</label>
-                    <input type="checkbox" id="is_computer_lab" name="is_computer_lab">
-                    
-                    <button type="submit">Sačuvaj</button>
-                </form>
-            </div>
+                <div id="salaForm" class="form-container" style='display: none'>
+                    <h3>Nova sala</h3>
+                    <form method="post">
+                        <input type="hidden" name="action" value="add_sala">
 
-            <table border="1" cellpadding="5">
-                <tr>
-                    <th>ID</th>
-                    <th>Oznaka</th>
-                    <th>Kapacitet</th>
-                    <th>Tip</th>
-                    <th>Status</th>
-                    <th>Akcije</th>
-                </tr>
-            <?php
+                        <label for="code">Oznaka sale:</label>
+                        <input type="text" id="code" name="code" required>
 
-            try {
-                $stmt = $pdo->query("SELECT * FROM room ORDER BY code");
-                while ($row = $stmt->fetch()) {
-                    echo "<tr>";
-                    echo "<td>" . htmlspecialchars($row['id']) . "</td>";
-                    echo "<td>" . htmlspecialchars($row['code']) . "</td>";
-                    echo "<td>" . htmlspecialchars($row['capacity']) . "</td>";
-                    echo "<td>" . ($row['is_computer_lab'] ? 'Računarska' : 'Standardna') . "</td>";
-                    echo "<td>" . ($row['is_active'] ? 'Aktivna' : 'Neaktivna') . "</td>";
-                    echo "<td>
+                        <label for="capacity">Kapacitet:</label>
+                        <input type="number" id="capacity" name="capacity" min="1" required>
+
+                        <label for="is_computer_lab">Računarska sala:</label>
+                        <input type="checkbox" id="is_computer_lab" name="is_computer_lab">
+
+                        <button type="submit">Sačuvaj</button>
+                    </form>
+                </div>
+
+                <table border="1" cellpadding="5">
+                    <tr>
+                        <th>ID</th>
+                        <th>Oznaka</th>
+                        <th>Kapacitet</th>
+                        <th>Tip</th>
+                        <th>Status</th>
+                        <th>Akcije</th>
+                    </tr>
+                    <?php
+
+                    try {
+                        $stmt = $pdo->query("SELECT * FROM room ORDER BY code");
+                        while ($row = $stmt->fetch()) {
+                            echo "<tr>";
+                            echo "<td>" . htmlspecialchars($row['id']) . "</td>";
+                            echo "<td>" . htmlspecialchars($row['code']) . "</td>";
+                            echo "<td>" . htmlspecialchars($row['capacity']) . "</td>";
+                            echo "<td>" . ($row['is_computer_lab'] ? 'Računarska' : 'Standardna') . "</td>";
+                            echo "<td>" . ($row['is_active'] ? 'Aktivna' : 'Neaktivna') . "</td>";
+                            echo "<td>
                         <button class='action-button edit-button'>Uredi</button>";
-                        
-                    // Ako je sala neaktivna ne moze imati deaktiviraj dugme
-                    if ($row['is_active']) {
-                        echo "<form id='delete-sala-{$row['id']}' style='display:inline' method='post' action='{$_SERVER['PHP_SELF']}'>
+
+                            // Ako je sala neaktivna ne moze imati deaktiviraj dugme
+                            if ($row['is_active']) {
+                                echo "<form id='delete-sala-{$row['id']}' style='display:inline' method='post' action='{$_SERVER['PHP_SELF']}'>
                             <input type='hidden' name='action' value='delete_sala'>
                             <input type='hidden' name='id' value='{$row['id']}'>
                             <button type='button' class='action-button delete-button' onclick=\"submitDeleteForm({$row['id']}, 'delete_sala', 'salu')\">Deaktiviraj</button>
                         </form>";
-                    }
+                            }
 
-                    echo "</td>";
-                    echo "</tr>";
-                }
-            } catch (PDOException $e) {
-                echo "<tr><td colspan='6'>Greška pri dohvaćanju sala: " . $e->getMessage() . "</td></tr>";
-            }
-            echo "</table>";
-            break;
-            default:
-            echo "<h2>Dobrodošli u Admin Panel</h2>";
-            echo "<p>Odaberite sekciju iz menija iznad.</p>";
-    }
-    ?>
+                            echo "</td>";
+                            echo "</tr>";
+                        }
+                    } catch (PDOException $e) {
+                        echo "<tr><td colspan='6'>Greška pri dohvaćanju sala: " . $e->getMessage() . "</td></tr>";
+                    }
+                    echo "</table>";
+                    break;
+                    default:
+                        echo "<h2>Dobrodošli u Admin Panel</h2>";
+                        echo "<p>Odaberite opciju ispod da generišete raspored časova:</p>";
+
+                        echo "<button id='generate-schedule' class='option-button'>Generiši raspored časova</button>";
+
+                        echo "<div id='schedule-container' style='margin-top:20px; display:none;'>";
+                        echo "<div style='text-align:right; margin-bottom:10px;'>
+           <div> <label for='year-select'>Godina:</label>
+            <select id='year-select'>
+                <option value='1'>1. godina</option>
+                <option value='2'>2. godina</option>
+                <option value='3'>3. godina</option>
+                <option value='4'>4. godina</option>
+            </select></div>
+            <button id='save-pdf'>Save as PDF</button>
+          </div>";
+
+                        echo "<table id='schedule-table' border='1' cellpadding='5' style='width:100%; border-collapse: collapse; text-align:center;'>
+            <thead>
+                <tr>
+                    <th>Vreme</th>
+                    <th>Ponedjeljak</th>
+                    <th>Utorak</th>
+                    <th>Sreda</th>
+                    <th>Četvrtak</th>
+                    <th>Petak</th>
+                </tr>
+            </thead>
+            <tbody>
+            </tbody>
+          </table>";
+                        echo "</div>";
+                        ?>
+
+                        <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+                        <script>
+                            const times = [];
+                            const start = new Date('1970-01-01T09:15');
+                            const end = new Date('1970-01-01T21:15');
+                            let current = new Date(start);
+                            while (current <= end) {
+                                times.push(current.toTimeString().slice(0,5));
+                                current.setHours(current.getHours()+1);
+                            }
+
+                            const days = ['pon', 'uto', 'sre', 'cet', 'pet'];
+
+                            document.getElementById('generate-schedule').addEventListener('click', () => {
+                                const container = document.getElementById('schedule-container');
+                                const tbody = document.querySelector('#schedule-table tbody');
+                                tbody.innerHTML = '';
+
+                                const year = document.getElementById('year-select').value;
+
+                                times.forEach(time => {
+                                    const tr = document.createElement('tr');
+
+                                    const tdTime = document.createElement('td');
+                                    tdTime.textContent = time;
+                                    tr.appendChild(tdTime);
+
+                                    days.forEach(day => {
+                                        const td = document.createElement('td');
+                                        td.id = `${time}-${day}-${year}`;
+                                        td.className = 'schedule-cell';
+                                        tr.appendChild(td);
+                                    });
+
+                                    tbody.appendChild(tr);
+                                });
+
+                                container.style.display = 'block';
+                            });
+
+                            document.getElementById('save-pdf').addEventListener('click', () => {
+                                const { jsPDF } = window.jspdf;
+                                const doc = new jsPDF();
+                                doc.text("Raspored časova", 10, 10);
+
+                                const table = document.getElementById('schedule-table');
+                                doc.autoTable({ html: table, startY: 20 });
+                                doc.save('raspored.pdf');
+                            });
+                        </script>
+                        <?php
+                        break;
+
+                    }
+                    ?>
 </main>
 
 <footer>

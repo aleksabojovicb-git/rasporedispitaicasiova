@@ -1,106 +1,184 @@
-/* Admin panel styles */
-.form-container {
-    display: none;
-    margin: 20px 0;
-    padding: 15px;
-    border: 1px solid #ccc;
-    border-radius: 5px;
+
+body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+    margin: 0;
+    padding: 0;
 }
 
-.form-container label {
-    display: block;
-    margin-bottom: 5px;
+header {
+    background: rgba(17, 24, 39, 0.7); /* glass effect */
+    backdrop-filter: blur(10px);
+    padding: 20px 40px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    box-shadow: var(--shadow);
+    position: sticky;
+    top: 0;
+    z-index: 50;
 }
 
-.form-container input, .form-container select {
-    margin-bottom: 10px;
-    padding: 5px;
-    width: 100%;
-    max-width: 300px;
+header h1 {
+    color: var(--text);
+    font-size: 28px;
+    margin: 0;
 }
 
-.form-container button {
-    padding: 5px 10px;
-    background-color: #4CAF50;
-    color: white;
-    border: none;
-    border-radius: 3px;
-    cursor: pointer;
+header nav ul {
+    display: flex;
+    gap: 25px;
+    list-style: none;
 }
 
-.form-container textarea {
-    width: 100%;
-    max-width: 300px;
-    padding: 5px;
+header nav a {
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 16px;
+    transition: 0.2s;
 }
 
-/* Table styles */
-table {
-    width: 100%;
-    border-collapse: collapse;
-    margin: 20px 0;
+header nav a:hover {
+    color: var(--accent);
 }
 
-table th, table td {
-    padding: 8px;
-    text-align: left;
-    border: 1px solid #ddd;
+
+main {
+    padding: 30px 60px;
 }
 
-table th {
-    background-color: #f2f2f2;
-    font-weight: bold;
+/* Panel title */
+h2 {
+    font-size: 26px;
+    margin-bottom: 15px;
+    color: var(--text);
 }
 
-table tr:nth-child(even) {
-    background-color: #f9f9f9;
-}
 
-table tr:hover {
-    background-color: #f1f1f1;
-}
-
-/* Action buttons */
 .action-button {
-    padding: 5px 10px;
-    margin: 0 5px;
+    padding: 10px 18px;
+    border-radius: var(--radius);
     border: none;
-    border-radius: 3px;
     cursor: pointer;
+    font-size: 14px;
+    transition: 0.2s;
 }
 
 .add-button {
-    background-color: #4CAF50;
+    background: var(--accent);
     color: white;
+    box-shadow: var(--shadow);
 }
 
 .edit-button {
-    background-color: #2196F3;
+    background: var(--muted);
     color: white;
 }
 
 .delete-button {
-    background-color: #f44336;
+    background: var(--danger);
     color: white;
 }
 
-/* Notification messages */
-.success {
-    color: green;
-    font-weight: bold;
+/* Hover state */
+.action-button:hover {
+    filter: brightness(1.1);
+}
+
+
+.form-container {
+
+    width: 450px;
+}
+
+.form-container h3 {
+    margin-top: 0;
+    font-size: 20px;
+}
+
+
+input, select, textarea {
+    width: 100%;
     padding: 10px;
-    margin: 10px 0;
-    background-color: #e8f5e9;
-    border: 1px solid #c8e6c9;
-    border-radius: 4px;
+    margin-bottom: 12px;
+    background: #1f2937;
+    border: 1px solid #334155;
+    color: var(--text);
+    border-radius: 10px;
+    font-size: 14px;
+}
+
+
+form button[type="submit"] {
+    background: var(--correct);
+    padding: 12px;
+    width: 100%;
+    border-radius: var(--radius);
+    border: none;
+    color: white;
+    cursor: pointer;
+    font-size: 15px;
+    margin-top: 10px;
+}
+
+form button[type="submit"]:hover {
+    filter: brightness(1.1);
+}
+#save-pdf, #generate-schedule{
+    background: var(--correct);
+    padding: 12px;
+    width: 100%;
+    border-radius: var(--radius);
+    border: none;
+    color: white;
+    cursor: pointer;
+    font-size: 15px;
+    margin-top: 10px;
+}
+
+#save-pdf, #generate-schedule:hover{
+    filter: brightness(1.1);
+}
+th, td {
+    padding: 14px;
+    border-bottom: 1px solid #334155;
+    text-align: left;
+}
+
+th {
+    background: rgba(17, 24, 39, 0.8);
+    color: var(--muted);
+}
+
+tr:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+
+.success, .error {
+    padding: 15px;
+    border-radius: var(--radius);
+    margin-bottom: 20px;
+    font-size: 15px;
+    box-shadow: var(--shadow);
+    width: 450px;
+}
+
+.success {
+    background: var(--accent);
+    color: var(--accent);
 }
 
 .error {
-    color: red;
-    font-weight: bold;
-    padding: 10px;
-    margin: 10px 0;
-    background-color: #ffebee;
-    border: 1px solid #ffcdd2;
-    border-radius: 4px;
+    background: var(--danger);
+    color: var(--danger);
+}
+
+
+footer {
+    text-align: center;
+    padding: 20px;
+    color: var(--muted);
+    margin-top: 40px;
 }

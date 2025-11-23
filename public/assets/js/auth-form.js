@@ -140,93 +140,14 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Form submission handlers
     signinForm.addEventListener('submit', function(e) {
-        e.preventDefault();
-        
-        if (validateForm(this)) {
-            const formData = new FormData(this);
-            const data = Object.fromEntries(formData);
-            
-            console.log('Sign in data:', data);
-            alert('Sign in form submitted! Check console for data.');
-            
-            fetch('../../src/api/auth.php', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    action: "login",
-                    password: data.password,
-                    email: data.email,
-                })
-            })
-            .then(response => response.json())
-            .then(result => {
-                if (result.status=="success") {
-                    console.log("logovan");
-                } 
-            });
+        if (!validateForm(this)) {
+            e.preventDefault();
         }
     });
 
     signupForm.addEventListener('submit', function(e) {
-        e.preventDefault();
-        
-        if (validateForm(this)) {
-            const formData = new FormData(this);
-            const data = Object.fromEntries(formData);
-            delete data.confirm; 
-            
-            console.log('Sign up data:', data);
-            alert('Sign up form submitted! Check console for data.');
-            
-            fetch('../../src/api/auth.php', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    action: "register",
-                    password: data.password,
-                    email: data.email,
-                    first_name: data.first_name,
-                    last_name: data.last_name
-                })
-            })
-            .then(response => response.json())
-            .then(result => {
-                if (result.status == "success") {
-                    // console.log("test2",result);
-                    window.location.href = "../../public/views/authorization.php";
-                }else if(result.status=="userExist"){
-                    console.log("user already exist");
-                }
-            });
-
-        }
-    });
-
-    signupForm.addEventListener('submit', function(e) {
-        e.preventDefault();
-
-        if (validateForm(this)) {
-            const formData = new FormData(this);
-
-            fetch(window.location.href, {
-                method: 'POST',
-                body: formData
-            })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        alert(data.message);
-                        // Optionally redirect to login tab or another page
-                        switchTab('signin');
-                    } else {
-                        // Show error message for unauthorized email
-                        showError('su-email', data.message);
-                    }
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    alert('An error occurred during registration.');
-                });
+        if (!validateForm(this)) {
+            e.preventDefault();
         }
     });
 });
