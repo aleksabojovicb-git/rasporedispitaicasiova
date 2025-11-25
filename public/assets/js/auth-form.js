@@ -61,22 +61,24 @@ document.addEventListener('DOMContentLoaded', function() {
         return Math.min(score, 4);
     }
 
-    passwordInput.addEventListener('input', function() {
-        const strength = calculatePasswordStrength(this.value);
-        pwdMeter.className = '';
-        
-        if (this.value.length === 0) {
+    if (passwordInput) {
+        passwordInput.addEventListener('input', function() {
+            const strength = calculatePasswordStrength(this.value);
             pwdMeter.className = '';
-        } else if (strength <= 1) {
-            pwdMeter.className = 'weak';
-        } else if (strength <= 2) {
-            pwdMeter.className = 'fair';
-        } else if (strength <= 3) {
-            pwdMeter.className = 'good';
-        } else {
-            pwdMeter.className = 'strong';
-        }
-    });
+
+            if (this.value.length === 0) {
+                pwdMeter.className = '';
+            } else if (strength <= 1) {
+                pwdMeter.className = 'weak';
+            } else if (strength <= 2) {
+                pwdMeter.className = 'fair';
+            } else if (strength <= 3) {
+                pwdMeter.className = 'good';
+            } else {
+                pwdMeter.className = 'strong';
+            }
+        });
+    }
 
     // Form validation
     function showError(inputId, message) {
@@ -129,7 +131,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 isValid = false;
             }
 
-            if (!termsCheckbox.checked) {
+            // Only validate terms if checkbox exists
+            if (termsCheckbox && !termsCheckbox.checked) {
                 showError('su-terms', 'You must accept the Terms of Use');
                 isValid = false;
             }
@@ -139,15 +142,19 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // Form submission handlers
-    signinForm.addEventListener('submit', function(e) {
-        if (!validateForm(this)) {
-            e.preventDefault();
-        }
-    });
+    if (signinForm) {
+        signinForm.addEventListener('submit', function(e) {
+            if (!validateForm(this)) {
+                e.preventDefault();
+            }
+        });
+    }
 
-    signupForm.addEventListener('submit', function(e) {
-        if (!validateForm(this)) {
-            e.preventDefault();
-        }
-    });
+    if (signupForm) {
+        signupForm.addEventListener('submit', function(e) {
+            if (!validateForm(this)) {
+                e.preventDefault();
+            }
+        });
+    }
 });

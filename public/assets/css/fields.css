@@ -1,4 +1,3 @@
-
 /* Fields */
 .field{ margin-bottom: 14px; }
 label{ font-size: 13px; color: var(--muted); margin-bottom:6px }
@@ -24,6 +23,37 @@ input:focus{ border-color: var(--accent); box-shadow: var(--focus-ring); }
 .meter > i{ /* width controlled from JS */ height:100%; width:0%; background: linear-gradient(90deg, #ef4444, #f59e0b, #22c55e); display:block; transition: width .25s ease }
 
 .error{ font-size: 12px; color: var(--danger); margin-top:6px }
+/* Server-side error messages inside forms */
+.server-error{
+  color: #e53935; /* vivid red */
+  font-size: 12px; /* small */
+  margin-top: 6px;
+  font-weight: 500; /* less bold */
+  line-height: 1.2;
+}
+
+.card .server-error, .stacks .server-error, .server-error {
+  color: #e53935 !important; /* vivid red */
+  font-size: 12px !important; /* small */
+  margin-top: 6px !important;
+  padding: 0 !important;
+  background: transparent !important;
+  font-weight: 500 !important;
+  line-height: 1.2 !important;
+  display: block;
+}
+
+.card .success-server, .stacks .success-server, .success-server {
+  color: #16a34a !important; /* green */
+  font-size: 12px !important;
+  margin-top: 6px !important;
+  padding: 0 !important;
+  background: transparent !important;
+  font-weight: 500 !important;
+  line-height: 1.2 !important;
+  display: block;
+}
+
 .help, .hint{ font-size: 12px; color: var(--muted); margin-top:6px }
 
 .actions{ margin-top: 18px; display: flex; gap: 12px; }

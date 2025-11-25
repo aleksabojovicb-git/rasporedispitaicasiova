@@ -9,7 +9,7 @@ if (isset($_GET['logout'])) {
     exit;
 }
 
-if (!isset($_SESSION['user_id'], $_SESSION['professor_id'])) {
+if (!isset($_SESSION['user_id'])) {
     header('Location: ./authorization.php');
     exit;
 }
