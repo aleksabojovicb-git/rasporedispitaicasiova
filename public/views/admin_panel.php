@@ -69,8 +69,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     $stmt = $pdo->prepare("INSERT INTO academic_event 
                                           (course_id, created_by_professor, type_enum, starts_at, ends_at, 
-                                           is_online, room_id, notes, is_published, is_canceled, locked_by_admin) 
-                                          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, FALSE, FALSE)");
+                                           is_online, room_id, notes, is_published, locked_by_admin) 
+                                          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, FALSE)");
                     $stmt->execute([$course_id, $professor_id, $type, $starts_at, $ends_at,
                         $is_online, $room_id, $notes, $is_published]);
 
@@ -630,7 +630,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <th>Početak</th>
                     <th>Kraj</th>
                     <th>Sala</th>
-                    <th>Status</th>
                     <th>Napomena</th>
                     <th>Akcije</th>
                 </tr>
@@ -658,7 +657,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         echo "<td>" . date('d.m.Y H:i', strtotime($row['starts_at'])) . "</td>";
                         echo "<td>" . date('d.m.Y H:i', strtotime($row['ends_at'])) . "</td>";
                         echo "<td>" . ($row['is_online'] ? 'Online' : htmlspecialchars($row['room_code'])) . "</td>";
-                        echo "<td>" . ($row['is_canceled'] ? 'Otkazan' : ($row['is_published'] ? 'Objavljen' : 'Neobjavljeno')) . "</td>";
                         echo "<td>" . htmlspecialchars($row['notes']) . "</td>";
                         echo "<td>";
                         echo "<button class='action-button edit-button' data-entity='dogadjaj' data-id='" . $row['id'] . "' data-course_id='" . $row['course_id'] . "' data-professor_id='" . $row['created_by_professor'] . "' data-type='" . htmlspecialchars($row['type_enum'], ENT_QUOTES) . "' data-starts_at='" . htmlspecialchars($row['starts_at'], ENT_QUOTES) . "' data-ends_at='" . htmlspecialchars($row['ends_at'], ENT_QUOTES) . "' data-is_online='" . ($row['is_online'] ? '1' : '0') . "' data-room_id='" . $row['room_id'] . "' data-notes='" . htmlspecialchars($row['notes'], ENT_QUOTES) . "' data-is_published='" . ($row['is_published'] ? '1' : '0') . "'>Uredi</button> ";
