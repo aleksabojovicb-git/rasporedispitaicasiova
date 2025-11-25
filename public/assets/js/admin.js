@@ -137,4 +137,246 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     }
+
+
+    let editModal = document.getElementById('admin-edit-modal');
+    if (!editModal) {
+        editModal = document.createElement('div');
+        editModal.id = 'admin-edit-modal';
+        editModal.style.position = 'fixed';
+        editModal.style.left = '0';
+        editModal.style.top = '0';
+        editModal.style.width = '100%';
+        editModal.style.height = '100%';
+        editModal.style.display = 'none';
+        editModal.style.background = 'rgba(0,0,0,0.5)';
+        editModal.style.alignItems = 'center';
+        editModal.style.justifyContent = 'center';
+
+        editModal.innerHTML = `
+            <div id="admin-edit-modal-inner" style="background:#fff;padding:18px;border-radius:8px;max-width:720px;width:min(720px,90%);margin:auto;color:#000;box-shadow:0 10px 30px rgba(0,0,0,0.6);max-height:84vh;overflow:auto;">
+                <style>
+                    #admin-edit-modal-inner { font-family: Arial, Helvetica, sans-serif; font-size:14px; }
+                    #admin-edit-modal-inner label { display:block; margin:8px 0 6px; color:#071422; font-weight:700; font-size:13px; }
+                    #admin-edit-modal-inner input, #admin-edit-modal-inner select, #admin-edit-modal-inner textarea {
+                        background: #ffffff !important;
+                        color: #071422 !important;
+                        border: 1px solid #c8d0d8 !important;
+                        padding: 8px 10px !important;
+                        border-radius: 6px !important;
+                        box-sizing: border-box !important;
+                        box-shadow: none !important;
+                    }
+                    #admin-edit-modal-inner textarea { min-height:100px !important; }
+                    #admin-edit-modal-inner .modal-actions { margin-top:14px; text-align:right; }
+                    #admin-edit-modal-inner .action-button { margin-left:8px; }
+                        #admin-edit-modal-inner, #admin-edit-modal-inner * {
+                            color: #071422 !important;
+                        }
+
+                        #admin-edit-modal-inner input[type="checkbox"] {
+                            width: 18px; height: 18px; vertical-align: middle; appearance: auto; accent-color: #0b2130 !important; background: #fff !important;
+                        }
+
+                        #admin-edit-modal-inner input, #admin-edit-modal-inner select, #admin-edit-modal-inner textarea {
+                            background: #ffffff !important;
+                            color: #071422 !important;
+                            border: 1px solid #c8d0d8 !important;
+                            padding: 8px 10px !important;
+                            border-radius: 6px !important;
+                            box-sizing: border-box !important;
+                            box-shadow: none !important;
+                        }
+                    #admin-edit-modal-inner input[type="text"], #admin-edit-modal-inner input[type="email"], #admin-edit-modal-inner input[type="number"], #admin-edit-modal-inner input[type="datetime-local"], #admin-edit-modal-inner select, #admin-edit-modal-inner textarea { width:100% !important; }
+                    @media (max-width:420px) { #admin-edit-modal-inner { padding:12px; } }
+                </style>
+                <h3 id="admin-edit-title" style="margin:0 0 8px;">Uredi</h3>
+                <div id="admin-edit-body"></div>
+                <div class="modal-actions">
+                    <button id="admin-edit-cancel" type="button" class="action-button">Otkaži</button>
+                    <button id="admin-edit-save" type="button" class="action-button">Sačuvaj</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(editModal);
+
+        document.getElementById('admin-edit-cancel').addEventListener('click', () => {
+            editModal.style.display = 'none';
+        });
+        // close when clicking outside inner modal
+        editModal.addEventListener('click', (ev) => {
+            if (ev.target === editModal) editModal.style.display = 'none';
+        });
+        // ensure modal overlay is on top
+        editModal.style.zIndex = '9999';
+    }
+
+    // Helper to build and submit a POST form
+    function submitUpdateForm(payload) {
+        const form = document.createElement('form');
+        form.method = 'post';
+        form.action = window.location.href;
+        for (const key in payload) {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = key;
+            input.value = payload[key];
+            form.appendChild(input);
+        }
+        document.body.appendChild(form);
+        form.submit();
+    }
+
+    // Auto-hide success/error flash messages after a delay
+    setTimeout(() => {
+        const flashes = document.querySelectorAll('.success, .error');
+        flashes.forEach(el => {
+            // add a helper class so CSS transitions apply
+            el.classList.add('flash');
+            // trigger hide
+            setTimeout(() => el.classList.add('hide'), 50);
+            // remove from DOM after transition
+            setTimeout(() => { if (el && el.parentNode) el.parentNode.removeChild(el); }, 500);
+        });
+    }, 4000);
+
+    // Click handler for edit buttons
+    document.querySelectorAll('.edit-button').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const b = e.currentTarget;
+            const entity = b.getAttribute('data-entity');
+            const id = b.getAttribute('data-id');
+            const body = document.getElementById('admin-edit-body');
+            const title = document.getElementById('admin-edit-title');
+            body.innerHTML = '';
+
+            if (!entity || !id) {
+                alert('Nedostaju podaci za uređivanje.');
+                return;
+            }
+
+            if (entity === 'profesor') {
+                title.textContent = 'Uredi profesora';
+                const full_name = b.getAttribute('data-full_name') || '';
+                const email = b.getAttribute('data-email') || '';
+                body.innerHTML = `
+                    <label>Ime i prezime:</label>
+                    <input type="text" id="edit-full_name" value="${full_name}" style="width:100%;" />
+                    <label style="margin-top:8px;display:block;">Email:</label>
+                    <input type="email" id="edit-email" value="${email}" style="width:100%;" />
+                `;
+                editModal.style.display = 'flex';
+                document.getElementById('admin-edit-save').onclick = function() {
+                    submitUpdateForm({ action: 'update_profesor', profesor_id: id, full_name: document.getElementById('edit-full_name').value, email: document.getElementById('edit-email').value });
+                };
+            } else if (entity === 'predmet') {
+                title.textContent = 'Uredi predmet';
+                const name = b.getAttribute('data-name') || '';
+                const code = b.getAttribute('data-code') || '';
+                const semester = b.getAttribute('data-semester') || '';
+                const is_optional = b.getAttribute('data-is_optional') === '1';
+                body.innerHTML = `
+                    <label>Naziv:</label>
+                    <input type="text" id="edit-name" value="${name}" style="width:100%;" />
+                    <label style="margin-top:8px;display:block;">Šifra:</label>
+                    <input type="text" id="edit-code" value="${code}" style="width:100%;" />
+                    <label style="margin-top:8px;display:block;">Semestar:</label>
+                    <input type="number" id="edit-semester" value="${semester}" min="1" max="6" style="width:100%;" />
+                    <label style="margin-top:8px;display:block;"><input type="checkbox" id="edit-is_optional" ${is_optional ? 'checked' : ''} /> Izborni predmet</label>
+                `;
+                editModal.style.display = 'flex';
+                document.getElementById('admin-edit-save').onclick = function() {
+                    submitUpdateForm({ action: 'update_predmet', course_id: id, name: document.getElementById('edit-name').value, code: document.getElementById('edit-code').value, semester: document.getElementById('edit-semester').value, is_optional: document.getElementById('edit-is_optional').checked ? '1' : '0' });
+                };
+            } else if (entity === 'sala') {
+                title.textContent = 'Uredi salu';
+                const code = b.getAttribute('data-code') || '';
+                const capacity = b.getAttribute('data-capacity') || '';
+                const is_computer_lab = b.getAttribute('data-is_computer_lab') === '1';
+                body.innerHTML = `
+                    <label>Oznaka:</label>
+                    <input type="text" id="edit-code" value="${code}" style="width:100%;" />
+                    <label style="margin-top:8px;display:block;">Kapacitet:</label>
+                    <input type="number" id="edit-capacity" value="${capacity}" min="1" style="width:100%;" />
+                    <label style="margin-top:8px;display:block;"><input type="checkbox" id="edit-is_computer_lab" ${is_computer_lab ? 'checked' : ''} /> Računarska sala</label>
+                `;
+                editModal.style.display = 'flex';
+                document.getElementById('admin-edit-save').onclick = function() {
+                    submitUpdateForm({ action: 'update_sala', sala_id: id, code: document.getElementById('edit-code').value, capacity: document.getElementById('edit-capacity').value, is_computer_lab: document.getElementById('edit-is_computer_lab').checked ? '1' : '0' });
+                };
+            } else {
+                
+                if (entity === 'dogadjaj') {
+                    title.textContent = 'Uredi događaj';
+                    const payloadRaw = b.getAttribute('data-payload') || '{}';
+                    let payload = {};
+                    try { payload = JSON.parse(payloadRaw); } catch (err) { console.error('Invalid payload', err); }
+
+                    const courses = window.adminData ? window.adminData.courses : [];
+                    const professors = window.adminData ? window.adminData.professors : [];
+                    const rooms = window.adminData ? window.adminData.rooms : [];
+
+                    const isOnline = payload.is_online == 1 || payload.is_online === '1' || payload.is_online === true;
+
+                    const courseOptions = courses.map(c => `<option value="${c.id}" ${c.id == payload.course_id ? 'selected' : ''}>${c.name} (${c.code})</option>`).join('');
+                    const profOptions = professors.map(p => `<option value="${p.id}" ${p.id == payload.professor_id ? 'selected' : ''}>${p.full_name} (${p.email})</option>`).join('');
+                    const roomOptions = rooms.map(r => `<option value="${r.id}" ${r.id == payload.room_id ? 'selected' : ''}>${r.code} (kap: ${r.capacity})</option>`).join('');
+
+                    body.innerHTML = `
+                        <label>Predmet:</label>
+                        <select id="edit-course_id" style="width:100%;">${courseOptions}</select>
+                        <label style="margin-top:8px;display:block;">Profesor:</label>
+                        <select id="edit-professor_id" style="width:100%;">${profOptions}</select>
+                        <label style="margin-top:8px;display:block;">Tip:</label>
+                        <select id="edit-type" style="width:100%;">
+                            <option value="EXAM" ${payload.type === 'EXAM' ? 'selected' : ''}>Ispit</option>
+                            <option value="COLLOQUIUM" ${payload.type === 'COLLOQUIUM' ? 'selected' : ''}>Kolokvijum</option>
+                        </select>
+                        <label style="margin-top:8px;display:block;">Početak:</label>
+                        <input type="datetime-local" id="edit-starts_at" value="${payload.starts_at ? payload.starts_at.replace(' ', 'T') : ''}" style="width:100%;" />
+                        <label style="margin-top:8px;display:block;">Kraj:</label>
+                        <input type="datetime-local" id="edit-ends_at" value="${payload.ends_at ? payload.ends_at.replace(' ', 'T') : ''}" style="width:100%;" />
+                        <label style="margin-top:8px;display:block;"><input type="checkbox" id="edit-is_online" ${isOnline ? 'checked' : ''} /> Online događaj</label>
+                        <div id="edit-room-selection" style="display:${isOnline ? 'none' : 'block'}; margin-top:8px;">
+                            <label>Sala:</label>
+                            <select id="edit-room_id" style="width:100%;">${roomOptions}</select>
+                        </div>
+                        <label style="margin-top:8px;display:block;">Napomene:</label>
+                        <textarea id="edit-notes" rows="3" style="width:100%;">${payload.notes || ''}</textarea>
+                        <label style="margin-top:8px;display:block;"><input type="checkbox" id="edit-is_published" ${payload.is_published ? 'checked' : ''} /> Objavljeno</label>
+                    `;
+
+                    // toggle room selection on change
+                    setTimeout(() => {
+                        const onlineChk = document.getElementById('edit-is_online');
+                        const roomSel = document.getElementById('edit-room-selection');
+                        if (onlineChk && roomSel) {
+                            onlineChk.addEventListener('change', () => { roomSel.style.display = onlineChk.checked ? 'none' : 'block'; });
+                        }
+                    }, 0);
+
+                    editModal.style.display = 'flex';
+                    document.getElementById('admin-edit-save').onclick = function() {
+                        const d = {
+                            action: 'update_dogadjaj',
+                            dogadjaj_id: payload.id,
+                            event_professor_id: payload.event_professor_id || '',
+                            course_id: document.getElementById('edit-course_id').value,
+                            professor_id: document.getElementById('edit-professor_id').value,
+                            type: document.getElementById('edit-type').value,
+                            starts_at: document.getElementById('edit-starts_at').value,
+                            ends_at: document.getElementById('edit-ends_at').value,
+                            is_online: document.getElementById('edit-is_online').checked ? '1' : '0',
+                            room_id: document.getElementById('edit-room_id') ? document.getElementById('edit-room_id').value : '',
+                            notes: document.getElementById('edit-notes').value,
+                            is_published: document.getElementById('edit-is_published').checked ? '1' : '0'
+                        };
+                        submitUpdateForm(d);
+                    };
+                    return;
+                }
+                alert('Nepodržan entitet za uređivanje: ' + entity);
+            }
+        });
+    });
 });

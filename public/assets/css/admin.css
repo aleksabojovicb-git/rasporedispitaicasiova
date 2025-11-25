@@ -163,11 +163,12 @@ tr:hover {
     font-size: 15px;
     box-shadow: var(--shadow);
     width: 450px;
+    transition: opacity 0.4s ease, transform 0.35s ease;
 }
 
 .success {
     background: var(--accent);
-    color: var(--accent);
+    color: #ffffff; 
 }
 
 .error {
