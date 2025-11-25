@@ -275,6 +275,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 const code = b.getAttribute('data-code') || '';
                 const semester = b.getAttribute('data-semester') || '';
                 const is_optional = b.getAttribute('data-is_optional') === '1';
+                // Build basic fields
                 body.innerHTML = `
                     <label>Naziv:</label>
                     <input type="text" id="edit-name" value="${name}" style="width:100%;" />
@@ -283,10 +284,98 @@ document.addEventListener('DOMContentLoaded', function() {
                     <label style="margin-top:8px;display:block;">Semestar:</label>
                     <input type="number" id="edit-semester" value="${semester}" min="1" max="6" style="width:100%;" />
                     <label style="margin-top:8px;display:block;"><input type="checkbox" id="edit-is_optional" ${is_optional ? 'checked' : ''} /> Izborni predmet</label>
+                    <div id="edit-professors-container" style="margin-top:10px;"></div>
                 `;
+
+                // Populate professor change controls based on data-professors payload
+                try {
+                    const profsPayloadRaw = b.getAttribute('data-professors') || '[]';
+                    const assigned = JSON.parse(profsPayloadRaw);
+                    const allProfessors = (window.adminData && window.adminData.professors) ? window.adminData.professors : [];
+
+                    function buildOptions(selectedId) {
+                        return allProfessors.map(p => `<option value="${p.id}" ${p.id == selectedId ? 'selected' : ''}>${p.full_name} (${p.email})</option>`).join('');
+                    }
+
+                    const container = document.getElementById('edit-professors-container');
+
+                    if (assigned.length === 0) {
+                        // No professor assigned -> show nothing (as requested)
+                        container.innerHTML = '';
+                    } else if (assigned.length === 1) {
+                        const a = assigned[0];
+                        const label = a.is_assistant ? 'Promijeni asistenta:' : 'Promijeni profesora:';
+                        container.innerHTML = `
+                            <label style="display:block; margin-top:8px;">${label}</label>
+                            <select id="edit-prof-1" style="width:100%;">${buildOptions(a.id)}</select>
+                        `;
+                    } else {
+                        // two assigned: find professor (is_assistant=0) and assistant (is_assistant=1)
+                        let prof = assigned.find(x => x.is_assistant == 0) || assigned[0];
+                        let asst = assigned.find(x => x.is_assistant == 1) || assigned[1] || assigned[0];
+                        container.innerHTML = `
+                            <label style="display:block; margin-top:8px;">Promijeni profesora:</label>
+                            <select id="edit-prof-1" style="width:100%;">${buildOptions(prof.id)}</select>
+                            <label style="display:block; margin-top:8px;">Promijeni asistenta:</label>
+                            <select id="edit-prof-2" style="width:100%;">${buildOptions(asst.id)}</select>
+                        `;
+
+                        // Prevent selecting same person in both selects (basic client-side guard)
+                        setTimeout(() => {
+                            const s1 = document.getElementById('edit-prof-1');
+                            const s2 = document.getElementById('edit-prof-2');
+                            if (s1 && s2) {
+                                function syncDisable() {
+                                    const v1 = s1.value;
+                                    const v2 = s2.value;
+                                    // no disabling needed; we'll validate on save
+                                }
+                                s1.addEventListener('change', syncDisable);
+                                s2.addEventListener('change', syncDisable);
+                            }
+                        }, 0);
+                    }
+                } catch (err) {
+                    console.error('Ne mogu parsirati podatke o profesorima za predmet', err);
+                }
+
                 editModal.style.display = 'flex';
                 document.getElementById('admin-edit-save').onclick = function() {
-                    submitUpdateForm({ action: 'update_predmet', course_id: id, name: document.getElementById('edit-name').value, code: document.getElementById('edit-code').value, semester: document.getElementById('edit-semester').value, is_optional: document.getElementById('edit-is_optional').checked ? '1' : '0' });
+                    // Collect basic fields
+                    const payload = {
+                        action: 'update_predmet',
+                        course_id: id,
+                        name: document.getElementById('edit-name').value,
+                        code: document.getElementById('edit-code').value,
+                        semester: document.getElementById('edit-semester').value,
+                        is_optional: document.getElementById('edit-is_optional').checked ? '1' : '0'
+                    };
+
+                    // Collect professor assignments if present in modal
+                    const profContainer = document.getElementById('edit-professors-container');
+                    if (profContainer) {
+                        const sel1 = document.getElementById('edit-prof-1');
+                        const sel2 = document.getElementById('edit-prof-2');
+                        const assignments = [];
+                        if (sel1 && !sel2) {
+                            // single assignment - keep original role if possible; determine role by label
+                            const label = profContainer.querySelector('label');
+                            const isAssistant = (label && label.textContent && label.textContent.toLowerCase().includes('asistent')) ? 1 : 0;
+                            if (!sel1.value) { alert('Izaberite profesora'); return; }
+                            assignments.push({ professor_id: sel1.value, is_assistant: isAssistant });
+                        } else if (sel1 && sel2) {
+                            if (!sel1.value || !sel2.value) { alert('Oba polja za profesora i asistenta moraju biti popunjena'); return; }
+                            if (sel1.value === sel2.value) { alert('Profesor i asistent ne mogu biti ista osoba'); return; }
+                            assignments.push({ professor_id: sel1.value, is_assistant: 0 });
+                            assignments.push({ professor_id: sel2.value, is_assistant: 1 });
+                        }
+
+                        if (assignments.length > 0) {
+                            payload.prof_assignments = JSON.stringify(assignments);
+                        }
+                    }
+
+                    submitUpdateForm(payload);
                 };
             } else if (entity === 'sala') {
                 title.textContent = 'Uredi salu';
