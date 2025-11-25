@@ -3,11 +3,13 @@ body {
     margin: 0;
     font-family: Arial, sans-serif;
     background: #f0f4ff;
+    -webkit-font-smoothing: antialiased;
 }
 
 /* HERO SECTION */
 .hero {
-    height: 100vh;
+    /* Убрана фиксированная высота 100vh, заменена на адаптивную */
+    min-height: 60vh;
     background: linear-gradient(rgba(0, 30, 80, 0.7), rgba(0, 30, 80, 0.8)), url('../../img/banner.jpg') center/cover no-repeat;
     display: flex;
     flex-direction: column;
@@ -15,11 +17,14 @@ body {
     justify-content: center;
     text-align: center;
     color: white;
-    padding: 0 20px;
+    padding: 56px 20px; /* добавлены внутренние отступы, чтобы содержимое не вылезало */
+    box-sizing: border-box;
+    position: relative;
 }
 
 .hero h1 {
-    font-size: 58px;
+    /* адаптивный размер заголовка */
+    font-size: clamp(28px, 6vw, 58px);
     margin: 0;
     font-weight: 800;
     letter-spacing: 2px;
@@ -28,27 +33,32 @@ body {
 /* Logo inside hero */
 #hero-logo {
     display: block;
-    margin: 0 auto 24px;
-    width: min(420px, 45vw);
+    margin: 0 auto 20px;
+    /* адаптивная ширина: не меньше 100px, не больше 420px */
+    width: clamp(100px, 35vw, 420px);
     height: auto;
+    z-index: 2; /* логотип поверх фонового изображения, но в потоке */
 }
 
 .hero p {
-    font-size: 22px;
+    font-size: clamp(16px, 2.8vw, 22px);
     max-width: 700px;
-    margin-top: 20px;
+    margin-top: 16px;
 }
 
 .hero-btns {
-    margin-top: 30px;
+    margin-top: 26px;
     display: flex;
-    gap: 20px;
+    gap: 16px;
+    flex-wrap: wrap; /* разрешаем перенос кнопок при узком экране */
+    justify-content: center;
+    z-index: 2;
 }
 
 .btn {
-    padding: 14px 28px;
+    padding: 12px 22px;
     border-radius: 10px;
-    font-size: 18px;
+    font-size: 16px;
     cursor: pointer;
     border: none;
     transition: 0.25s;
@@ -56,6 +66,8 @@ body {
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    box-sizing: border-box;
+    min-width: 140px; /* предотвращаем слишком узкие кнопки */
 }
 
 .btn-blue {
@@ -124,4 +136,13 @@ footer {
     background: #002a61;
     color: white;
     margin-top: 50px;
+}
+
+/* Responsive tweaks */
+@media (max-width: 480px) {
+    .hero {
+        padding-top: 40px;
+        padding-bottom: 40px;
+    }
+    .btn { min-width: 120px; padding: 10px 16px; font-size: 15px; }
 }
