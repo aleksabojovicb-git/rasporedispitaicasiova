@@ -1,9 +1,15 @@
 <?php
 session_start();
 $professorPanelHref = './authorization.php';
-if (isset($_SESSION['user_id'], $_SESSION['professor_id'])) {
+if (isset($_SESSION['user_id'])) {
     $professorPanelHref = './profesor_profile.php';
 }
+if(isset($_SESSION['role'])){
+    if($_SESSION['role']==='ADMIN'){
+        $professorPanelHref = './admin_panel.php';
+    }
+}
+
 ?>
 <!DOCTYPE html>
 <html lang="sr">
