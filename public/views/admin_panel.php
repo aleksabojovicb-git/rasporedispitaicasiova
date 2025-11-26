@@ -495,7 +495,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <li><a href="?page=predmeti">Predmeti</a></li>
             <li><a href="?page=dogadjaji">Događaji</a></li>
             <li><a href="?page=sale">Sale</a></li>
-            <li><a href="?logout=true">Rasporedi</a></li>
+            <li><a href="?page=logout">Rasporedi</a></li>
+            <li><a href="logout.php">Odjavi se</a></li>
         </ul>
     </nav>
 </header>
