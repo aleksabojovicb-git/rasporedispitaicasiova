@@ -108,6 +108,69 @@ input, select, textarea {
     font-size: 14px;
 }
 
+/* keep checkboxes and radios their natural size (do not stretch) */
+input[type="checkbox"],
+input[type="radio"] {
+    width: auto;
+    display: inline-block;
+    margin-right: 8px;
+    vertical-align: middle;
+    margin-bottom: 0;
+    transform: none;
+}
+
+/* modal dialog specific styles (editor modal) */
+.aem-dialog label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 600;
+}
+.aem-dialog input[type="text"],
+.aem-dialog input[type="number"],
+.aem-dialog select,
+.aem-dialog textarea {
+    width: 100%;
+}
+
+/* modal dialog specific layout fixes */
+.aem-dialog form {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+}
+
+/* ensure modal dialog content is left-aligned */
+.aem-dialog {
+    text-align: left;
+}
+
+/* make checkbox-row full width and left aligned inside modal */
+.aem-dialog .checkbox-row {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 8px;
+    margin: 6px 0 12px 0;
+}
+
+/* ensure checkbox row has no auto margins and inputs inside it don't center */
+.aem-dialog .checkbox-row input[type="checkbox"] {
+    margin-left: 0;
+}
+
+/* make number inputs compact inside modal */
+.aem-dialog input[type="number"] {
+    width: 120px;
+}
+
+/* ensure checkbox-only row stays left */
+.aem-dialog .checkbox-row {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+}
+
 
 form button[type="submit"] {
     background: var(--correct);
@@ -156,23 +219,26 @@ tr:hover {
 
 
 .success, .error {
-    padding: 15px;
+    padding: 12px 16px;
     border-radius: var(--radius);
     margin-bottom: 20px;
-    font-size: 15px;
+    font-size: 14px;
     box-shadow: var(--shadow);
-    width: 450px;
-    transition: opacity 0.4s ease, transform 0.35s ease;
+    max-width: 450px;
+    width: 100%;
+    box-sizing: border-box;
 }
 
 .success {
     background: var(--accent);
-    color: #ffffff; 
+    /* ensure readable contrast */
+    color: #ffffff;
 }
 
 .error {
     background: var(--danger);
-    color: var(--danger);
+    /* ensure readable contrast */
+    color: #ffffff;
 }
 
 
