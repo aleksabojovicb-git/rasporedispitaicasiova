@@ -274,8 +274,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <form id="signin" class="stack" autocomplete="on" novalidate method="post">
           <input type="hidden" name="form_type" value="signin" />
           <div class="field">
-            <label for="si-email">Email or username</label>
-            <input type="text" id="si-email" name="email" inputmode="email" placeholder="you@example.com or username" value="<?php echo htmlspecialchars($signinEmailValue); ?>" required />
+            <label for="si-email">Email</label>
+            <input type="text" id="si-email" name="email" inputmode="email" placeholder="you@example.com" value="<?php echo htmlspecialchars($signinEmailValue); ?>" required />
             <p class="error" data-error-for="si-email"></p>
           </div>
           <div class="field pwd-wrap">
