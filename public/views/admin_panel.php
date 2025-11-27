@@ -69,8 +69,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     $stmt = $pdo->prepare("INSERT INTO academic_event 
                                           (course_id, created_by_professor, type_enum, starts_at, ends_at, 
-                                           is_online, room_id, notes, is_published, is_canceled, locked_by_admin) 
-                                          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, FALSE, FALSE)");
+                                           is_online, room_id, notes, is_published, locked_by_admin) 
+                                          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, FALSE)");
                     $stmt->execute([$course_id, $professor_id, $type, $starts_at, $ends_at,
                         $is_online, $room_id, $notes, $is_published]);
 
@@ -107,6 +107,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 break;
 
+            case 'activate_professor':
+                if (isset($_POST['id']) && is_numeric($_POST['id'])) {
+                    $id = (int)$_POST['id'];
+                    try {
+                        $stmt = $pdo->prepare("UPDATE professor SET is_active = TRUE WHERE id = ?");
+                        $stmt->execute([$id]);
+                        header("Location: ?page=profesori&success=1&message=" . urlencode("Profesor je uspješno aktiviran."));
+                        exit;
+                    } catch (PDOException $e) {
+                        $error = "Greška pri aktiviranju profesora: " . $e->getMessage();
+                    }
+                }
+                break;
+
             case 'delete_predmet':
                 if (isset($_POST['id']) && is_numeric($_POST['id'])) {
                     $id = (int)$_POST['id'];
@@ -123,6 +137,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 break;
 
+            case 'activate_predmet':
+                if (isset($_POST['id']) && is_numeric($_POST['id'])) {
+                    $id = (int)$_POST['id'];
+                    try {
+                        $stmt = $pdo->prepare("UPDATE course SET is_active = TRUE WHERE id = ?");
+                        $stmt->execute([$id]);
+                        header("Location: ?page=predmeti&success=1&message=" . urlencode("Predmet je uspješno aktiviran."));
+                        exit;
+                    } catch (PDOException $e) {
+                        $error = "Greška pri aktiviranju predmeta: " . $e->getMessage();
+                    }
+                }
+                break;
+
             case 'delete_sala':
                 if (isset($_POST['id']) && is_numeric($_POST['id'])) {
                     $id = (int)$_POST['id'];
@@ -135,6 +163,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         exit;
                     } catch (PDOException $e) {
                         $error = "Greška pri deaktiviranju sale: " . $e->getMessage();
+                    }
+                }
+                break;
+
+            case 'activate_sala':
+                if (isset($_POST['id']) && is_numeric($_POST['id'])) {
+                    $id = (int)$_POST['id'];
+                    try {
+                        $stmt = $pdo->prepare("UPDATE room SET is_active = TRUE WHERE id = ?");
+                        $stmt->execute([$id]);
+                        header("Location: ?page=sale&success=1&message=" . urlencode("Sala je uspješno aktivirana."));
+                        exit;
+                    } catch (PDOException $e) {
+                        $error = "Greška pri aktiviranju sale: " . $e->getMessage();
                     }
                 }
                 break;
@@ -258,28 +300,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 echo "<td>" . htmlspecialchars($row['full_name']) . "</td>";
                 echo "<td>" . htmlspecialchars($row['email']) . "</td>";
                 echo "<td>" . ($row['is_active'] ? 'Aktivan' : 'Neaktivan') . "</td>";
-                echo "<td>
-                        <button class='action-button edit-button'>Uredi</button>";
+                echo "<td class='cell-actions'>
+                        <div class='actions-inner'>
+                          <div class='actions-left'>
+                            <button class='action-button edit-button'>Uredi</button>
+                          </div>
+                          <div class='actions-right'>";
 
                 // Ako je profesor neaktivan ne moze imati deaktiviraj dugme
                 if ($row['is_active']) {
-                    echo "<form id='delete-profesor-{$row['id']}' style='display:inline' method='post' action='{$_SERVER['PHP_SELF']}'>
-                            <input type='hidden' name='action' value='delete_professor'>
-                            <input type='hidden' name='id' value='{$row['id']}'>
-                            <button type='button' class='action-button delete-button' onclick=\"submitDeleteForm({$row['id']}, 'delete_professor', 'profesor')\">Deaktiviraj</button>
-                        </form>";
+                    echo "<form id='delete-profesor-{$row['id']}' method='post' action='{$_SERVER['PHP_SELF']}'>";
+                    echo "<input type='hidden' name='action' value='delete_professor'>";
+                    echo "<input type='hidden' name='id' value='{$row['id']}'>";
+                    echo "<button type='button' class='action-button delete-button' onclick=\"submitDeleteForm({$row['id']}, 'delete_professor', 'profesor')\">Deaktiviraj</button>";
+                    echo "</form>";
+                } else {
+                    // show activate button for inactive professor
+                    echo "<form id='activate-profesor-{$row['id']}' method='post' action='{$_SERVER['PHP_SELF']}'>";
+                    echo "<input type='hidden' name='action' value='activate_professor'>";
+                    echo "<input type='hidden' name='id' value='{$row['id']}'>";
+                    echo "<button type='submit' class='action-button activate-button'>Aktiviraj</button>";
+                    echo "</form>";
                 }
 
-                echo "</td>";
-                echo "</tr>";
-            }
-        } catch (PDOException $e) {
-            echo "<tr><td colspan='5'>Greška pri dohvaćanju profesora: " . $e->getMessage() . "</td></tr>";
-        }
-        echo "</table>";
-        break;
-        case 'predmeti':
-        ?>
+                // close actions-right / actions-inner / td
+                echo "</div></div></td>";
+                 echo "</tr>";
+             }
+         } catch (PDOException $e) {
+             echo "<tr><td colspan='5'>Greška pri dohvaćanju profesora: " . $e->getMessage() . "</td></tr>";
+         }
+         echo "</table>";
+         break;
+         case 'predmeti':
+         ?>
 
         <h2>Upravljanje Predmetima</h2>
         <button class="action-button add-button" onclick="toggleForm('predmetForm')">+ Dodaj Predmet</button>
@@ -324,19 +378,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     echo "<td>" . htmlspecialchars($row['code']) . "</td>";
                     echo "<td>" . htmlspecialchars($row['semester']) . "</td>";
                     echo "<td>" . ($row['is_active'] ? 'Aktivan' : 'Neaktivan') . "</td>";
-                    echo "<td>
-                        <button class='action-button edit-button'>Uredi</button>";
+                    echo "<td class='cell-actions'>
+                        <div class='actions-inner'>
+                          <div class='actions-left'>
+                            <button class='action-button edit-button'>Uredi</button>
+                          </div>
+                          <div class='actions-right'>";
 
                     // Ako je predmet neaktivan ne moze imati deaktiviraj dugme
                     if ($row['is_active']) {
-                        echo "<form id='delete-predmet-{$row['id']}' style='display:inline' method='post' action='{$_SERVER['PHP_SELF']}'>
-                            <input type='hidden' name='action' value='delete_predmet'>
-                            <input type='hidden' name='id' value='{$row['id']}'>
-                            <button type='button' class='action-button delete-button' onclick=\"submitDeleteForm({$row['id']}, 'delete_predmet', 'predmet')\">Deaktiviraj</button>
-                        </form>";
+                        echo "<form id='delete-predmet-{$row['id']}' method='post' action='{$_SERVER['PHP_SELF']}'>";
+                        echo "<input type='hidden' name='action' value='delete_predmet'>";
+                        echo "<input type='hidden' name='id' value='{$row['id']}'>";
+                        echo "<button type='button' class='action-button delete-button' onclick=\"submitDeleteForm({$row['id']}, 'delete_predmet', 'predmet')\">Deaktiviraj</button>";
+                        echo "</form>";
+                    }
+                    else {
+                        // show activate button for inactive course
+                        echo "<form id='activate-predmet-{$row['id']}' method='post' action='{$_SERVER['PHP_SELF']}'>";
+                        echo "<input type='hidden' name='action' value='activate_predmet'>";
+                        echo "<input type='hidden' name='id' value='{$row['id']}'>";
+                        echo "<button type='submit' class='action-button activate-button'>Aktiviraj</button>";
+                        echo "</form>";
                     }
 
-                    echo "</td>";
+                    // close actions-right / actions-inner / td
+                    echo "</div></div></td>";
+
                     echo "</tr>";
                 }
             } catch (PDOException $e) {
@@ -461,11 +529,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         echo "<td>" . date('d.m.Y H:i', strtotime($row['starts_at'])) . "</td>";
                         echo "<td>" . date('d.m.Y H:i', strtotime($row['ends_at'])) . "</td>";
                         echo "<td>" . ($row['is_online'] ? 'Online' : htmlspecialchars($row['room_code'])) . "</td>";
-                        echo "<td>" . ($row['is_canceled'] ? 'Otkazan' : ($row['is_published'] ? 'Objavljen' : 'Neobjavljeno')) . "</td>";
+                        echo "<td>" . ($row['is_published'] ? 'Objavljen' : 'Neobjavljeno') . "</td>";
                         echo "<td>" . htmlspecialchars($row['notes']) . "</td>";
-                        echo "<td>
+                        echo "<td class='cell-actions'>
                         <button class='action-button edit-button'>Uredi</button> 
-                        <form id='delete-dogadjaj-{$row['id']}' style='display:inline' method='post' action='{$_SERVER['PHP_SELF']}'>
+                        <form id='delete-dogadjaj-{$row['id']}' method='post' action='{$_SERVER['PHP_SELF']}'>
                             <input type='hidden' name='action' value='delete_dogadjaj'>
                             <input type='hidden' name='id' value='{$row['id']}'>
                             <button type='button' class='action-button delete-button' onclick=\"submitDeleteForm({$row['id']}, 'delete_dogadjaj', 'dogadjaj')\">Obriši</button>
@@ -522,19 +590,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             echo "<td>" . htmlspecialchars($row['capacity']) . "</td>";
                             echo "<td>" . ($row['is_computer_lab'] ? 'Računarska' : 'Standardna') . "</td>";
                             echo "<td>" . ($row['is_active'] ? 'Aktivna' : 'Neaktivna') . "</td>";
-                            echo "<td>
+                            echo "<td class='cell-actions'>
                         <button class='action-button edit-button'>Uredi</button>";
 
                             // Ako je sala neaktivna ne moze imati deaktiviraj dugme
                             if ($row['is_active']) {
-                                echo "<form id='delete-sala-{$row['id']}' style='display:inline' method='post' action='{$_SERVER['PHP_SELF']}'>
-                            <input type='hidden' name='action' value='delete_sala'>
-                            <input type='hidden' name='id' value='{$row['id']}'>
-                            <button type='button' class='action-button delete-button' onclick=\"submitDeleteForm({$row['id']}, 'delete_sala', 'salu')\">Deaktiviraj</button>
-                        </form>";
+                                echo "<form id='delete-sala-{$row['id']}' method='post' action='{$_SERVER['PHP_SELF']}'>";
+                                echo "<input type='hidden' name='action' value='delete_sala'>";
+                                echo "<input type='hidden' name='id' value='{$row['id']}'>";
+                                echo "<button type='button' class='action-button delete-button' onclick=\"submitDeleteForm({$row['id']}, 'delete_sala', 'salu')\">Deaktiviraj</button>";
+                                echo "</form>";
+                            }
+                            else {
+                                // show activate button for inactive room
+                                echo "<form id='activate-sala-{$row['id']}' method='post' action='{$_SERVER['PHP_SELF']}'>";
+                                echo "<input type='hidden' name='action' value='activate_sala'>";
+                                echo "<input type='hidden' name='id' value='{$row['id']}'>";
+                                echo "<button type='submit' class='action-button activate-button'>Aktiviraj</button>";
+                                echo "</form>";
                             }
 
-                            echo "</td>";
+                            // close actions-right / actions-inner / td
+                            echo "</div></div></td>";
+
                             echo "</tr>";
                         }
                     } catch (PDOException $e) {
