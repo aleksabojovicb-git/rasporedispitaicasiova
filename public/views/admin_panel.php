@@ -89,6 +89,58 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $error = "Greška pri dodavanju događaja: " . $e->getMessage();
                 }
                 break;
+                
+            case 'assign_professor':
+                // Pridruživanje profesora predmetu
+                $course_id = isset($_POST['course_id']) ? (int)$_POST['course_id'] : 0;
+                $professor_id = isset($_POST['professor_id']) ? (int)$_POST['professor_id'] : 0;
+                $is_assistant = isset($_POST['is_assistant']) ? 1 : 0;
+
+                if ($course_id <= 0 || $professor_id <= 0) {
+                    $error = "Morate izabrati i predmet i profesora.";
+                    break;
+                }
+
+                try {
+                    // Provjeri postojeće veze za predmet
+                    $stmt = $pdo->prepare("SELECT professor_id, is_assistant FROM course_professor WHERE course_id = ?");
+                    $stmt->execute([$course_id]);
+                    $existing = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+                    // Ako je profesor već pridružen - zabranjeno
+                    foreach ($existing as $ex) {
+                        if ((int)$ex['professor_id'] === $professor_id) {
+                            $error = "Odabrani profesor je već pridružen ovom predmetu.";
+                            break 2;
+                        }
+                    }
+
+                    $count = count($existing);
+
+                    if ($count >= 2) {
+                        $error = "Na predmetu već postoje dva predavača. Ne možete dodati trećeg.";
+                        break;
+                    }
+
+                    if ($count === 1) {
+                        $existingRole = (int)$existing[0]['is_assistant'];
+                        // Ako bi nastala dva ista tipa (dva profesora ili dva asistenta) - zabranjeno
+                        if ($existingRole === $is_assistant) {
+                            $error = "Ako postoje dva predavača, moraju biti profesor i asistent (ne mogu biti oba ista uloga).";
+                            break;
+                        }
+                    }
+
+                    // Ubaci vezu (role_enum ima podrazumijevanu vrijednost u bazi)
+                    $stmt = $pdo->prepare("INSERT INTO course_professor (course_id, professor_id, is_assistant) VALUES (?, ?, ?)");
+                    $stmt->execute([$course_id, $professor_id, $is_assistant]);
+
+                    header("Location: ?page=predmeti&success=1&message=" . urlencode("Profesor je uspješno pridružen predmetu."));
+                    exit;
+                } catch (PDOException $e) {
+                    $error = "Greška pri povezivanju profesora i predmeta: " . $e->getMessage();
+                }
+                break;
 
             case 'assign_professor':
                 // Pridruživanje profesora predmetu
