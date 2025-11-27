@@ -21,6 +21,9 @@ try {
     exit;
 }
 
+// Return PDO instance for callers
+return $pdo;
+
 // $sql = "SELECT * FROM faculty";
 // $stmt = $pdo->query($sql);
 
