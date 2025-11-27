@@ -1,5 +1,3 @@
-
-
 body {
     background: var(--bg);
     color: var(--text);
@@ -164,11 +162,19 @@ tr:hover {
     font-size: 15px;
     box-shadow: var(--shadow);
     width: 450px;
+<<<<<<< HEAD
+=======
+    transition: opacity 0.4s ease, transform 0.35s ease;
+>>>>>>> origin/main
 }
 
 .success {
     background: var(--accent);
+<<<<<<< HEAD
     color: var(--accent);
+=======
+    color: #ffffff; 
+>>>>>>> origin/main
 }
 
 .error {

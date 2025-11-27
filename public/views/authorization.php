@@ -1,8 +1,20 @@
 <?php
 session_start();
-require '../../config/dbconnection.php';
+// Load PDO instance from config. The file now returns the PDO.
+$pdo = require '../../config/dbconnection.php';
 
-if (isset($_SESSION['user_id'], $_SESSION['professor_id'])) {
+// Runtime guard to ensure $pdo exists and is PDO
+if (!isset($pdo) || !($pdo instanceof PDO)) {
+    // short English comment: ensure DB connection
+    throw new RuntimeException('Missing or invalid PDO instance from config/dbconnection.php');
+}
+
+// If already logged in, redirect by role
+if (isset($_SESSION['user_id'])) {
+    if (isset($_SESSION['role']) && $_SESSION['role'] === 'ADMIN') {
+        header('Location: ./admin_panel.php');
+        exit;
+    }
     header('Location: ./profesor_profile.php');
     exit;
 }
@@ -28,6 +40,130 @@ function buildUsernameFromFullName(string $fullName): string
     return $first . '.' . $last;
 }
 
+//Signup validation
+function validateSignup(PDO $pdo, string $email, string $password, string $confirm): array
+{
+    if ($email === '' || $password === '' || $confirm === '') {
+        return ['error' => "Sva polja su obavezna."];
+    }
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        return ['error' => "Unesite validnu email adresu."];
+    }
+    if (strlen($password) < 8) {
+        return ['error' => "Lozinka mora imati najmanje 8 karaktera."];
+    }
+    if ($password !== $confirm) {
+        return ['error' => "Lozinke se ne poklapaju."];
+    }
+
+    //  One query professor + existing user_account
+    $stmt = $pdo->prepare(
+        "SELECT p.id, p.full_name, p.is_active, ua.id AS user_id
+         FROM professor p
+         LEFT JOIN user_account ua ON ua.professor_id = p.id
+         WHERE p.email = ?
+         LIMIT 1"
+    );
+    $stmt->execute([$email]);
+    $row = $stmt->fetch();
+
+    if (!$row || !$row['is_active']) {
+        return ['error' => "Nije se moguce registrovati ovom email adresom."];
+    }
+    if (!empty($row['user_id'])) {
+        return ['error' => "Nalog je već registrovan."];
+    }
+
+    return ['professor' => $row];
+}
+
+// Signin validation - find user by email or username and verify password
+function validateSignin(PDO $pdo, string $identifier, string $password): array
+{
+    $identifier = trim($identifier);
+    if ($identifier === '' || $password === '') {
+        return ['error' => 'Unesite email i lozinku.'];
+    }
+
+    // Try find by email (typical for professors)
+    $stmt = $pdo->prepare(
+        "SELECT 
+            ua.id AS user_id,
+            ua.username,
+            ua.password_hash,
+            ua.role_enum,
+            ua.is_active AS user_active,
+            p.id AS professor_id,
+            p.full_name,
+            p.email,
+            p.is_active AS professor_active
+        FROM user_account ua
+        JOIN professor p ON ua.professor_id = p.id
+        WHERE p.email = ?
+        LIMIT 1"
+    );
+    $stmt->execute([$identifier]);
+    $user = $stmt->fetch();
+
+    //If not found, try by username(admin only)
+    if (!$user) {
+        $stmt = $pdo->prepare(
+            "SELECT 
+                ua.id AS user_id,
+                ua.username,
+                ua.password_hash,
+                ua.role_enum,
+                ua.is_active AS user_active,
+                p.id AS professor_id,
+                p.full_name,
+                p.email,
+                p.is_active AS professor_active
+            FROM user_account ua
+            LEFT JOIN professor p ON ua.professor_id = p.id
+            WHERE ua.username = ? AND ua.role_enum = 'ADMIN'
+            LIMIT 1"
+        );
+        $stmt->execute([$identifier]);
+        $user = $stmt->fetch();
+    }
+
+    if (!$user) {
+        return ['error' => 'Pogrešan email ili lozinka.'];
+    }
+
+    //Check if account is active
+    if (empty($user['user_active'])) {
+        return ['error' => 'Račun nije aktivan. Kontaktirajte administratora.'];
+    }
+
+    // For non-admins require active professor
+    if ($user['role_enum'] !== 'ADMIN' && !empty($user['professor_id'])) {
+        if (empty($user['professor_active'])) {
+            return ['error' => 'Pogrešan email ili lozinka.'];
+        }
+    }
+
+    //Password check: password_verify, then md5/plain fallback
+    $hash = $user['password_hash'] ?? '';
+    $passwordOk = false;
+    if ($hash !== '' && password_verify($password, $hash)) {
+        $passwordOk = true;
+    } else {
+        // md5 fallback
+        if ($hash !== '' && strlen($hash) === 32 && strtolower($hash) === md5($password)) {
+            $passwordOk = true;
+        } elseif ($hash === $password) {
+            $passwordOk = true;
+        }
+    }
+
+    if (!$passwordOk) {
+        return ['error' => 'Pogrešan email ili lozinka.'];
+    }
+
+    return ['user' => $user];
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $formType = $_POST['form_type'] ?? '';
 
@@ -35,43 +171,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $signinEmailValue = trim($_POST['email'] ?? '');
         $password = $_POST['password'] ?? '';
 
-        if ($signinEmailValue === '' || $password === '') {
-            $signinError = "Unesite email i lozinku.";
+        // Use validateSignin function
+        $res = validateSignin($pdo, $signinEmailValue, $password);
+        if (!empty($res['error'])) {
+            $signinError = $res['error'];
         } else {
-            $stmt = $pdo->prepare("
-                SELECT 
-                    ua.id AS user_id,
-                    ua.password_hash,
-                    ua.role_enum,
-                    ua.is_active AS user_active,
-                    p.id AS professor_id,
-                    p.full_name,
-                    p.email,
-                    p.is_active AS professor_active
-                FROM user_account ua
-                JOIN professor p ON ua.professor_id = p.id
-                WHERE p.email = ?
-            ");
-            $stmt->execute([$signinEmailValue]);
-            $user = $stmt->fetch();
+            $user = $res['user'];
 
-            if (
-                !$user ||
-                !$user['user_active'] ||
-                !$user['professor_active'] ||
-                !password_verify($password, $user['password_hash'])
-            ) {
-                $signinError = "Pogrešan email ili lozinka.";
-            } else {
+            // If user is ADMIN -> redirect to admin panel
+            if (isset($user['role_enum']) && $user['role_enum'] === 'ADMIN') {
+                // set admin session (no professor_id)
                 $_SESSION['user_id'] = (int) $user['user_id'];
-                $_SESSION['professor_id'] = (int) $user['professor_id'];
-                $_SESSION['professor_email'] = $user['email'];
-                $_SESSION['professor_name'] = $user['full_name'];
+                $_SESSION['professor_id'] = null;
+                $_SESSION['professor_email'] = $user['email'] ?? null;
+                $_SESSION['professor_name'] = $user['full_name'] ?? ($user['username'] ?? 'Admin');
                 $_SESSION['role'] = $user['role_enum'];
 
-                header("Location: ./profesor_profile.php");
+                // short English comment: redirect admin
+                header("Location: ./admin_panel.php");
                 exit;
             }
+
+            //Set session for professors
+            $_SESSION['user_id'] = (int) $user['user_id'];
+            $_SESSION['professor_id'] = isset($user['professor_id']) && $user['professor_id'] !== null ? (int) $user['professor_id'] : null;
+            $_SESSION['professor_email'] = $user['email'] ?? null;
+            $_SESSION['professor_name'] = $user['full_name'] ?? ($user['username'] ?? 'User');
+            $_SESSION['role'] = $user['role_enum'] ?? null;
+
+            header("Location: ./profesor_profile.php");
+            exit;
         }
     } elseif ($formType === 'signup') {
         $activeTab = 'signup';
@@ -79,49 +208,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $password = $_POST['password'] ?? '';
         $confirmPassword = $_POST['confirm'] ?? '';
 
-        if ($signupEmailValue === '' || $password === '' || $confirmPassword === '') {
-            $signupError = "Sva polja su obavezna.";
-        } elseif (!filter_var($signupEmailValue, FILTER_VALIDATE_EMAIL)) {
-            $signupError = "Unesite validnu email adresu.";
-        } elseif (strlen($password) < 8) {
-            $signupError = "Lozinka mora imati najmanje 8 karaktera.";
-        } elseif ($password !== $confirmPassword) {
-            $signupError = "Lozinke se ne poklapaju.";
+        //Use validateSignup (returns 'error' or 'professor')
+        $validation = validateSignup($pdo, $signupEmailValue, $password, $confirmPassword);
+
+        if (!empty($validation['error'])) {
+            $signupError = $validation['error'];
         } else {
-            $stmt = $pdo->prepare("SELECT id, full_name, is_active FROM professor WHERE email = ?");
-            $stmt->execute([$signupEmailValue]);
-            $professor = $stmt->fetch();
+            $professor = $validation['professor'];
 
-            if (!$professor || !$professor['is_active']) {
-                $signupError = "Nije se moguce registrovati ovom email adresom.";
+            $username = buildUsernameFromFullName($professor['full_name']);
+            if ($username === '') {
+                $signupError = "Bug ako se unesu 2 prezimena. Podaci profesora nisu validni. Obratite se administratoru.";
             } else {
-                $stmt = $pdo->prepare("SELECT id FROM user_account WHERE professor_id = ?");
-                $stmt->execute([(int) $professor['id']]);
-                if ($stmt->fetch()) {
-                    $signupError = "Nalog je već registrovan.";
-                } else {
-                    $username = buildUsernameFromFullName($professor['full_name']);
-                    if ($username === '') {
-                        $signupError = "Bug ako se unesu 2 prezimena. Podaci profesora nisu validni. Obratite se administratoru.";
-                    } else {
-                        try {
-                            $stmt = $pdo->prepare("
-                                INSERT INTO user_account (username, password_hash, role_enum, is_active, professor_id)
-                                VALUES (?, ?, 'PROFESSOR', TRUE, ?)
-                            ");
-                            $stmt->execute([
-                                $username,
-                                password_hash($password, PASSWORD_DEFAULT),
-                                (int) $professor['id']
-                            ]);
+                try {
+                    $stmt = $pdo->prepare(
+                        "INSERT INTO user_account (username, password_hash, role_enum, is_active, professor_id)\n                        VALUES (?, ?, 'PROFESSOR', TRUE, ?)"
+                    );
+                    $stmt->execute([
+                        $username,
+                        password_hash($password, PASSWORD_DEFAULT),
+                        (int) $professor['id']
+                    ]);
 
-                            $signupSuccess = "Nalog je uspješno kreiran. Sada se možete prijaviti.";
-                            $signupError = null;
-                            $activeTab = 'signin';
-                        } catch (PDOException $e) {
-                            $signupError = "Greška pri kreiranju naloga: " . $e->getMessage();
-                        }
-                    }
+                    $signupSuccess = "Nalog je uspješno kreiran. Sada se možete prijaviti.";
+                    $signupError = null;
+                    $activeTab = 'signin';
+                } catch (PDOException $e) {
+                    $signupError = "Greška pri kreiranju naloga: " . $e->getMessage();
                 }
             }
         }
@@ -161,8 +274,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <form id="signin" class="stack" autocomplete="on" novalidate method="post">
           <input type="hidden" name="form_type" value="signin" />
           <div class="field">
-            <label for="si-email">Email</label>
-            <input type="email" id="si-email" name="email" inputmode="email" placeholder="you@example.com" value="<?php echo htmlspecialchars($signinEmailValue); ?>" required />
+            <label for="si-email">Email or username</label>
+            <input type="text" id="si-email" name="email" inputmode="email" placeholder="you@example.com or username" value="<?php echo htmlspecialchars($signinEmailValue); ?>" required />
             <p class="error" data-error-for="si-email"></p>
           </div>
           <div class="field pwd-wrap">
