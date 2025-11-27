@@ -17,16 +17,10 @@ try {
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
     ]);
 } catch (PDOException $e) {
+    // short English comment: show connection error and stop
     echo "Greska pri konekciji: " . $e->getMessage();
     exit;
 }
 
-// $sql = "SELECT * FROM faculty";
-// $stmt = $pdo->query($sql);
-
-// $rows = $stmt->fetchAll();
-
-// foreach ($rows as $row) {
-//     print_r($row);
-//     echo "<br>";
-// }
+// short English comment: return PDO to caller
+return $pdo;
