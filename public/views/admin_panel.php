@@ -1163,34 +1163,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </tr>
                         <?php
                         try {
-                            $stmt = $pdo->query("SELECT ua.*, p.full_name as professor_name FROM user_account ua LEFT JOIN professor p ON ua.professor_id = p.id ORDER BY ua.id");
-                            while ($row = $stmt->fetch()) {
-                                echo "<tr>";
-                                echo "<td>" . htmlspecialchars($row['id']) . "</td>";
-                                echo "<td>" . htmlspecialchars($row['username']) . "</td>";
-                                echo "<td>" . htmlspecialchars($row['role_enum']) . "</td>";
-                                echo "<td>" . htmlspecialchars($row['professor_name']) . "</td>";
-                                echo "<td>" . ($row['is_active'] ? 'Aktivan' : 'Neaktivan') . "</td>";
-                                echo "<td>";
-                                // Edit button: rely on admin.js generic edit handler
-                                $dataAttr = htmlspecialchars(json_encode(['id' => (int)$row['id'], 'username' => $row['username'], 'role' => $row['role_enum'], 'professor_id' => $row['professor_id']]), ENT_QUOTES);
-                                echo "<button class='action-button edit-button' data-entity='account' data-payload='" . $dataAttr . "'>Uredi</button>";
-
-                                if ($row['is_active']) {
-                                    echo "<form style='display:inline' method='post' action='{$_SERVER['PHP_SELF']}'>
-                                        <input type='hidden' name='action' value='delete_account'>
-                                        <input type='hidden' name='id' value='" . $row['id'] . "'>
-                                        <button type='button' class='action-button delete-button' onclick=\"submitDeleteForm({$row['id']}, 'delete_account', 'nalog')\">Deaktiviraj</button>
-                                    </form>";
+                            // Sada takođe biramo email povezane profesorke
+                            $stmt = $pdo->query("SELECT ua.*, p.full_name as professor_name, p.email as professor_email FROM user_account ua LEFT JOIN professor p ON ua.professor_id = p.id ORDER BY ua.id");
+                             while ($row = $stmt->fetch()) {
+                                 echo "<tr>";
+                                 echo "<td>" . htmlspecialchars($row['id']) . "</td>";
+                                 echo "<td>" . htmlspecialchars($row['username']) . "</td>";
+                                 echo "<td>" . htmlspecialchars($row['role_enum']) . "</td>";
+                                // Pokazujemo ime profesora i, ako postoji, njegov email
+                                $profDisplay = htmlspecialchars($row['professor_name']);
+                                if (!empty($row['professor_email'])) {
+                                    $profDisplay .= ' (' . htmlspecialchars($row['professor_email']) . ')';
                                 }
+                                echo "<td>" . $profDisplay . "</td>";
+                                 echo "<td>" . ($row['is_active'] ? 'Aktivan' : 'Neaktivan') . "</td>";
+                                 echo "<td>";
+                                 // Edit button: rely on admin.js generic edit handler
+                                 $dataAttr = htmlspecialchars(json_encode(['id' => (int)$row['id'], 'username' => $row['username'], 'role' => $row['role_enum'], 'professor_id' => $row['professor_id']]), ENT_QUOTES);
+                                 echo "<button class='action-button edit-button' data-entity='account' data-payload='" . $dataAttr . "'>Uredi</button>";
 
-                                echo "</td>";
-                                echo "</tr>";
-                            }
-                        } catch (PDOException $e) {
-                            echo "<tr><td colspan='6'>Greška pri dohvaćanju naloga: " . $e->getMessage() . "</td></tr>";
-                        }
-                        ?>
+                                 if ($row['is_active']) {
+                                     echo "<form style='display:inline' method='post' action='{$_SERVER['PHP_SELF']}'>";
+                                     echo "<input type='hidden' name='action' value='delete_account'>";
+                                     echo "<input type='hidden' name='id' value='" . $row['id'] . "'>";
+                                     echo "<button type='button' class='action-button delete-button' onclick=\"submitDeleteForm({$row['id']}, 'delete_account', 'nalog')\">Deaktiviraj</button>";
+                                     echo "</form>";
+                                 }
+
+                                 echo "</td>";
+                                 echo "</tr>";
+                             }
+                         } catch (PDOException $e) {
+                             echo "<tr><td colspan='6'>Greška pri dohvaćanju naloga: " . $e->getMessage() . "</td></tr>";
+                         }
+                         ?>
+
                     </table>
 
                     <?php
