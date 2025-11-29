@@ -4,7 +4,8 @@ import java.util.List;
 
 public class BazaInicijalizacija {
     
-    private static final String DB_URL = "jdbc:mysql://localhost:3306/tvoja_baza";
+    private static final String DB_URL = "jdbc:postgresql://drsfit-2025-luka-7e2c.e.aivencloud.com:21379/RasporedCasova";
+;
     private static final String DB_USER = "root";
     private static final String DB_PASSWORD = ""; // Tvoja lozinka
     private static Connection konekcija;
@@ -54,7 +55,7 @@ public class BazaInicijalizacija {
                 String ime = rs.getString("ime");
                 String mail = rs.getString("mail");
                 
-                profesori.add(new EventValidationService().new profesor(id, ime, mail));
+                profesori.add(new EventValidationService.profesor(id, ime, mail));
             }
             
             System.out.println("✓ Učitano " + profesori.size() + " profesora");
@@ -84,7 +85,7 @@ public class BazaInicijalizacija {
                 int kapacitet = rs.getInt("kapacitet");
                 boolean imaRacunare = rs.getBoolean("imaRacunare");
                 
-                ucionice.add(new EventValidationService().new ucionica(id, naziv, kapacitet, imaRacunare));
+                ucionice.add(new EventValidationService.ucionica(id, naziv, kapacitet, imaRacunare));;
             }
             
             System.out.println("✓ Učitano " + ucionice.size() + " učionica");
@@ -130,9 +131,9 @@ public class BazaInicijalizacija {
                     asistent = pronađiProfesora(asistent_id, profesori);
                 }
                 
-                predmeti.add(new EventValidationService().new predmet(
-                        id, naziv, kod, profesor, asistent, godinaStudija, aktivan
-                ));
+                predmeti.add(new EventValidationService.predmet(
+    id, naziv, kod, profesor, asistent, godinaStudija, aktivan
+));
             }
             
             System.out.println("✓ Učitano " + predmeti.size() + " predmeta");
@@ -188,10 +189,10 @@ public class BazaInicijalizacija {
                     asistent = pronađiProfesora(asistent_id, profesori);
                 }
                 
-                dogadjaji.add(new EventValidationService().new dogadjaj(
-                    nedelja, 0, 8, 10,  // danUNedelji, terminPocetka, terminKraja (dodaj iz baze, ako postoji..)
-                    predmet, ucionica, profesor, asistent, vezba, test, aktivan
-                ));
+                dogadjaji.add(new EventValidationService.dogadjaj(
+    nedelja, 0, 8, 10,
+    predmet, ucionica, profesor, asistent, vezba, test, aktivan
+));
 
             }
             

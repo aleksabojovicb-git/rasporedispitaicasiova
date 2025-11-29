@@ -813,7 +813,7 @@ public class EventValidationService {
     // POMOĆNE KLASE
     // ========================================================================
     
-    class ResultValidacije {
+    static class ResultValidacije {
         private boolean validno;
         private String poruka;
         
@@ -826,7 +826,7 @@ public class EventValidationService {
         public String getPoruka() { return poruka; }
     }
     
-    class ZahtevZaKreiranje {
+    static class ZahtevZaKreiranje {
         private String nazivPredmeta, kodPredmeta, imeProfesora, mailProfesora;
         private String imeAsistenta, mailAsistenta, nazivUcionice;
         private int trazeniKapacitet, godinaStudija, danUNedelji, terminPocetka, terminKraja;
@@ -919,7 +919,7 @@ public class EventValidationService {
         public void setUcionica(ucionica ucionica) { this.ucionica = ucionica; }
     }
     
-    class profesor {
+    static class profesor {
         private int id;
         private String ime, mail;
         
@@ -934,7 +934,7 @@ public class EventValidationService {
         public String getMail() { return mail; }
     }
     
-    class predmet {
+    static class predmet {
         private int id, godinaStudija;
         private String naziv, kod;
         private profesor profesor, asistent;
@@ -959,7 +959,7 @@ public class EventValidationService {
         public boolean isAktivan() { return aktivan; }
     }
     
-    class ucionica {
+    static class ucionica {
         private int id, kapacitet;
         private String naziv;
         private boolean imaRacunare;
@@ -977,7 +977,7 @@ public class EventValidationService {
         public boolean getImaRacunare() { return imaRacunare; }
     }
     
-    class dogadjaj {
+    static class dogadjaj {
         private int nedeljaUSemestru, danUNedelji, terminPocetka, terminKraja;
         private predmet predmet;
         private ucionica ucionica;
@@ -1013,7 +1013,7 @@ public class EventValidationService {
         public boolean isAktivan() { return aktivan; }
     }
     
-    class PaketZaUnosUBazu {
+    static class PaketZaUnosUBazu {
         private profesor profesor, asistent;
         private predmet predmet;
         private ucionica ucionica;
