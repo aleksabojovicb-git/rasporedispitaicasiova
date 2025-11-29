@@ -2,6 +2,20 @@
 session_start();
 require_once __DIR__ . '/../../config/dbconnection.php';
 
+// Only ADMIN can view this page.
+// Redirect others.
+if (!isset($_SESSION['role']) || !isset($_SESSION['user_id'])) {
+    // Not loggedIn -> go to auth
+    header('Location: ./authorization.php');
+    exit;
+}
+
+if ($_SESSION['role'] !== 'ADMIN') {
+    // LoggedIn but not admin -> go to professor profile
+    header('Location: ./profesor_profile.php');
+    exit;
+}
+
 // Process form submissions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['action'])) {
@@ -531,6 +545,100 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                      $error = "Greška pri ažuriranju događaja: " . $e->getMessage();
                  }
                  break;
+
+            // --------- user_account management ---------
+            case 'add_account':
+                $username = trim($_POST['username'] ?? '');
+                $password = $_POST['password'] ?? '';
+                $role = $_POST['role'] ?? 'USER';
+                $professor_id = isset($_POST['professor_id']) && is_numeric($_POST['professor_id']) ? (int)$_POST['professor_id'] : null;
+
+                if ($username === '' || $password === '') {
+                    $error = 'Username i lozinka su obavezni.';
+                    break;
+                }
+
+                try {
+                    // check unique username
+                    $stmt = $pdo->prepare("SELECT id FROM user_account WHERE username = ? LIMIT 1");
+                    $stmt->execute([$username]);
+                    if ($stmt->fetch()) {
+                        $error = 'Korisničko ime već postoji.';
+                        break;
+                    }
+
+                    $password_hash = password_hash($password, PASSWORD_DEFAULT);
+                    $stmt = $pdo->prepare("INSERT INTO user_account (username, password_hash, role_enum, is_active, professor_id) VALUES (?, ?, ?, TRUE, ?)");
+                    $stmt->execute([$username, $password_hash, $role, $professor_id]);
+
+                    header("Location: ?page=account&success=1&message=" . urlencode("Korisnik je uspješno dodat."));
+                    exit;
+                } catch (PDOException $e) {
+                    $error = 'Greška pri dodavanju korisnika: ' . $e->getMessage();
+                }
+                break;
+
+            case 'update_account':
+                if (!isset($_POST['account_id']) || !is_numeric($_POST['account_id'])) {
+                    $error = 'Neispravan ID korisnika.';
+                    break;
+                }
+                $accId = (int)$_POST['account_id'];
+                $fields = [];
+                $params = [];
+
+                if (isset($_POST['username']) && trim($_POST['username']) !== '') {
+                    $fields[] = 'username = ?';
+                    $params[] = trim($_POST['username']);
+                }
+                if (isset($_POST['password']) && $_POST['password'] !== '') {
+                    $fields[] = 'password_hash = ?';
+                    $params[] = password_hash($_POST['password'], PASSWORD_DEFAULT);
+                }
+                if (isset($_POST['role'])) {
+                    $fields[] = 'role_enum = ?';
+                    $params[] = $_POST['role'];
+                }
+                if (isset($_POST['is_active'])) {
+                    $fields[] = 'is_active = ?';
+                    $params[] = isset($_POST['is_active']) && $_POST['is_active'] ? 1 : 0;
+                }
+                if (array_key_exists('professor_id', $_POST)) {
+                    $prof = is_numeric($_POST['professor_id']) ? (int)$_POST['professor_id'] : null;
+                    $fields[] = 'professor_id = ?';
+                    $params[] = $prof;
+                }
+
+                if (empty($fields)) {
+                    $error = 'Nema podataka za ažuriranje.';
+                    break;
+                }
+
+                $params[] = $accId;
+                try {
+                    $stmt = $pdo->prepare('UPDATE user_account SET ' . implode(', ', $fields) . ' WHERE id = ?');
+                    $stmt->execute($params);
+                    header("Location: ?page=account&success=1&message=" . urlencode("Korisnik je uspješno ažuriran."));
+                    exit;
+                } catch (PDOException $e) {
+                    $error = 'Greška pri ažuriranju korisnika: ' . $e->getMessage();
+                }
+                break;
+
+            case 'delete_account':
+                if (isset($_POST['id']) && is_numeric($_POST['id'])) {
+                    $id = (int)$_POST['id'];
+                    try {
+                        $stmt = $pdo->prepare("UPDATE user_account SET is_active = FALSE WHERE id = ?");
+                        $stmt->execute([$id]);
+                        header("Location: ?page=account&success=1&message=" . urlencode("Korisnik je uspješno deaktiviran."));
+                        exit;
+                    } catch (PDOException $e) {
+                        $error = 'Greška pri deaktiviranju korisnika: ' . $e->getMessage();
+                    }
+                }
+                break;
+            // --------- end user_account management ---------
         }
     }
 }
@@ -576,6 +684,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <li><a href="?page=predmeti">Predmeti</a></li>
             <li><a href="?page=dogadjaji">Događaji</a></li>
             <li><a href="?page=sale">Sale</a></li>
+            <li><a href="?page=account">Nalog</a></li>
             <li><a href="?page=logout">Rasporedi</a></li>
             <li><a href="logout.php">Odjavi se</a></li>
         </ul>
@@ -999,6 +1108,92 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         echo "<tr><td colspan='6'>Greška pri dohvaćanju sala: " . $e->getMessage() . "</td></tr>";
                     }
                     echo "</table>";
+                    break;
+                    case 'account':
+                    ?>
+
+                    <h2>Upravljanje Nalozima</h2>
+                    <button class="action-button add-button" onclick="toggleForm('accountForm')">+ Dodaj Nalog</button>
+
+                    <div id="accountForm" class="form-container" style="display: none">
+                        <h3>Novi nalog</h3>
+                        <form method="post">
+                            <input type="hidden" name="action" value="add_account">
+
+                            <label for="username">Korisničko ime:</label>
+                            <input type="text" id="username" name="username" required>
+
+                            <label for="password">Lozinka:</label>
+                            <input type="password" id="password" name="password" required>
+
+                            <label for="role">Uloga:</label>
+                            <select id="role" name="role">
+                                <option value="ADMIN">ADMIN</option>
+                                <option value="PROFESSOR">PROFESSOR</option>
+                                <option value="USER">USER</option>
+                            </select>
+
+                            <label for="professor_id">Povezan profesor (opcionalno):</label>
+                            <select id="professor_id" name="professor_id">
+                                <option value="">-- Nema --</option>
+                                <?php
+                                try {
+                                    $stmt = $pdo->query("SELECT id, full_name, email FROM professor WHERE is_active = TRUE ORDER BY full_name");
+                                    while ($p = $stmt->fetch()) {
+                                        echo "<option value='" . $p['id'] . "'>" . htmlspecialchars($p['full_name']) . " (" . htmlspecialchars($p['email']) . ")</option>";
+                                    }
+                                } catch (PDOException $e) {
+                                    echo "<option value=''>Greška pri dohvaćanju profesora</option>";
+                                }
+                                ?>
+                            </select>
+
+                            <button type="submit">Sačuvaj</button>
+                        </form>
+                    </div>
+
+                    <table border="1" cellpadding="5">
+                        <tr>
+                            <th>ID</th>
+                            <th>Username</th>
+                            <th>Role</th>
+                            <th>Profesor</th>
+                            <th>Status</th>
+                            <th>Akcije</th>
+                        </tr>
+                        <?php
+                        try {
+                            $stmt = $pdo->query("SELECT ua.*, p.full_name as professor_name FROM user_account ua LEFT JOIN professor p ON ua.professor_id = p.id ORDER BY ua.id");
+                            while ($row = $stmt->fetch()) {
+                                echo "<tr>";
+                                echo "<td>" . htmlspecialchars($row['id']) . "</td>";
+                                echo "<td>" . htmlspecialchars($row['username']) . "</td>";
+                                echo "<td>" . htmlspecialchars($row['role_enum']) . "</td>";
+                                echo "<td>" . htmlspecialchars($row['professor_name']) . "</td>";
+                                echo "<td>" . ($row['is_active'] ? 'Aktivan' : 'Neaktivan') . "</td>";
+                                echo "<td>";
+                                // Edit button: rely on admin.js generic edit handler
+                                $dataAttr = htmlspecialchars(json_encode(['id' => (int)$row['id'], 'username' => $row['username'], 'role' => $row['role_enum'], 'professor_id' => $row['professor_id']]), ENT_QUOTES);
+                                echo "<button class='action-button edit-button' data-entity='account' data-payload='" . $dataAttr . "'>Uredi</button>";
+
+                                if ($row['is_active']) {
+                                    echo "<form style='display:inline' method='post' action='{$_SERVER['PHP_SELF']}'>
+                                        <input type='hidden' name='action' value='delete_account'>
+                                        <input type='hidden' name='id' value='" . $row['id'] . "'>
+                                        <button type='button' class='action-button delete-button' onclick=\"submitDeleteForm({$row['id']}, 'delete_account', 'nalog')\">Deaktiviraj</button>
+                                    </form>";
+                                }
+
+                                echo "</td>";
+                                echo "</tr>";
+                            }
+                        } catch (PDOException $e) {
+                            echo "<tr><td colspan='6'>Greška pri dohvaćanju naloga: " . $e->getMessage() . "</td></tr>";
+                        }
+                        ?>
+                    </table>
+
+                    <?php
                     break;
                     default:
                         echo "<h2>Dobrodošli u Admin Panel</h2>";

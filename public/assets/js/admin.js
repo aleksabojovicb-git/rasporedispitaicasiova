@@ -173,29 +173,22 @@ function openEditModal(entity, data) {
         'dogadjaj': { action: 'update_dogadjaj', idField: 'dogadjaj_id', title: 'Uredi događaj' }
     };
 
-    // helper: normalize server datetime to 'YYYY-MM-DDTHH:MM' for datetime-local
-    function toDatetimeLocal(val) {
-        if (!val) return '';
-        // common formats: 'YYYY-MM-DD HH:MM:SS' or ISO
-        // replace space with T and strip seconds and timezone
-        let s = String(val).trim();
-        s = s.replace(' ', 'T');
-        // remove timezone Z or offset
-        s = s.replace(/Z|([+-]\d{2}:?\d{2})$/, '');
-        // remove seconds if present
-        // match YYYY-MM-DDTHH:MM
-        const m = s.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})/);
-        if (m) return m[1];
-        // fallback: try Date parsing
-        const d = new Date(val);
-        if (isNaN(d.getTime())) return '';
-        const y = d.getFullYear();
-        const mo = String(d.getMonth()+1).padStart(2,'0');
-        const day = String(d.getDate()).padStart(2,'0');
-        const hh = String(d.getHours()).padStart(2,'0');
-        const mm = String(d.getMinutes()).padStart(2,'0');
-        return `${y}-${mo}-${day}T${hh}:${mm}`;
+    // If button provided a JSON payload in data-payload, parse it into data object
+    if (data.payload) {
+        try {
+            const parsed = JSON.parse(data.payload);
+            // merge parsed fields into data (do not overwrite existing simple attrs)
+            for (const k in parsed) {
+                if (!(k in data)) data[k] = parsed[k];
+                else data[k] = parsed[k]; // prefer parsed value
+            }
+        } catch (e) {
+            console.warn('Failed to parse data-payload JSON', e);
+        }
     }
+
+    // allow editing user accounts
+    map['account'] = { action: 'update_account', idField: 'account_id', title: 'Uredi nalog' };
 
     if (!map[entity]) {
         alert('Editing for "' + entity + '" is not implemented in this editor.');
@@ -391,6 +384,47 @@ function openEditModal(entity, data) {
         const inpLab = document.createElement('input'); inpLab.type = 'checkbox'; inpLab.name = 'is_computer_lab'; inpLab.checked = (data.is_computer_lab === '1' || data.is_computer_lab === 'true' || data.is_computer_lab === 'on');
         cbLab.appendChild(inpLab); cbLab.appendChild(document.createTextNode(' Računarska sala'));
         form.appendChild(cbLab);
+    }
+
+    // account editing form
+    if (entity === 'account') {
+        // username
+        const lblUser = document.createElement('label'); lblUser.textContent = 'Korisničko ime:';
+        const inpUser = document.createElement('input'); inpUser.type = 'text'; inpUser.name = 'username'; inpUser.required = true; inpUser.value = data.username || '';
+        form.appendChild(lblUser); form.appendChild(inpUser);
+
+        // password (optional)
+        const lblPass = document.createElement('label'); lblPass.textContent = 'Lozinka (ostavite prazno da ne mijenjate):';
+        const inpPass = document.createElement('input'); inpPass.type = 'password'; inpPass.name = 'password'; inpPass.value = '';
+        form.appendChild(lblPass); form.appendChild(inpPass);
+
+        // role
+        const lblRole = document.createElement('label'); lblRole.textContent = 'Uloga:';
+        const selRole = document.createElement('select'); selRole.name = 'role';
+        ['ADMIN','PROFESSOR'].forEach(r => { const o = document.createElement('option'); o.value = r; o.textContent = r; if ((data.role || data.role_enum) === r) o.selected = true; selRole.appendChild(o); });
+        form.appendChild(lblRole); form.appendChild(selRole);
+
+        // professor link
+        const lblProf = document.createElement('label'); lblProf.textContent = 'Povezan profesor (opcionalno):';
+        const selProf = document.createElement('select'); selProf.name = 'professor_id';
+        const optNone = document.createElement('option'); optNone.value = ''; optNone.textContent = '-- Nema --'; selProf.appendChild(optNone);
+        try {
+            const profs = window.adminData && window.adminData.professors ? window.adminData.professors : [];
+            profs.forEach(p => {
+                const o = document.createElement('option'); o.value = p.id; o.textContent = p.full_name + ' (' + p.email + ')';
+                if (String(data.professor_id) === String(p.id)) o.selected = true;
+                selProf.appendChild(o);
+            });
+        } catch (e) {
+            console.warn('Could not populate professors select', e);
+        }
+        form.appendChild(lblProf); form.appendChild(selProf);
+
+        // is_active checkbox
+        const cbAct = document.createElement('div'); cbAct.className = 'checkbox-row';
+        const inpAct = document.createElement('input'); inpAct.type = 'checkbox'; inpAct.name = 'is_active'; inpAct.checked = (data.is_active === '1' || data.is_active === 'true' || data.is_active === 1 || data.is_active === true);
+        cbAct.appendChild(inpAct); cbAct.appendChild(document.createTextNode(' Aktivan'));
+        form.appendChild(cbAct);
     }
 
     // submit
