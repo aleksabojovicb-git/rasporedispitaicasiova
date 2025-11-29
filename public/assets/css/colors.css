@@ -5,6 +5,7 @@
   --text: #e5e7eb;       /* gray-200 */
   --accent: #3b82f6;     /* blue-500 */
   --danger: rgba(239, 68, 134, 0.66);     /* red-500 */
+  --access: rgba(9, 97, 9, 0.82);
   --focus-ring: 0 0 0 4px rgba(59,130,246,.25);
   --radius: 16px;
   --shadow: 0 10px 30px rgba(0,0,0,.35);

@@ -98,6 +98,14 @@ table.modern-table tr:hover td {
     padding: 8px 18px; /* small padding */
 }
 
+/* ensure buttons inside action cells have a small horizontal gap as a fallback */
+.cell-actions .action-button {
+    margin-right: 8px;
+}
+.cell-actions .action-button:last-child {
+    margin-right: 0;
+}
+
 /* keep forms inside action cell from expanding full width */
 .cell-actions form {
     display: inline-flex;

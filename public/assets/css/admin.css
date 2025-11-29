@@ -80,6 +80,12 @@ h2 {
     background: var(--danger);
     color: white;
 }
+/*todo*/
+.activation-button {
+    background: var(--access);
+    color: white;
+}
+
 
 /* Hover state */
 .action-button:hover {

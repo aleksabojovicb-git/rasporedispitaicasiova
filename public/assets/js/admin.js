@@ -84,17 +84,76 @@ function submitDeleteForm(id, action, entityType) {
     document.body.removeChild(form);
 }
 
+// Helper: normalize various server datetime strings into a value
+// accepted by <input type="datetime-local"> ("YYYY-MM-DDTHH:MM").
+// Accepts examples: "2025-11-29 14:30:00", "2025-11-29T14:30:00", timestamp strings.
+function toDatetimeLocal(raw) {
+    if (!raw) return '';
+    try {
+        // If it's a pure number (timestamp seconds or ms)
+        if (/^\d+$/.test(String(raw).trim())) {
+            let n = Number(raw);
+            // Heuristic: if seconds (10 digits) convert to ms
+            if (n < 1e12) n = n * 1000;
+            const d = new Date(n);
+            if (!isNaN(d.getTime())) {
+                const yyyy = d.getFullYear();
+                const mm = String(d.getMonth() + 1).padStart(2, '0');
+                const dd = String(d.getDate()).padStart(2, '0');
+                const hh = String(d.getHours()).padStart(2, '0');
+                const min = String(d.getMinutes()).padStart(2, '0');
+                return `${yyyy}-${mm}-${dd}T${hh}:${min}`;
+            }
+        }
+
+        // Normalize space to 'T' for MySQL-like strings
+        let s = String(raw).trim().replace(/^\s+|\s+$/g, '');
+        s = s.replace(' ', 'T');
+
+        // Try to parse common pattern YYYY-MM-DDTHH:MM(:SS)?
+        const m = s.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?/);
+        if (m) {
+            // Return without seconds (datetime-local usually prefers minute precision)
+            return `${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}`;
+        }
+
+        // Fallback: let Date parse it, then format components in local timezone
+        const d = new Date(s);
+        if (!isNaN(d.getTime())) {
+            const yyyy = d.getFullYear();
+            const mm = String(d.getMonth() + 1).padStart(2, '0');
+            const dd = String(d.getDate()).padStart(2, '0');
+            const hh = String(d.getHours()).padStart(2, '0');
+            const min = String(d.getMinutes()).padStart(2, '0');
+            return `${yyyy}-${mm}-${dd}T${hh}:${min}`;
+        }
+    } catch (e) {
+        // ignore and fall through
+    }
+    return '';
+}
+
 // Handle online event toggle
 document.addEventListener('DOMContentLoaded', function() {
     console.log('Admin JS loaded');
 
     // Check forms on page load
     const deleteForms = document.querySelectorAll('form[id^="delete-"]');
-    console.log('Found', deleteForms.length, 'delete forms');
+    console.debug('Found', deleteForms.length, 'delete forms');
 
     // Add direct submit handler for all delete forms
     deleteForms.forEach(form => {
-        console.log('Found delete form:', form.id);
+        // Try to log a concise identifier: prefer form.id, fallback to hidden input[name="id"] value
+        let fid = form.id || '';
+        try {
+            if (!fid) {
+                const idInput = form.querySelector('input[name="id"]');
+                if (idInput && idInput.value) fid = idInput.value;
+            }
+        } catch (e) {
+            // ignore
+        }
+        console.debug('Found delete form id:', fid || '[no id]');
 
         // Ensure the form has the proper action
         if (!form.action) {
