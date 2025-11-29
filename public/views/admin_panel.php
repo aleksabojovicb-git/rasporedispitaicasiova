@@ -638,6 +638,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }
                 break;
+
+            case 'activate_account':
+                if (isset($_POST['id']) && is_numeric($_POST['id'])) {
+                    $id = (int)$_POST['id'];
+                    try {
+                        $stmt = $pdo->prepare("UPDATE user_account SET is_active = TRUE WHERE id = ?");
+                        $stmt->execute([$id]);
+                        header("Location: ?page=account&success=1&message=" . urlencode("Korisnik je uspješno aktiviran."));
+                        exit;
+                    } catch (PDOException $e) {
+                        $error = 'Greška pri aktiviranju korisnika: ' . $e->getMessage();
+                    }
+                }
+                break;
+
             // --------- end user_account management ---------
         }
     }
@@ -1180,13 +1195,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                  echo "<td>";
                                  // Edit button: rely on admin.js generic edit handler
                                  $dataAttr = htmlspecialchars(json_encode(['id' => (int)$row['id'], 'username' => $row['username'], 'role' => $row['role_enum'], 'professor_id' => $row['professor_id']]), ENT_QUOTES);
-                                 echo "<button class='action-button edit-button' data-entity='account' data-payload='" . $dataAttr . "'>Uredi</button>";
+                                 echo "<button class='action-button edit-button' data-entity='account' data-payload='" . $dataAttr . "'>Uredi</button> ";
 
                                  if ($row['is_active']) {
-                                     echo "<form style='display:inline' method='post' action='{$_SERVER['PHP_SELF']}'>";
+                                     echo "<form method='post' action='{$_SERVER['PHP_SELF']}' style='display:inline-block; margin-left:2px;'>";
                                      echo "<input type='hidden' name='action' value='delete_account'>";
                                      echo "<input type='hidden' name='id' value='" . $row['id'] . "'>";
                                      echo "<button type='button' class='action-button delete-button' onclick=\"submitDeleteForm({$row['id']}, 'delete_account', 'nalog')\">Deaktiviraj</button>";
+                                     echo "</form>";
+                                 } else {
+                                     // account is inactive -> show activate button
+                                     echo "<form method='post' style='display:inline-block; margin-left:2px;' action='{$_SERVER['PHP_SELF']}'>";
+                                     echo "<input type='hidden' name='action' value='activate_account'>";
+                                     echo "<input type='hidden' name='id' value='" . $row['id'] . "'>";
+                                     echo " <button type='button' class='action-button activation-button' onclick=\"submitDeleteForm({$row['id']}, 'activate_account', 'nalog')\">Aktiviraj</button>";
                                      echo "</form>";
                                  }
 
