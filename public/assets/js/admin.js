@@ -158,6 +158,30 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 
+// helper: normalize server datetime to 'YYYY-MM-DDTHH:MM' for datetime-local
+function toDatetimeLocal(val) {
+    if (!val) return '';
+    // common formats: 'YYYY-MM-DD HH:MM:SS' or ISO
+    // replace space with T and strip seconds and timezone
+    let s = String(val).trim();
+    s = s.replace(' ', 'T');
+    // remove timezone Z or offset
+    s = s.replace(/Z|([+-]\d{2}:?\d{2})$/, '');
+    // remove seconds if present
+    // match YYYY-MM-DDTHH:MM
+    const m = s.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})/);
+    if (m) return m[1];
+    // fallback: try Date parsing
+    const d = new Date(val);
+    if (isNaN(d.getTime())) return '';
+    const y = d.getFullYear();
+    const mo = String(d.getMonth()+1).padStart(2,'0');
+    const day = String(d.getDate()).padStart(2,'0');
+    const hh = String(d.getHours()).padStart(2,'0');
+    const mm = String(d.getMinutes()).padStart(2,'0');
+    return `${y}-${mo}-${day}T${hh}:${mm}`;
+}
+
 /**
  * Build and open edit modal for supported entities
  * Supported: profesor, predmet, sala

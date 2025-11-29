@@ -1031,14 +1031,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         echo "<td>" . ($row['is_online'] ? 'Online' : htmlspecialchars($row['room_code'])) . "</td>";
                         echo "<td>" . htmlspecialchars($row['notes']) . "</td>";
                         echo "<td>";
-                        echo "<button class='action-button edit-button' data-entity='dogadjaj' data-id='" . $row['id'] . "' data-course_id='" . $row['course_id'] . "' data-professor_id='" . $row['created_by_professor'] . "' data-type='" . htmlspecialchars($row['type_enum'], ENT_QUOTES) . "' data-starts_at='" . htmlspecialchars($row['starts_at'], ENT_QUOTES) . "' data-ends_at='" . htmlspecialchars($row['ends_at'], ENT_QUOTES) . "' data-is_online='" . ($row['is_online'] ? '1' : '0') . "' data-room_id='" . $row['room_id'] . "' data-notes='" . htmlspecialchars($row['notes'], ENT_QUOTES) . "' data-is_published='" . ($row['is_published'] ? '1' : '0') . "'>Uredi</button> ";
-                        echo "<form id='delete-dogadjaj-{$row['id']}' style='display:inline' method='post' action='{$_SERVER['PHP_SELF']}'>
+                        // build payload for JS (use data-payload JSON to avoid fragile attribute concatenation)
+                        $payload = json_encode([
+                            'id' => (int)$row['id'],
+                            'course_id' => $row['course_id'],
+                            'professor_id' => $row['created_by_professor'],
+                            'type' => $row['type_enum'],
+                            'starts_at' => $row['starts_at'],
+                            'ends_at' => $row['ends_at'],
+                            'is_online' => $row['is_online'] ? 1 : 0,
+                            'room_id' => $row['room_id'],
+                            'notes' => $row['notes'],
+                            'is_published' => $row['is_published'] ? 1 : 0
+                        ], JSON_UNESCAPED_UNICODE);
+                        echo "<button class='action-button edit-button' data-entity='dogadjaj' data-payload='" . htmlspecialchars($payload, ENT_QUOTES) . "'>Uredi</button> ";
+                         echo "<form id='delete-dogadjaj-{$row['id']}' style='display:inline' method='post' action='{$_SERVER['PHP_SELF']}'>
                             <input type='hidden' name='action' value='delete_dogadjaj'>
                             <input type='hidden' name='id' value='{$row['id']}'>
                             <button type='button' class='action-button delete-button' onclick=\"submitDeleteForm({$row['id']}, 'delete_dogadjaj', 'dogadjaj')\">Obriši</button>
                         </form>
-                    </td>";
-                        echo "</tr>";
+                     </td>";
+                         echo "</tr>";
                     }
                 } catch (PDOException $e) {
                     echo "<tr><td colspan='8'>Greška pri dohvaćanju događaja: " . $e->getMessage() . "</td></tr>";
