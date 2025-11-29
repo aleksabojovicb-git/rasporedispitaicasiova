@@ -1,8 +1,8 @@
 <?php
 session_start();
 require_once __DIR__ . '/../../config/dbconnection.php';
-require_once './src/includes/cache_handler.php';
-aktivirajJavaCheSaProverom(10);
+// require_once './src/includes/cache_handler.php';
+// aktivirajJavaCheSaProverom(10);
 
 if (isset($_GET['logout'])) {
     session_unset();
