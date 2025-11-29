@@ -13,6 +13,20 @@ public class BazaInicijalizacija {
     // INICIJALIZUJ KONEKCIJU
     // ========================================================================
     
+    public static void main(String[] args) {
+        System.out.println("=== POKRETANJE CACHIRANJA IZ PHP ===");
+        inicijalizujBazu();
+        
+        // Popuni EventValidationService
+        EventValidationService servis = new EventValidationService();
+        popuniStatickeVarijable();
+        
+        System.out.println("✓ Svi podaci su učitani iz baze i spremljeni u memoriju");
+        
+        zatvoriBazu();
+    }
+
+
     public static void inicijalizujBazu() {
         try {
             Class.forName("com.mysql.cj.jdbc.Driver");

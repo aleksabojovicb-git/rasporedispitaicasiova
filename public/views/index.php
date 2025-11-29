@@ -1,5 +1,7 @@
 <?php
 session_start();
+require_once './src/includes/cache_handler.php';
+aktivirajJavaCheSaProverom(10);
 $professorPanelHref = './authorization.php';
 if (isset($_SESSION['user_id'])) {
     $professorPanelHref = './profesor_profile.php';
