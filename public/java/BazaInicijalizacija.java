@@ -1,20 +1,41 @@
 import java.sql.*;
+import java.nio.file.Paths;
+import java.io.IOException;
 
 public class BazaInicijalizacija {
-    
-    private static final String DB_URL = "jdbc:mysql://localhost:3306/raspored_db";
-    private static final String DB_USER = "root";
-    private static final String DB_PASSWORD = "";
-    
+
     public static Connection uspostaviKonekciju() throws SQLException {
         try {
-            Class.forName("com.mysql.cj.jdbc.Driver");
-            Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASSWORD);
+            EnvLoader env = EnvLoader.load();
+            String host = env.get("DB_HOST");
+            String port = env.get("DB_PORT");
+            String name = env.get("DB_NAME");
+            String user = env.get("DB_USER");
+            String pass = env.get("DB_PASS");
+            String sslmode = env.getOrDefault("DB_SSLMODE", "require");
+            String sslroot = env.get("DB_SSLROOTCERT");
+
+            String url = "jdbc:postgresql://" + host + ":" + port + "/" + name;
+            String sep = url.contains("?") ? "&" : "?";
+            if (sslmode != null && !sslmode.isEmpty()) {
+                url += sep + "sslmode=" + sslmode;
+                sep = "&";
+            }
+            if (sslroot != null && !sslroot.isEmpty()) {
+                String sslrootAbs = Paths.get(sslroot).toAbsolutePath().toString();
+                url += sep + "sslrootcert=" + sslrootAbs;
+            }
+
+            Class.forName("org.postgresql.Driver");
+            Connection conn = DriverManager.getConnection(url, user, pass);
             System.out.println("Konekcija uspjesna!");
             return conn;
         } catch (ClassNotFoundException e) {
-            System.err.println("MySQL driver nije pronadjen: " + e.getMessage());
+            System.err.println("Postgres driver nije pronadjen: " + e.getMessage());
             throw new SQLException("Driver error", e);
+        } catch (IOException e) {
+            System.err.println("Greska pri ucitavanju .env: " + e.getMessage());
+            throw new SQLException("Env load error", e);
         } catch (SQLException e) {
             System.err.println("Greska pri povezivanju na bazu: " + e.getMessage());
             throw e;
