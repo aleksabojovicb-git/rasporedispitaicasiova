@@ -167,6 +167,29 @@ function validateSignin(PDO $pdo, string $identifier, string $password): array
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $formType = $_POST['form_type'] ?? '';
 
+    
+    if ($formType === 'validate_signup') {
+        header('Content-Type: application/json');
+        $email = trim($_POST['email'] ?? '');
+        $password = $_POST['password'] ?? '';
+        $confirmPassword = $_POST['confirm'] ?? '';
+
+        $validation = validateSignup($pdo, $email, $password, $confirmPassword);
+        
+        if (!empty($validation['error'])) {
+            echo json_encode(['success' => false, 'error' => $validation['error']]);
+        } else {
+            $professor = $validation['professor'];
+            $username = buildUsernameFromFullName($professor['full_name']);
+            if ($username === '') {
+                echo json_encode(['success' => false, 'error' => 'Bug ako se unesu 2 prezimena. Podaci profesora nisu validni. Obratite se administratoru.']);
+            } else {
+                echo json_encode(['success' => true]);
+            }
+        }
+        exit;
+    }
+
     if ($formType === 'signin') {
         $signinEmailValue = trim($_POST['email'] ?? '');
         $password = $_POST['password'] ?? '';
