@@ -162,17 +162,51 @@ document.addEventListener('DOMContentLoaded', function() {
             const password = document.getElementById('su-password').value;
             const confirmPassword = document.getElementById('su-confirm').value;
 
-            // Send verification code
-            const formData = new FormData();
-            formData.append('action', 'send_code');
-            formData.append('email', email);
+            // Clear error
+            const existingError = signupForm.querySelector('.server-error');
+            if (existingError) {
+                existingError.remove();
+            }
 
-            fetch('../../src/api/email_verification.php', {
+            // First valdate on server
+            const validateData = new FormData();
+            validateData.append('form_type', 'validate_signup');
+            validateData.append('email', email);
+            validateData.append('password', password);
+            validateData.append('confirm', confirmPassword);
+
+            fetch(window.location.href, {
                 method: 'POST',
-                body: formData
+                body: validateData
             })
             .then(response => response.json())
             .then(data => {
+                if (!data.success) {
+                    
+                    const errorDiv = document.createElement('div');
+                    errorDiv.className = 'server-error';
+                    errorDiv.textContent = data.error || 'Greška pri validaciji';
+                    signupForm.insertBefore(errorDiv, signupForm.querySelector('.actions'));
+                    return null;
+                }
+
+                // If validation passed, send verification code
+                const formData = new FormData();
+                formData.append('action', 'send_code');
+                formData.append('email', email);
+
+                return fetch('../../src/api/email_verification.php', {
+                    method: 'POST',
+                    body: formData
+                });
+            })
+            .then(response => {
+                if (!response) return null;
+                return response.json();
+            })
+            .then(data => {
+                if (!data) return;
+                
                 if (data.success) {
                     
                     const modal = document.getElementById('verificationModal');
