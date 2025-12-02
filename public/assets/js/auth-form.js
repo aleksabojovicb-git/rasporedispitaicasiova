@@ -174,7 +174,7 @@ document.addEventListener('DOMContentLoaded', function() {
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    // Show verification modal
+                    
                     const modal = document.getElementById('verificationModal');
                     const codeInput = document.getElementById('verification-code');
                     const verifyBtn = document.getElementById('verify-btn');
@@ -187,17 +187,17 @@ document.addEventListener('DOMContentLoaded', function() {
                     errorMsg.textContent = '';
                     errorMsg.style.display = 'none';
 
-                    // Store form data for later submission
+                    
                     let storedEmail = email;
                     let storedPassword = password;
                     let storedConfirm = confirmPassword;
 
-                    // Only allow numbers in code input
+                    
                     codeInput.addEventListener('input', function() {
                         this.value = this.value.replace(/[^0-9]/g, '');
                     });
 
-                    // Verify code handler
+                    
                     function handleVerify() {
                         const code = codeInput.value.trim();
                         
@@ -219,10 +219,10 @@ document.addEventListener('DOMContentLoaded', function() {
                         .then(response => response.json())
                         .then(data => {
                             if (data.success) {
-                                // Hide modal and submit form
+                                
                                 modal.style.display = 'none';
                                 
-                                // Create hidden form and submit
+                                
                                 const hiddenForm = document.createElement('form');
                                 hiddenForm.method = 'POST';
                                 hiddenForm.style.display = 'none';
