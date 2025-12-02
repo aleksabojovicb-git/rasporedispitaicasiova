@@ -208,33 +208,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $password = $_POST['password'] ?? '';
         $confirmPassword = $_POST['confirm'] ?? '';
 
-        //Use validateSignup (returns 'error' or 'professor')
-        $validation = validateSignup($pdo, $signupEmailValue, $password, $confirmPassword);
-
-        if (!empty($validation['error'])) {
-            $signupError = $validation['error'];
+        // Check if email is verified
+        if (!isset($_SESSION['email_verified']) || $_SESSION['email_verified'] !== true || 
+            !isset($_SESSION['verification_email']) || $_SESSION['verification_email'] !== $signupEmailValue) {
+            $signupError = "Email mora biti verifikovan pre kreiranja naloga.";
         } else {
-            $professor = $validation['professor'];
+            //Use validateSignup (returns 'error' or 'professor')
+            $validation = validateSignup($pdo, $signupEmailValue, $password, $confirmPassword);
 
-            $username = buildUsernameFromFullName($professor['full_name']);
-            if ($username === '') {
-                $signupError = "Bug ako se unesu 2 prezimena. Podaci profesora nisu validni. Obratite se administratoru.";
+            if (!empty($validation['error'])) {
+                $signupError = $validation['error'];
             } else {
-                try {
-                    $stmt = $pdo->prepare(
-                        "INSERT INTO user_account (username, password_hash, role_enum, is_active, professor_id)\n                        VALUES (?, ?, 'PROFESSOR', TRUE, ?)"
-                    );
-                    $stmt->execute([
-                        $username,
-                        password_hash($password, PASSWORD_DEFAULT),
-                        (int) $professor['id']
-                    ]);
+                $professor = $validation['professor'];
 
-                    $signupSuccess = "Nalog je uspješno kreiran. Sada se možete prijaviti.";
-                    $signupError = null;
-                    $activeTab = 'signin';
-                } catch (PDOException $e) {
-                    $signupError = "Greška pri kreiranju naloga: " . $e->getMessage();
+                $username = buildUsernameFromFullName($professor['full_name']);
+                if ($username === '') {
+                    $signupError = "Bug ako se unesu 2 prezimena. Podaci profesora nisu validni. Obratite se administratoru.";
+                } else {
+                    try {
+                        $stmt = $pdo->prepare(
+                            "INSERT INTO user_account (username, password_hash, role_enum, is_active, professor_id)\n                        VALUES (?, ?, 'PROFESSOR', TRUE, ?)"
+                        );
+                        $stmt->execute([
+                            $username,
+                            password_hash($password, PASSWORD_DEFAULT),
+                            (int) $professor['id']
+                        ]);
+
+                        
+                        unset($_SESSION['email_verified']);
+                        unset($_SESSION['verification_code']);
+                        unset($_SESSION['verification_email']);
+                        unset($_SESSION['verification_time']);
+
+                        $signupSuccess = "Nalog je uspješno kreiran. Sada se možete prijaviti.";
+                        $signupError = null;
+                        $activeTab = 'signin';
+                    } catch (PDOException $e) {
+                        $signupError = "Greška pri kreiranju naloga: " . $e->getMessage();
+                    }
                 }
             }
         }
@@ -326,6 +338,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       </div>
     </section>
   </main>
+
+  <!-- Verification Modal -->
+  <div id="verificationModal" class="modal" style="display: none;">
+    <div class="modal-content">
+      <h2>Email Verification</h2>
+      <p>Unesite verifikacioni kod koji ste dobili na email:</p>
+      <div class="field">
+        <label for="verification-code">Verification Code</label>
+        <input type="text" id="verification-code" maxlength="6" placeholder="000000" pattern="[0-9]{6}" inputmode="numeric" required />
+        <p class="error" id="verification-error"></p>
+      </div>
+      <div class="actions">
+        <button class="btn" id="verify-btn">Verify</button>
+        <button class="btn" id="cancel-verify-btn" style="background: var(--muted);">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  
 
   <script src="../assets/js/auth-form.js"></script>
 </body>
