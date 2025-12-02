@@ -152,9 +152,124 @@ document.addEventListener('DOMContentLoaded', function() {
 
     if (signupForm) {
         signupForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            
             if (!validateForm(this)) {
-                e.preventDefault();
+                return;
             }
+
+            const email = document.getElementById('su-email').value;
+            const password = document.getElementById('su-password').value;
+            const confirmPassword = document.getElementById('su-confirm').value;
+
+            // Send verification code
+            const formData = new FormData();
+            formData.append('action', 'send_code');
+            formData.append('email', email);
+
+            fetch('../../src/api/email_verification.php', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Show verification modal
+                    const modal = document.getElementById('verificationModal');
+                    const codeInput = document.getElementById('verification-code');
+                    const verifyBtn = document.getElementById('verify-btn');
+                    const cancelBtn = document.getElementById('cancel-verify-btn');
+                    const errorMsg = document.getElementById('verification-error');
+                    
+                    modal.style.display = 'flex';
+                    codeInput.value = '';
+                    codeInput.focus();
+                    errorMsg.textContent = '';
+                    errorMsg.style.display = 'none';
+
+                    // Store form data for later submission
+                    let storedEmail = email;
+                    let storedPassword = password;
+                    let storedConfirm = confirmPassword;
+
+                    // Only allow numbers in code input
+                    codeInput.addEventListener('input', function() {
+                        this.value = this.value.replace(/[^0-9]/g, '');
+                    });
+
+                    // Verify code handler
+                    function handleVerify() {
+                        const code = codeInput.value.trim();
+                        
+                        if (!code || code.length !== 6 || !/^\d{6}$/.test(code)) {
+                            errorMsg.textContent = 'Unesite 6-cifreni kod';
+                            errorMsg.style.display = 'block';
+                            return;
+                        }
+
+                        const verifyData = new FormData();
+                        verifyData.append('action', 'verify_code');
+                        verifyData.append('code', code);
+                        verifyData.append('email', storedEmail);
+
+                        fetch('../../src/api/email_verification.php', {
+                            method: 'POST',
+                            body: verifyData
+                        })
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.success) {
+                                // Hide modal and submit form
+                                modal.style.display = 'none';
+                                
+                                // Create hidden form and submit
+                                const hiddenForm = document.createElement('form');
+                                hiddenForm.method = 'POST';
+                                hiddenForm.style.display = 'none';
+                                
+                                hiddenForm.appendChild(createInput('form_type', 'signup'));
+                                hiddenForm.appendChild(createInput('email', storedEmail));
+                                hiddenForm.appendChild(createInput('password', storedPassword));
+                                hiddenForm.appendChild(createInput('confirm', storedConfirm));
+                                
+                                document.body.appendChild(hiddenForm);
+                                hiddenForm.submit();
+                            } else {
+                                errorMsg.textContent = data.message || 'Pogrešan kod';
+                                errorMsg.style.display = 'block';
+                            }
+                        })
+                        .catch(error => {
+                            errorMsg.textContent = 'Greška pri verifikaciji';
+                            errorMsg.style.display = 'block';
+                        });
+                    }
+
+                    function createInput(name, value) {
+                        const input = document.createElement('input');
+                        input.type = 'hidden';
+                        input.name = name;
+                        input.value = value;
+                        return input;
+                    }
+
+                    verifyBtn.onclick = handleVerify;
+                    codeInput.addEventListener('keypress', function(e) {
+                        if (e.key === 'Enter') {
+                            handleVerify();
+                        }
+                    });
+
+                    cancelBtn.onclick = function() {
+                        modal.style.display = 'none';
+                    };
+                } else {
+                    alert(data.message || 'Greška pri slanju verifikacionog koda');
+                }
+            })
+            .catch(error => {
+                alert('Greška pri slanju verifikacionog koda');
+            });
         });
     }
 });
