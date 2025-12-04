@@ -5,11 +5,12 @@ import java.util.*;
 public class EventValidationService {
     
     private Connection conn;
-    private Map<Integer, Predmet> predmeti;
-    private Map<Integer, Sala> sale;
-    private Map<Integer, Profesor> profesori;
-    private List<Termin> termini;
-    private List<Praznik> praznici;
+    private Map<Integer, Course> predmeti;
+    private Map<Integer, Room> sale;
+    private Map<Integer, Professor> profesori;
+    private List<AcademicEvent> termini;
+    private List<Holiday> praznici;
+
     
     public EventValidationService(Connection connection) {
         this.conn = connection;
@@ -34,27 +35,24 @@ public class EventValidationService {
     }
     
     private void ucitajPredmete() throws SQLException {
-        String query = "SELECT * FROM predmet";
-        Statement stmt = conn.createStatement();
-        ResultSet rs = stmt.executeQuery(query);
-        
-        int count = 0;
-        while (rs.next()) {
-            Predmet p = new Predmet();
-            p.id = rs.getInt("id_predmet");
-            p.naziv = rs.getString("naziv");
-            p.semestar = rs.getInt("semestar");
-            p.fondPredavanja = rs.getInt("fond_predavanja");
-            p.fondVjezbi = rs.getInt("fond_vjezbi");
-            p.vrstaOpreme = rs.getString("vrsta_opreme");
-            p.brojStudenata = rs.getInt("broj_studenata");
-            predmeti.put(p.id, p);
-            count++;
+        String query = "SELECT id_predmet, naziv, semestar, fond_predavanja, fond_vjezbi, vrsta_opreme, broj_studenata FROM predmet";
+        try (Statement stmt = conn.createStatement();
+            ResultSet rs = stmt.executeQuery(query)) {
+            int count = 0;
+            while (rs.next()) {
+                Course p = new Course();
+                p.idCourse = rs.getInt("id_predmet");
+                p.naziv = rs.getString("naziv");
+                p.semestar = rs.getInt("semestar");
+                p.fondPredavanja = rs.getInt("fond_predavanja");
+                p.fondVjezbi = rs.getInt("fond_vjezbi");
+                p.vrstaOpreme = rs.getString("vrsta_opreme");
+                p.brojStudenata = rs.getInt("broj_studenata");
+                predmeti.put(p.idCourse, p);
+                count++;
+            }
+            System.out.println("Ucitano predmeta: " + count);
         }
-        
-        rs.close();
-        stmt.close();
-        System.out.println("Ucitano predmeta: " + count);
     }
     
     private void ucitajSale() throws SQLException {
@@ -64,13 +62,13 @@ public class EventValidationService {
         
         int count = 0;
         while (rs.next()) {
-            Sala s = new Sala();
-            s.id = rs.getInt("id_sala");
+            Room s = new Room();
+            s.idRoom = rs.getInt("id_sala");
             s.naziv = rs.getString("naziv");
             s.kapacitet = rs.getInt("kapacitet");
             s.vrstaOpreme = rs.getString("vrsta_opreme");
             s.tipSale = rs.getString("tip_sale");
-            sale.put(s.id, s);
+            sale.put(s.idRoom, s);
             count++;
         }
         
@@ -86,12 +84,12 @@ public class EventValidationService {
         
         int count = 0;
         while (rs.next()) {
-            Profesor prof = new Profesor();
-            prof.id = rs.getInt("id_profesor");
+            Professor prof = new Professor();
+            prof.idProfessor = rs.getInt("id_profesor");
             prof.ime = rs.getString("ime");
             prof.prezime = rs.getString("prezime");
             prof.email = rs.getString("email");
-            profesori.put(prof.id, prof);
+            profesori.put(prof.idProfessor, prof);
             count++;
         }
         
@@ -101,20 +99,23 @@ public class EventValidationService {
     }
     
     private void ucitajTermine() throws SQLException {
+        termini.clear(); // Očisti prije reloada
         String query = "SELECT * FROM termin";
         Statement stmt = conn.createStatement();
         ResultSet rs = stmt.executeQuery(query);
         
         int count = 0;
         while (rs.next()) {
-            Termin t = new Termin();
-            t.id = rs.getInt("id_termin");
-            t.idPredmet = rs.getInt("id_predmet");
-            t.idSala = rs.getInt("id_sala");
-            t.idProfesor = rs.getInt("id_profesor");
+            AcademicEvent t = new AcademicEvent();
+            t.idAcademicEvent = rs.getInt("id_termin");
+            t.idCourse = rs.getInt("id_predmet");
+            t.idRoom = rs.getInt("id_sala");
+            t.idProfessor = rs.getInt("id_profesor");
             t.dan = rs.getString("dan");
-            t.vremeOd = rs.getTime("vreme_od").toLocalTime();
-            t.vremeDo = rs.getTime("vreme_do").toLocalTime();
+            Time vremeOdSQL = rs.getTime("vreme_od");
+            Time vremeDoSQL = rs.getTime("vreme_do");
+            t.vremeOd = (vremeOdSQL != null) ? vremeOdSQL.toLocalTime() : null;
+            t.vremeDo = (vremeDoSQL != null) ? vremeDoSQL.toLocalTime() : null;
             t.tipTermina = rs.getString("tip_termina");
             t.datum = rs.getDate("datum") != null ? rs.getDate("datum").toLocalDate() : null;
             termini.add(t);
@@ -133,8 +134,8 @@ public class EventValidationService {
         
         int count = 0;
         while (rs.next()) {
-            Praznik p = new Praznik();
-            p.id = rs.getInt("id_praznik");
+            Holiday p = new Holiday();
+            p.idHoliday = rs.getInt("id_praznik");
             p.naziv = rs.getString("naziv");
             p.datum = rs.getDate("datum").toLocalDate();
             praznici.add(p);
@@ -145,174 +146,165 @@ public class EventValidationService {
         stmt.close();
         System.out.println("Ucitano praznika: " + count);
     }
+
+    /*
+        Zavrsili sa ucitavanjem
+    */
     
-    public String dodajPredavanje(int idPredmet, int idSala, int idProfesor, String dan, 
+    /**
+     * NOVA HELPER METODA: Provjerava sve konflikte (salu i profesora)
+     * dan = null ako se koristi datum, datum = null ako se koristi dan
+     */
+    private boolean imaKonflikt(String dan, LocalDate datum, int idRoom, int idProfessor,
+                            LocalTime pocetak, LocalTime kraj) {
+        for (AcademicEvent t : termini) {
+            boolean danMatch = (dan != null && t.dan != null && t.dan.equals(dan));
+            boolean datumMatch = (datum != null && t.datum != null && t.datum.equals(datum));
+            if (danMatch || datumMatch) {
+                boolean salaMatch = (t.idRoom == idRoom);
+                boolean profesorMatch = (t.idProfessor == idProfessor);
+                if (salaMatch || profesorMatch) {
+                    // Null check za vremenske objekte
+                    if (pocetak != null && kraj != null && t.vremeOd != null && t.vremeDo != null) {
+                        // if (!(kraj.isBefore(t.vremeOd) || kraj.equals(t.vremeOd) ||
+                        //     pocetak.isAfter(t.vremeDo) || pocetak.equals(t.vremeDo)))
+                        if (pocetak.isBefore(t.vremeDo) && kraj.isAfter(t.vremeOd)) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * NOVA HELPER METODA: Generiška metoda za dodavanje predavanja i vježbi
+     */
+    private String dodajTerminNastave(int idPredmet, int idRoom, int idProfessor, String dan,
+                                      String vremeOd, String vremeDo,
+                                      String tipTermina, String potrebanTipSale) {
+        try {
+            Course predmet = predmeti.get(idPredmet);
+            if (predmet == null) {
+                return "GRESKA: Course ne postoji";
+            }
+            
+            Room sala = sale.get(idRoom);
+            if (sala == null) {
+                return "GRESKA: Room ne postoji";
+            }
+            
+            Professor profesor = profesori.get(idProfessor);
+            if (profesor == null) {
+                return "GRESKA: Professor ne postoji";
+            }
+            
+            LocalTime pocetak = LocalTime.parse(vremeOd);
+            LocalTime kraj = LocalTime.parse(vremeDo);
+            
+            if (sala.kapacitet < predmet.brojStudenata) {
+                return "GRESKA: Room nema dovoljan kapacitet za broj studenata";
+            }
+            
+            if (predmet.vrstaOpreme != null && !predmet.vrstaOpreme.isEmpty()) {
+                if (sala.vrstaOpreme == null || !sala.vrstaOpreme.contains(predmet.vrstaOpreme)) {
+                    return "GRESKA: Room nema potrebnu opremu: " + predmet.vrstaOpreme;
+                }
+            }
+            
+            if (!sala.tipSale.equals(potrebanTipSale) && !sala.tipSale.equals("sve")) {
+                return "GRESKA: Room nije pogodna za " + tipTermina;
+            }
+            
+            // NOVA: Koristi helper metodu umjesto dvostrukih petlji
+            if (imaKonflikt(dan, null, idRoom, idProfessor, pocetak, kraj)) {
+                // Provjeri ko je u konfliktu
+                for (AcademicEvent t : termini) {
+                    if (t.dan != null && t.dan.equals(dan)) {
+                        // if (!(kraj.isBefore(t.vremeOd) || kraj.equals(t.vremeOd) ||
+                        //       pocetak.isAfter(t.vremeDo) || pocetak.equals(t.vremeDo))) 
+                        if (pocetak.isBefore(t.vremeDo) && kraj.isAfter(t.vremeOd)) {
+                            if (t.idRoom == idRoom) {
+                                return "GRESKA: Room je zauzeta u tom terminu";
+                            }
+                            if (t.idProfessor == idProfessor) {
+                                return "GRESKA: Professor je zauzet u tom terminu";
+                            }
+                        }
+                    }
+                }
+            }
+            
+            String insert = "INSERT INTO termin (id_predmet, id_sala, id_profesor, dan, vreme_od, vreme_do, tip_termina) " +
+                          "VALUES (?, ?, ?, ?, ?, ?, ?)";
+            PreparedStatement pstmt = conn.prepareStatement(insert);
+            pstmt.setInt(1, idPredmet);
+            pstmt.setInt(2, idRoom);
+            pstmt.setInt(3, idProfessor);
+            pstmt.setString(4, dan);
+            pstmt.setTime(5, Time.valueOf(pocetak));
+            pstmt.setTime(6, Time.valueOf(kraj));
+            pstmt.setString(7, tipTermina);
+            pstmt.executeUpdate();
+            pstmt.close();
+            
+            // IZBRISANO: ucitajTermine(); 
+            // Umjesto toga, ručno dodaj u listu
+            AcademicEvent noviTermin = new AcademicEvent();
+            noviTermin.idCourse = idPredmet;
+            noviTermin.idRoom = idRoom;
+            noviTermin.idProfessor = idProfessor;
+            noviTermin.dan = dan;
+            noviTermin.vremeOd = pocetak;
+            noviTermin.vremeDo = kraj;
+            noviTermin.tipTermina = tipTermina;
+            termini.add(noviTermin);
+            
+            return "OK: " + tipTermina + " uspjesno dodato";
+            
+        } catch (Exception e) {
+            return "GRESKA: " + e.getMessage();
+        }
+    }
+
+    /**
+     * REFAKTORISANO: Skraćeno jer koristi generičku metodu
+     */
+    public String dodajPredavanje(int idPredmet, int idRoom, int idProfessor, String dan,
                                   String vremeOd, String vremeDo) {
-        try {
-            Predmet predmet = predmeti.get(idPredmet);
-            if (predmet == null) {
-                return "GRESKA: Predmet ne postoji";
-            }
-            
-            Sala sala = sale.get(idSala);
-            if (sala == null) {
-                return "GRESKA: Sala ne postoji";
-            }
-            
-            Profesor profesor = profesori.get(idProfesor);
-            if (profesor == null) {
-                return "GRESKA: Profesor ne postoji";
-            }
-            
-            LocalTime pocetak = LocalTime.parse(vremeOd);
-            LocalTime kraj = LocalTime.parse(vremeDo);
-            
-            if (sala.kapacitet < predmet.brojStudenata) {
-                return "GRESKA: Sala nema dovoljan kapacitet za broj studenata";
-            }
-            
-            if (predmet.vrstaOpreme != null && !predmet.vrstaOpreme.isEmpty()) {
-                if (sala.vrstaOpreme == null || !sala.vrstaOpreme.contains(predmet.vrstaOpreme)) {
-                    return "GRESKA: Sala nema potrebnu opremu: " + predmet.vrstaOpreme;
-                }
-            }
-            
-            if (!sala.tipSale.equals("predavaliste") && !sala.tipSale.equals("sve")) {
-                return "GRESKA: Sala nije pogodna za predavanja";
-            }
-            
-            for (Termin t : termini) {
-                if (t.dan.equals(dan) && t.idSala == idSala) {
-                    if (!(kraj.isBefore(t.vremeOd) || kraj.equals(t.vremeOd) || 
-                          pocetak.isAfter(t.vremeDo) || pocetak.equals(t.vremeDo))) {
-                        return "GRESKA: Sala je zauzeta u tom terminu";
-                    }
-                }
-            }
-            
-            for (Termin t : termini) {
-                if (t.dan.equals(dan) && t.idProfesor == idProfesor) {
-                    if (!(kraj.isBefore(t.vremeOd) || kraj.equals(t.vremeOd) || 
-                          pocetak.isAfter(t.vremeDo) || pocetak.equals(t.vremeDo))) {
-                        return "GRESKA: Profesor je zauzet u tom terminu";
-                    }
-                }
-            }
-            
-            String insert = "INSERT INTO termin (id_predmet, id_sala, id_profesor, dan, vreme_od, vreme_do, tip_termina) " +
-                          "VALUES (?, ?, ?, ?, ?, ?, 'predavanje')";
-            PreparedStatement pstmt = conn.prepareStatement(insert);
-            pstmt.setInt(1, idPredmet);
-            pstmt.setInt(2, idSala);
-            pstmt.setInt(3, idProfesor);
-            pstmt.setString(4, dan);
-            pstmt.setTime(5, Time.valueOf(pocetak));
-            pstmt.setTime(6, Time.valueOf(kraj));
-            pstmt.executeUpdate();
-            pstmt.close();
-            
-            ucitajTermine();
-            
-            return "OK: Predavanje uspjesno dodato";
-            
-        } catch (Exception e) {
-            return "GRESKA: " + e.getMessage();
-        }
+        return dodajTerminNastave(idPredmet, idRoom, idProfessor, dan, vremeOd, vremeDo,
+                                 "predavanje", "predavaliste");
     }
-    
-    public String dodajVjezbe(int idPredmet, int idSala, int idProfesor, String dan, 
+
+    /**
+     * REFAKTORISANO: Skraćeno jer koristi generičku metodu
+     */
+    public String dodajVjezbe(int idPredmet, int idRoom, int idProfessor, String dan,
                              String vremeOd, String vremeDo) {
-        try {
-            Predmet predmet = predmeti.get(idPredmet);
-            if (predmet == null) {
-                return "GRESKA: Predmet ne postoji";
-            }
-            
-            Sala sala = sale.get(idSala);
-            if (sala == null) {
-                return "GRESKA: Sala ne postoji";
-            }
-            
-            Profesor profesor = profesori.get(idProfesor);
-            if (profesor == null) {
-                return "GRESKA: Profesor ne postoji";
-            }
-            
-            LocalTime pocetak = LocalTime.parse(vremeOd);
-            LocalTime kraj = LocalTime.parse(vremeDo);
-            
-            if (sala.kapacitet < predmet.brojStudenata) {
-                return "GRESKA: Sala nema dovoljan kapacitet za broj studenata";
-            }
-            
-            if (predmet.vrstaOpreme != null && !predmet.vrstaOpreme.isEmpty()) {
-                if (sala.vrstaOpreme == null || !sala.vrstaOpreme.contains(predmet.vrstaOpreme)) {
-                    return "GRESKA: Sala nema potrebnu opremu: " + predmet.vrstaOpreme;
-                }
-            }
-            
-            if (!sala.tipSale.equals("vjezbe") && !sala.tipSale.equals("sve")) {
-                return "GRESKA: Sala nije pogodna za vjezbe";
-            }
-            
-            for (Termin t : termini) {
-                if (t.dan.equals(dan) && t.idSala == idSala) {
-                    if (!(kraj.isBefore(t.vremeOd) || kraj.equals(t.vremeOd) || 
-                          pocetak.isAfter(t.vremeDo) || pocetak.equals(t.vremeDo))) {
-                        return "GRESKA: Sala je zauzeta u tom terminu";
-                    }
-                }
-            }
-            
-            for (Termin t : termini) {
-                if (t.dan.equals(dan) && t.idProfesor == idProfesor) {
-                    if (!(kraj.isBefore(t.vremeOd) || kraj.equals(t.vremeOd) || 
-                          pocetak.isAfter(t.vremeDo) || pocetak.equals(t.vremeDo))) {
-                        return "GRESKA: Profesor je zauzet u tom terminu";
-                    }
-                }
-            }
-            
-            String insert = "INSERT INTO termin (id_predmet, id_sala, id_profesor, dan, vreme_od, vreme_do, tip_termina) " +
-                          "VALUES (?, ?, ?, ?, ?, ?, 'vjezbe')";
-            PreparedStatement pstmt = conn.prepareStatement(insert);
-            pstmt.setInt(1, idPredmet);
-            pstmt.setInt(2, idSala);
-            pstmt.setInt(3, idProfesor);
-            pstmt.setString(4, dan);
-            pstmt.setTime(5, Time.valueOf(pocetak));
-            pstmt.setTime(6, Time.valueOf(kraj));
-            pstmt.executeUpdate();
-            pstmt.close();
-            
-            ucitajTermine();
-            
-            return "OK: Vjezbe uspjesno dodate";
-            
-        } catch (Exception e) {
-            return "GRESKA: " + e.getMessage();
-        }
+        return dodajTerminNastave(idPredmet, idRoom, idProfessor, dan, vremeOd, vremeDo,
+                                 "vjezbe", "vjezbe");
     }
     
-    public String dodajKolokvijum(int idPredmet, int idSala, int idProfesor, int idDezurni,
+    public String dodajKolokvijum(int idPredmet, int idRoom, int idProfessor, int idDezurni,
                                   String datum, String vremeOd, String vremeDo) {
         try {
-            Predmet predmet = predmeti.get(idPredmet);
+            Course predmet = predmeti.get(idPredmet);
             if (predmet == null) {
-                return "GRESKA: Predmet ne postoji";
+                return "GRESKA: Course ne postoji";
             }
             
-            Sala sala = sale.get(idSala);
+            Room sala = sale.get(idRoom);
             if (sala == null) {
-                return "GRESKA: Sala ne postoji";
+                return "GRESKA: Room ne postoji";
             }
             
-            Profesor profesor = profesori.get(idProfesor);
+            Professor profesor = profesori.get(idProfessor);
             if (profesor == null) {
-                return "GRESKA: Profesor ne postoji";
+                return "GRESKA: Professor ne postoji";
             }
             
-            Profesor dezurni = profesori.get(idDezurni);
+            Professor dezurni = profesori.get(idDezurni);
             if (dezurni == null) {
                 return "GRESKA: Dezurni profesor ne postoji";
             }
@@ -325,7 +317,7 @@ public class EventValidationService {
                 return "GRESKA: Kolokvijum ne moze biti u nedjelju";
             }
             
-            for (Praznik p : praznici) {
+            for (Holiday p : praznici) {
                 if (p.datum.equals(datumKolokvijuma)) {
                     return "GRESKA: Ne moze se zakazati kolokvijum za praznik: " + p.naziv;
                 }
@@ -336,32 +328,32 @@ public class EventValidationService {
             }
             
             if (sala.kapacitet < predmet.brojStudenata) {
-                return "GRESKA: Sala nema dovoljan kapacitet";
+                return "GRESKA: Room nema dovoljan kapacitet";
             }
             
-            for (Termin t : termini) {
-                if (t.datum != null && t.datum.equals(datumKolokvijuma) && t.idSala == idSala) {
-                    if (!(kraj.isBefore(t.vremeOd) || kraj.equals(t.vremeOd) || 
-                          pocetak.isAfter(t.vremeDo) || pocetak.equals(t.vremeDo))) {
-                        return "GRESKA: Sala je zauzeta u tom terminu";
+            // NOVA: Koristi helper metodu
+            if (imaKonflikt(null, datumKolokvijuma, idRoom, idProfessor, pocetak, kraj)) {
+                for (AcademicEvent t : termini) {
+                    if (t.datum != null && t.datum.equals(datumKolokvijuma)) {
+                        // if (!(kraj.isBefore(t.vremeOd) || kraj.equals(t.vremeOd) ||
+                        //       pocetak.isAfter(t.vremeDo) || pocetak.equals(t.vremeDo))) 
+                        if (pocetak.isBefore(t.vremeDo) && kraj.isAfter(t.vremeOd)) {
+                            if (t.idRoom == idRoom) {
+                                return "GRESKA: Room je zauzeta u tom terminu";
+                            }
+                            if (t.idProfessor == idProfessor) {
+                                return "GRESKA: Professor je zauzet u tom terminu";
+                            }
+                        }
                     }
                 }
             }
-            
-            for (Termin t : termini) {
-                if (t.datum != null && t.datum.equals(datumKolokvijuma) && t.idProfesor == idProfesor) {
-                    if (!(kraj.isBefore(t.vremeOd) || kraj.equals(t.vremeOd) || 
-                          pocetak.isAfter(t.vremeDo) || pocetak.equals(t.vremeDo))) {
-                        return "GRESKA: Profesor je zauzet u tom terminu";
-                    }
-                }
-            }
-            
+
             int brojKolokvijumaTeNedjelje = 0;
             LocalDate pocetakNedjelje = datumKolokvijuma.with(DayOfWeek.MONDAY);
             LocalDate krajNedjelje = datumKolokvijuma.with(DayOfWeek.SUNDAY);
             
-            for (Termin t : termini) {
+            for (AcademicEvent t : termini) {
                 if (t.tipTermina.equals("kolokvijum") && t.datum != null) {
                     if (!t.datum.isBefore(pocetakNedjelje) && !t.datum.isAfter(krajNedjelje)) {
                         brojKolokvijumaTeNedjelje++;
@@ -374,12 +366,12 @@ public class EventValidationService {
             }
             
             int brojDezurstava = 0;
-            for (Termin t : termini) {
+            for (AcademicEvent t : termini) {
                 if (t.tipTermina.contains("kolokvijum") && t.datum != null) {
                     if (!t.datum.isBefore(pocetakNedjelje) && !t.datum.isAfter(krajNedjelje)) {
                         String query = "SELECT id_dezurni FROM kolokvijum WHERE id_termin = ?";
                         PreparedStatement ps = conn.prepareStatement(query);
-                        ps.setInt(1, t.id);
+                        ps.setInt(1, t.idAcademicEvent);
                         ResultSet rs = ps.executeQuery();
                         if (rs.next() && rs.getInt("id_dezurni") == idDezurni) {
                             brojDezurstava++;
@@ -398,8 +390,8 @@ public class EventValidationService {
                                 "VALUES (?, ?, ?, ?, ?, ?, 'kolokvijum')";
             PreparedStatement pstmt = conn.prepareStatement(insertTermin, Statement.RETURN_GENERATED_KEYS);
             pstmt.setInt(1, idPredmet);
-            pstmt.setInt(2, idSala);
-            pstmt.setInt(3, idProfesor);
+            pstmt.setInt(2, idRoom);
+            pstmt.setInt(3, idProfessor);
             pstmt.setDate(4, java.sql.Date.valueOf(datumKolokvijuma));
             pstmt.setTime(5, Time.valueOf(pocetak));
             pstmt.setTime(6, Time.valueOf(kraj));
@@ -420,7 +412,7 @@ public class EventValidationService {
             pstmt2.executeUpdate();
             pstmt2.close();
             
-            ucitajTermine();
+            // IZBRISANO: ucitajTermine();
             
             return "OK: Kolokvijum uspjesno dodat";
             
@@ -429,22 +421,22 @@ public class EventValidationService {
         }
     }
     
-    public String dodajIspit(int idPredmet, int idSala, int idProfesor, String datum, 
+    public String dodajIspit(int idPredmet, int idRoom, int idProfessor, String datum,
                             String vremeOd, String vremeDo, String tipIspita) {
         try {
-            Predmet predmet = predmeti.get(idPredmet);
+            Course predmet = predmeti.get(idPredmet);
             if (predmet == null) {
-                return "GRESKA: Predmet ne postoji";
+                return "GRESKA: Course ne postoji";
             }
             
-            Sala sala = sale.get(idSala);
+            Room sala = sale.get(idRoom);
             if (sala == null) {
-                return "GRESKA: Sala ne postoji";
+                return "GRESKA: Room ne postoji";
             }
             
-            Profesor profesor = profesori.get(idProfesor);
+            Professor profesor = profesori.get(idProfessor);
             if (profesor == null) {
-                return "GRESKA: Profesor ne postoji";
+                return "GRESKA: Professor ne postoji";
             }
             
             LocalDate datumIspita = LocalDate.parse(datum);
@@ -455,36 +447,36 @@ public class EventValidationService {
                 return "GRESKA: Ispit ne moze biti u nedjelju";
             }
             
-            for (Praznik p : praznici) {
+            for (Holiday p : praznici) {
                 if (p.datum.equals(datumIspita)) {
                     return "GRESKA: Ne moze se zakazati ispit za praznik: " + p.naziv;
                 }
             }
             
             if (sala.kapacitet < predmet.brojStudenata) {
-                return "GRESKA: Sala nema dovoljan kapacitet";
+                return "GRESKA: Room nema dovoljan kapacitet";
             }
             
             if (predmet.vrstaOpreme != null && !predmet.vrstaOpreme.isEmpty()) {
                 if (sala.vrstaOpreme == null || !sala.vrstaOpreme.contains(predmet.vrstaOpreme)) {
-                    return "GRESKA: Sala nema potrebnu opremu: " + predmet.vrstaOpreme;
+                    return "GRESKA: Room nema potrebnu opremu: " + predmet.vrstaOpreme;
                 }
             }
             
-            for (Termin t : termini) {
-                if (t.datum != null && t.datum.equals(datumIspita) && t.idSala == idSala) {
-                    if (!(kraj.isBefore(t.vremeOd) || kraj.equals(t.vremeOd) || 
-                          pocetak.isAfter(t.vremeDo) || pocetak.equals(t.vremeDo))) {
-                        return "GRESKA: Sala je zauzeta u tom terminu";
-                    }
-                }
-            }
-            
-            for (Termin t : termini) {
-                if (t.datum != null && t.datum.equals(datumIspita) && t.idProfesor == idProfesor) {
-                    if (!(kraj.isBefore(t.vremeOd) || kraj.equals(t.vremeOd) || 
-                          pocetak.isAfter(t.vremeDo) || pocetak.equals(t.vremeDo))) {
-                        return "GRESKA: Profesor je zauzet u tom terminu";
+            // NOVA: Koristi helper metodu
+            if (imaKonflikt(null, datumIspita, idRoom, idProfessor, pocetak, kraj)) {
+                for (AcademicEvent t : termini) {
+                    if (t.datum != null && t.datum.equals(datumIspita)) {
+                        // if (!(kraj.isBefore(t.vremeOd) || kraj.equals(t.vremeOd) ||
+                        //       pocetak.isAfter(t.vremeDo) || pocetak.equals(t.vremeDo))) 
+                        if (pocetak.isBefore(t.vremeDo) && kraj.isAfter(t.vremeOd)) {
+                            if (t.idRoom == idRoom) {
+                                return "GRESKA: Room je zauzeta u tom terminu";
+                            }
+                            if (t.idProfessor == idProfessor) {
+                                return "GRESKA: Professor je zauzet u tom terminu";
+                            }
+                        }
                     }
                 }
             }
@@ -493,8 +485,8 @@ public class EventValidationService {
                                 "VALUES (?, ?, ?, ?, ?, ?, ?)";
             PreparedStatement pstmt = conn.prepareStatement(insertTermin, Statement.RETURN_GENERATED_KEYS);
             pstmt.setInt(1, idPredmet);
-            pstmt.setInt(2, idSala);
-            pstmt.setInt(3, idProfesor);
+            pstmt.setInt(2, idRoom);
+            pstmt.setInt(3, idProfessor);
             pstmt.setDate(4, java.sql.Date.valueOf(datumIspita));
             pstmt.setTime(5, Time.valueOf(pocetak));
             pstmt.setTime(6, Time.valueOf(kraj));
@@ -502,14 +494,10 @@ public class EventValidationService {
             pstmt.executeUpdate();
             
             ResultSet rs = pstmt.getGeneratedKeys();
-            int idTermin = 0;
-            if (rs.next()) {
-                idTermin = rs.getInt(1);
-            }
             rs.close();
             pstmt.close();
             
-            ucitajTermine();
+            // IZBRISANO: ucitajTermine();
             
             return "OK: Ispit uspjesno dodat";
             
@@ -517,16 +505,282 @@ public class EventValidationService {
             return "GRESKA: " + e.getMessage();
         }
     }
-    
+
+    /**
+     * Generiše kompletan raspored za SVE predmete (predavanja + vježbe)
+     * Prioritizuje predmete na osnovu fleksibilnosti profesora
+     */
+    public String generisiKompletniRaspored() {
+        try {
+            System.out.println("=== POKRETANJE AUTOMATSKOG GENERISANJA KOMPLETNOG RASPOREDA ===\n");
+            
+            // 1. Analiza fleksibilnosti profesora
+            Map<Integer, Double> fleksibilnostProfesora = analizirajFleksibilnostProfesora();
+            
+            // 2. Određivanje prioriteta predmeta
+            List<PredmetPrioritet> prioriteti = odrediPrioritete(fleksibilnostProfesora);
+            
+            System.out.println("--- PRIORITETI PREDMETA ---");
+            for (PredmetPrioritet pp : prioriteti) {
+                System.out.printf("Predmet: %-30s | Prioritet: %.2f | Prof.Pred: %-20s (flex: %.2f) | Prof.Vjez: %-20s (flex: %.2f)\n",
+                    pp.predmet.naziv,
+                    pp.prioritet,
+                    pp.profesorPredavanja != null ? pp.profesorPredavanja.ime + " " + pp.profesorPredavanja.prezime : "NEMA",
+                    pp.fleksibilnostPredavanja,
+                    pp.profesorVjezbi != null ? pp.profesorVjezbi.ime + " " + pp.profesorVjezbi.prezime : "NEMA",
+                    pp.fleksibilnostVjezbi
+                );
+            }
+            
+            // 3. Generisanje rasporeda po prioritetu
+            int uspjesnoPredavanja = 0;
+            int djelimicnoPredavanja = 0;
+            int neuspjesnoPredavanja = 0;
+            
+            int uspjesnoVjezbi = 0;
+            int djelimicnoVjezbi = 0;
+            int neuspjesnoVjezbi = 0;
+            
+            StringBuilder detalji = new StringBuilder();
+            detalji.append("\n\n=== DETALJI GENERISANJA ===\n");
+            
+            for (PredmetPrioritet pp : prioriteti) {
+                Course predmet = pp.predmet;
+                detalji.append("\n--- ").append(predmet.naziv).append(" (ID: ").append(predmet.idCourse).append(") ---\n");
+                
+                // Generiši predavanja ako ima fond i profesora
+                if (predmet.fondPredavanja > 0 && pp.profesorPredavanja != null) {
+                    String rezultatPredavanja = generisiRasporedPredavanja(predmet.idCourse);
+                    detalji.append("  [PREDAVANJA] ").append(rezultatPredavanja).append("\n");
+                    
+                    if (rezultatPredavanja.startsWith("OK")) {
+                        uspjesnoPredavanja++;
+                    } else if (rezultatPredavanja.startsWith("UPOZORENJE")) {
+                        djelimicnoPredavanja++;
+                    } else {
+                        neuspjesnoPredavanja++;
+                    }
+                } else if (predmet.fondPredavanja > 0) {
+                    detalji.append("  [PREDAVANJA] GRESKA: Nema dodijeljenog profesora\n");
+                    neuspjesnoPredavanja++;
+                } else {
+                    detalji.append("  [PREDAVANJA] Nema fonda - preskočeno\n");
+                }
+                
+                // Generiši vježbe ako ima fond i asistenta
+                if (predmet.fondVjezbi > 0 && pp.profesorVjezbi != null) {
+                    String rezultatVjezbi = generisiRasporedVjezbi(predmet.idCourse);
+                    detalji.append("  [VJEZBE] ").append(rezultatVjezbi).append("\n");
+                    
+                    if (rezultatVjezbi.startsWith("OK")) {
+                        uspjesnoVjezbi++;
+                    } else if (rezultatVjezbi.startsWith("UPOZORENJE")) {
+                        djelimicnoVjezbi++;
+                    } else {
+                        neuspjesnoVjezbi++;
+                    }
+                } else if (predmet.fondVjezbi > 0) {
+                    detalji.append("  [VJEZBE] GRESKA: Nema dodijeljenog asistenta\n");
+                    neuspjesnoVjezbi++;
+                } else {
+                    detalji.append("  [VJEZBE] Nema fonda - preskočeno\n");
+                }
+            }
+            
+            // 4. Ispis detalja
+            System.out.println(detalji.toString());
+            
+            // 5. Sažetak rezultata
+            String sazetak = String.format(
+                "\n=== ZAVRŠENO GENERISANJE KOMPLETNOG RASPOREDA ===\n" +
+                "PREDAVANJA:\n" +
+                "  ✓ Potpuno uspješno:  %d\n" +
+                "  ⚠ Djelimično:        %d\n" +
+                "  ✗ Neuspješno:        %d\n" +
+                "\n" +
+                "VJEŽBE:\n" +
+                "  ✓ Potpuno uspješno:  %d\n" +
+                "  ⚠ Djelimično:        %d\n" +
+                "  ✗ Neuspješno:        %d\n" +
+                "\n" +
+                "UKUPNO PREDMETA OBRAĐENO: %d\n" +
+                "================================================",
+                uspjesnoPredavanja, djelimicnoPredavanja, neuspjesnoPredavanja,
+                uspjesnoVjezbi, djelimicnoVjezbi, neuspjesnoVjezbi,
+                prioriteti.size()
+            );
+            
+            System.out.println(sazetak);
+            
+            // NOVA: Učitaj sve termine jednom na kraju
+            ucitajTermine();
+            
+            if (neuspjesnoPredavanja > 0 || neuspjesnoVjezbi > 0) {
+                return "UPOZORENJE: Raspored djelimično generisan. Provjerite detalje iznad.";
+            }
+            
+            if (djelimicnoPredavanja > 0 || djelimicnoVjezbi > 0) {
+                return "UPOZORENJE: Neki predmeti nisu dobili sve potrebne termine. Provjerite detalje iznad.";
+            }
+            
+            return "OK: Kompletan raspored uspješno generisan za sve predmete!";
+            
+        } catch (Exception e) {
+            e.printStackTrace();
+            return "GRESKA: " + e.getMessage();
+        }
+    }
+
+    /**
+     * Analizira fleksibilnost svakog profesora
+     * Fleksibilnost = 0.0 (nefleksibilan) do 1.0 (veoma fleksibilan)
+     */
+    private Map<Integer, Double> analizirajFleksibilnostProfesora() {
+        Map<Integer, Double> fleksibilnost = new HashMap<>();
+        
+        for (Professor prof : profesori.values()) {
+            double score = 1.0; // Početni maksimalni score
+            
+            try {
+                // FAKTOR 1: Broj preferiranih dana
+                String queryPref = "SELECT COUNT(DISTINCT dan) as broj_dana FROM profesor_preferencije WHERE id_profesor = ?";
+                PreparedStatement ps = conn.prepareStatement(queryPref);
+                ps.setInt(1, prof.idProfessor);
+                ResultSet rs = ps.executeQuery();
+                
+                int brojPreferiranih = 0;
+                if (rs.next()) {
+                    brojPreferiranih = rs.getInt("broj_dana");
+                }
+                rs.close();
+                ps.close();
+                
+                // Manje dana = manje fleksibilnosti
+                if (brojPreferiranih == 0) {
+                    score *= 0.8; // Defaultni dani, srednja fleksibilnost
+                } else if (brojPreferiranih == 1) {
+                    score *= 0.3; // Samo 1 dan = VEOMA nefleksibilan!
+                } else if (brojPreferiranih == 2) {
+                    score *= 0.5; // 2 dana = malo fleksibilan
+                } else if (brojPreferiranih == 3) {
+                    score *= 0.7; // 3 dana = srednje fleksibilan
+                } else {
+                    score *= 1.0; // 4+ dana = veoma fleksibilan
+                }
+                
+                // FAKTOR 2: Koliko je već zauzet
+                int zauzetiTermini = 0;
+                for (AcademicEvent termin : termini) {
+                    if (termin.idProfessor == prof.idProfessor) {
+                        zauzetiTermini++;
+                    }
+                }
+                
+                // Više zauzetih termina = manje fleksibilnosti
+                if (zauzetiTermini == 0) {
+                    score *= 1.0; // Potpuno slobodan
+                } else if (zauzetiTermini <= 4) {
+                    score *= 0.9; // Malo zauzet
+                } else if (zauzetiTermini <= 9) {
+                    score *= 0.7; // Osrednje zauzet
+                } else if (zauzetiTermini <= 14) {
+                    score *= 0.5; // Dosta zauzet
+                } else if (zauzetiTermini <= 19) {
+                    score *= 0.3; // Veoma zauzet
+                } else {
+                    score *= 0.1; // Preopterećen
+                }
+                
+            } catch (SQLException e) {
+                System.err.println("Greška pri analizi profesora " + prof.idProfessor + ": " + e.getMessage());
+                score = 0.5; // Default srednja fleksibilnost ako je greška
+            }
+            
+            fleksibilnost.put(prof.idProfessor, score);
+        }
+        
+        return fleksibilnost;
+    }
+
+    /**
+     * Određuje prioritete predmeta na osnovu fleksibilnosti profesora
+     * Veći prioritet (viši broj) = obrađuje se PRIJE
+     */
+    private List<PredmetPrioritet> odrediPrioritete(Map<Integer, Double> fleksibilnostProfesora) {
+        List<PredmetPrioritet> prioriteti = new ArrayList<>();
+        
+        for (Course predmet : predmeti.values()) {
+            try {
+                PredmetPrioritet pp = new PredmetPrioritet();
+                pp.predmet = predmet;
+                
+                // Pronađi profesora za predavanja
+                if (predmet.fondPredavanja > 0) {
+                    String queryPred = "SELECT id_profesor FROM predmet_profesor WHERE id_predmet = ? AND tip = 'predavanje'";
+                    PreparedStatement ps1 = conn.prepareStatement(queryPred);
+                    ps1.setInt(1, predmet.idCourse);
+                    ResultSet rs1 = ps1.executeQuery();
+                    
+                    if (rs1.next()) {
+                        int idProf = rs1.getInt("id_profesor");
+                        pp.profesorPredavanja = profesori.get(idProf);
+                        pp.fleksibilnostPredavanja = fleksibilnostProfesora.getOrDefault(idProf, 0.5);
+                    }
+                    rs1.close();
+                    ps1.close();
+                }
+                
+                // Pronađi profesora za vježbe
+                if (predmet.fondVjezbi > 0) {
+                    String queryVjez = "SELECT id_profesor FROM predmet_profesor WHERE id_predmet = ? AND tip = 'vjezbe'";
+                    PreparedStatement ps2 = conn.prepareStatement(queryVjez);
+                    ps2.setInt(1, predmet.idCourse);
+                    ResultSet rs2 = ps2.executeQuery();
+                    
+                    if (rs2.next()) {
+                        int idProf = rs2.getInt("id_profesor");
+                        pp.profesorVjezbi = profesori.get(idProf);
+                        pp.fleksibilnostVjezbi = fleksibilnostProfesora.getOrDefault(idProf, 0.5);
+                    }
+                    rs2.close();
+                    ps2.close();
+                }
+                
+                // PRIORITET = 1.0 - prosječna fleksibilnost (inverzija)
+                // Manja fleksibilnost = viši prioritet (bliže 1.0 nakon inverzije)
+                double prosjecnaFleksibilnost = (pp.fleksibilnostPredavanja + pp.fleksibilnostVjezbi) / 2.0;
+                pp.prioritet = 1.0 - prosjecnaFleksibilnost;
+                
+                // Dodatni boost prioriteta ako nema profesora (problem!)
+                if (pp.profesorPredavanja == null && predmet.fondPredavanja > 0) {
+                    pp.prioritet += 0.5; // Označi kao problem
+                }
+                if (pp.profesorVjezbi == null && predmet.fondVjezbi > 0) {
+                    pp.prioritet += 0.5; // Označi kao problem
+                }
+                
+                prioriteti.add(pp);
+                
+            } catch (SQLException e) {
+                System.err.println("Greška pri određivanju prioriteta za predmet " + predmet.idCourse + ": " + e.getMessage());
+            }
+        }
+        
+        // Sortiraj od NAJVIŠEG ka NAJNIŽEM prioritetu (veći broj = viši prioritet)
+        prioriteti.sort((a, b) -> Double.compare(b.prioritet, a.prioritet));
+        
+        return prioriteti;
+    }
+
     public String generisiRasporedPredavanja(int idPredmet) {
         try {
-            Predmet predmet = predmeti.get(idPredmet);
+            Course predmet = predmeti.get(idPredmet);
             if (predmet == null) {
-                return "GRESKA: Predmet ne postoji";
+                return "GRESKA: Course ne postoji";
             }
             
             if (predmet.fondPredavanja <= 0) {
-                return "GRESKA: Predmet nema fond predavanja";
+                return "GRESKA: Course nema fond predavanja";
             }
             
             String queryProf = "SELECT id_profesor FROM predmet_profesor WHERE id_predmet = ? AND tip = 'predavanje'";
@@ -534,20 +788,20 @@ public class EventValidationService {
             ps.setInt(1, idPredmet);
             ResultSet rs = ps.executeQuery();
             
-            int idProfesor = 0;
+            int idProfessor = 0;
             if (rs.next()) {
-                idProfesor = rs.getInt("id_profesor");
+                idProfessor = rs.getInt("id_profesor");
             } else {
                 rs.close();
                 ps.close();
-                return "GRESKA: Predmet nema dodijeljenog profesora za predavanja";
+                return "GRESKA: Course nema dodijeljenog profesora za predavanja";
             }
             rs.close();
             ps.close();
             
             String queryPref = "SELECT * FROM profesor_preferencije WHERE id_profesor = ?";
             PreparedStatement ps2 = conn.prepareStatement(queryPref);
-            ps2.setInt(1, idProfesor);
+            ps2.setInt(1, idProfessor);
             ResultSet rs2 = ps2.executeQuery();
             
             List<String> prefDani = new ArrayList<>();
@@ -567,8 +821,8 @@ public class EventValidationService {
                 prefDani.add("srijeda");
             }
             
-            List<Sala> pogodneSale = new ArrayList<>();
-            for (Sala s : sale.values()) {
+            List<Room> pogodneSale = new ArrayList<>();
+            for (Room s : sale.values()) {
                 if (s.tipSale.equals("predavaliste") || s.tipSale.equals("sve")) {
                     if (s.kapacitet >= predmet.brojStudenata) {
                         if (predmet.vrstaOpreme == null || predmet.vrstaOpreme.isEmpty() ||
@@ -591,7 +845,7 @@ public class EventValidationService {
                     break;
                 }
                 
-                for (Sala sala : pogodneSale) {
+                for (Room sala : pogodneSale) {
                     if (dodanoTermina >= potrebnoTermina) {
                         break;
                     }
@@ -600,50 +854,35 @@ public class EventValidationService {
                     LocalTime pocetak = LocalTime.parse(vremeOd);
                     LocalTime kraj = pocetak.plusHours(1);
                     
-                    boolean slobodan = true;
-                    for (Termin t : termini) {
-                        if (t.dan.equals(dan) && t.idSala == sala.id) {
-                            if (!(kraj.isBefore(t.vremeOd) || kraj.equals(t.vremeOd) || 
-                                  pocetak.isAfter(t.vremeDo) || pocetak.equals(t.vremeDo))) {
-                                slobodan = false;
-                                break;
-                            }
-                        }
-                    }
-                    
-                    if (!slobodan) {
-                        continue;
-                    }
-                    
-                    for (Termin t : termini) {
-                        if (t.dan.equals(dan) && t.idProfesor == idProfesor) {
-                            if (!(kraj.isBefore(t.vremeOd) || kraj.equals(t.vremeOd) || 
-                                  pocetak.isAfter(t.vremeDo) || pocetak.equals(t.vremeDo))) {
-                                slobodan = false;
-                                break;
-                            }
-                        }
-                    }
-                    
-                    if (slobodan) {
+                    // NOVA: Koristi helper metodu umjesto dvostrukih petlji
+                    if (!imaKonflikt(dan, null, sala.idRoom, idProfessor, pocetak, kraj)) {
                         String insert = "INSERT INTO termin (id_predmet, id_sala, id_profesor, dan, vreme_od, vreme_do, tip_termina) " +
                                       "VALUES (?, ?, ?, ?, ?, ?, 'predavanje')";
                         PreparedStatement pstmt = conn.prepareStatement(insert);
                         pstmt.setInt(1, idPredmet);
-                        pstmt.setInt(2, sala.id);
-                        pstmt.setInt(3, idProfesor);
+                        pstmt.setInt(2, sala.idRoom);
+                        pstmt.setInt(3, idProfessor);
                         pstmt.setString(4, dan);
                         pstmt.setTime(5, Time.valueOf(pocetak));
                         pstmt.setTime(6, Time.valueOf(kraj));
                         pstmt.executeUpdate();
                         pstmt.close();
                         
+                        // NOVA: Ručno dodaj u listu umjesto reloada
+                        AcademicEvent noviTermin = new AcademicEvent();
+                        noviTermin.idCourse = idPredmet;
+                        noviTermin.idRoom = sala.idRoom;
+                        noviTermin.idProfessor = idProfessor;
+                        noviTermin.dan = dan;
+                        noviTermin.vremeOd = pocetak;
+                        noviTermin.vremeDo = kraj;
+                        noviTermin.tipTermina = "predavanje";
+                        termini.add(noviTermin);
+                        
                         dodanoTermina++;
                     }
                 }
             }
-            
-            ucitajTermine();
             
             if (dodanoTermina < potrebnoTermina) {
                 return "UPOZORENJE: Generisano " + dodanoTermina + " od " + potrebnoTermina + " potrebnih termina";
@@ -658,13 +897,13 @@ public class EventValidationService {
     
     public String generisiRasporedVjezbi(int idPredmet) {
         try {
-            Predmet predmet = predmeti.get(idPredmet);
+            Course predmet = predmeti.get(idPredmet);
             if (predmet == null) {
-                return "GRESKA: Predmet ne postoji";
+                return "GRESKA: Course ne postoji";
             }
             
             if (predmet.fondVjezbi <= 0) {
-                return "GRESKA: Predmet nema fond vjezbi";
+                return "GRESKA: Course nema fond vjezbi";
             }
             
             String queryProf = "SELECT id_profesor FROM predmet_profesor WHERE id_predmet = ? AND tip = 'vjezbe'";
@@ -672,20 +911,20 @@ public class EventValidationService {
             ps.setInt(1, idPredmet);
             ResultSet rs = ps.executeQuery();
             
-            int idProfesor = 0;
+            int idProfessor = 0;
             if (rs.next()) {
-                idProfesor = rs.getInt("id_profesor");
+                idProfessor = rs.getInt("id_profesor");
             } else {
                 rs.close();
                 ps.close();
-                return "GRESKA: Predmet nema dodijeljenog asistenta za vjezbe";
+                return "GRESKA: Course nema dodijeljenog asistenta za vjezbe";
             }
             rs.close();
             ps.close();
             
             String queryPref = "SELECT * FROM profesor_preferencije WHERE id_profesor = ?";
             PreparedStatement ps2 = conn.prepareStatement(queryPref);
-            ps2.setInt(1, idProfesor);
+            ps2.setInt(1, idProfessor);
             ResultSet rs2 = ps2.executeQuery();
             
             List<String> prefDani = new ArrayList<>();
@@ -704,8 +943,8 @@ public class EventValidationService {
                 prefDani.add("cetvrtak");
             }
             
-            List<Sala> pogodneSale = new ArrayList<>();
-            for (Sala s : sale.values()) {
+            List<Room> pogodneSale = new ArrayList<>();
+            for (Room s : sale.values()) {
                 if (s.tipSale.equals("vjezbe") || s.tipSale.equals("sve")) {
                     if (s.kapacitet >= predmet.brojStudenata) {
                         if (predmet.vrstaOpreme == null || predmet.vrstaOpreme.isEmpty() ||
@@ -728,7 +967,7 @@ public class EventValidationService {
                     break;
                 }
                 
-                for (Sala sala : pogodneSale) {
+                for (Room sala : pogodneSale) {
                     if (dodanoTermina >= potrebnoTermina) {
                         break;
                     }
@@ -737,50 +976,35 @@ public class EventValidationService {
                     LocalTime pocetak = LocalTime.parse(vremeOd);
                     LocalTime kraj = pocetak.plusHours(1);
                     
-                    boolean slobodan = true;
-                    for (Termin t : termini) {
-                        if (t.dan.equals(dan) && t.idSala == sala.id) {
-                            if (!(kraj.isBefore(t.vremeOd) || kraj.equals(t.vremeOd) || 
-                                  pocetak.isAfter(t.vremeDo) || pocetak.equals(t.vremeDo))) {
-                                slobodan = false;
-                                break;
-                            }
-                        }
-                    }
-                    
-                    if (!slobodan) {
-                        continue;
-                    }
-                    
-                    for (Termin t : termini) {
-                        if (t.dan.equals(dan) && t.idProfesor == idProfesor) {
-                            if (!(kraj.isBefore(t.vremeOd) || kraj.equals(t.vremeOd) || 
-                                  pocetak.isAfter(t.vremeDo) || pocetak.equals(t.vremeDo))) {
-                                slobodan = false;
-                                break;
-                            }
-                        }
-                    }
-                    
-                    if (slobodan) {
+                    // NOVA: Koristi helper metodu umjesto dvostrukih petlji
+                    if (!imaKonflikt(dan, null, sala.idRoom, idProfessor, pocetak, kraj)) {
                         String insert = "INSERT INTO termin (id_predmet, id_sala, id_profesor, dan, vreme_od, vreme_do, tip_termina) " +
                                       "VALUES (?, ?, ?, ?, ?, ?, 'vjezbe')";
                         PreparedStatement pstmt = conn.prepareStatement(insert);
                         pstmt.setInt(1, idPredmet);
-                        pstmt.setInt(2, sala.id);
-                        pstmt.setInt(3, idProfesor);
+                        pstmt.setInt(2, sala.idRoom);
+                        pstmt.setInt(3, idProfessor);
                         pstmt.setString(4, dan);
                         pstmt.setTime(5, Time.valueOf(pocetak));
                         pstmt.setTime(6, Time.valueOf(kraj));
                         pstmt.executeUpdate();
                         pstmt.close();
                         
+                        // NOVA: Ručno dodaj u listu umjesto reloada
+                        AcademicEvent noviTermin = new AcademicEvent();
+                        noviTermin.idCourse = idPredmet;
+                        noviTermin.idRoom = sala.idRoom;
+                        noviTermin.idProfessor = idProfessor;
+                        noviTermin.dan = dan;
+                        noviTermin.vremeOd = pocetak;
+                        noviTermin.vremeDo = kraj;
+                        noviTermin.tipTermina = "vjezbe";
+                        termini.add(noviTermin);
+                        
                         dodanoTermina++;
                     }
                 }
             }
-            
-            ucitajTermine();
             
             if (dodanoTermina < potrebnoTermina) {
                 return "UPOZORENJE: Generisano " + dodanoTermina + " od " + potrebnoTermina + " potrebnih termina";
@@ -792,47 +1016,58 @@ public class EventValidationService {
             return "GRESKA: " + e.getMessage();
         }
     }
-    
-    class Predmet {
-        int id;
-        String naziv;
-        int semestar;
-        int fondPredavanja;
-        int fondVjezbi;
-        String vrstaOpreme;
-        int brojStudenata;
-    }
-    
-    class Sala {
-        int id;
-        String naziv;
-        int kapacitet;
-        String vrstaOpreme;
-        String tipSale;
-    }
-    
-    class Profesor {
-        int id;
-        String ime;
-        String prezime;
-        String email;
-    }
-    
-    class Termin {
-        int id;
-        int idPredmet;
-        int idSala;
-        int idProfesor;
-        String dan;
-        LocalTime vremeOd;
-        LocalTime vremeDo;
-        String tipTermina;
-        LocalDate datum;
-    }
-    
-    class Praznik {
-        int id;
-        String naziv;
-        LocalDate datum;
-    }
+}
+
+// ============ MODEL KLASE ============
+
+class Course {
+    public int idCourse;
+    public String naziv;
+    public int semestar;
+    public int fondPredavanja;
+    public int fondVjezbi;
+    public String vrstaOpreme;
+    public int brojStudenata;
+}
+
+class Professor {
+    public int idProfessor;
+    public String ime;
+    public String prezime;
+    public String email;
+}
+
+class Room {
+    public int idRoom;
+    public String naziv;
+    public int kapacitet;
+    public String vrstaOpreme;
+    public String tipSale;
+}
+
+class AcademicEvent {
+    public int idAcademicEvent;
+    public int idCourse;
+    public int idRoom;
+    public int idProfessor;
+    public String dan;
+    public LocalTime vremeOd;
+    public LocalTime vremeDo;
+    public String tipTermina;
+    public LocalDate datum;
+}
+
+class Holiday {
+    public int idHoliday;
+    public String naziv;
+    public LocalDate datum;
+}
+
+class PredmetPrioritet {
+    public Course predmet;
+    public Professor profesorPredavanja;
+    public Professor profesorVjezbi;
+    public double fleksibilnostPredavanja = 0.5;
+    public double fleksibilnostVjezbi = 0.5;
+    public double prioritet = 0.5;
 }

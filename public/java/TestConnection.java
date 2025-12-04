@@ -1,7 +1,5 @@
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.ResultSet;
-import java.sql.Statement;
+import java.sql.*;
+import java.time.*;
 
 public class TestConnection {
     public static void main(String[] args) {
@@ -17,8 +15,17 @@ public class TestConnection {
             if (rs.next()) {
                 System.out.println("✔ Upit radi! Rezultat = " + rs.getInt(1));
             }
+            rs.close();
+
+            // Test učitavanja podataka
+            System.out.println("\n=== Test učitavanja podataka sa novim klasama ===");
+            EventValidationService service = new EventValidationService(conn);
+            System.out.println("✔ EventValidationService inicijalizovan uspješno!");
+
+            stmt.close();
 
         } catch (Exception e) {
+            System.err.println("✗ Greška:");
             e.printStackTrace();
         }
     }
