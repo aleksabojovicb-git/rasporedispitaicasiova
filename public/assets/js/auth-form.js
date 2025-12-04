@@ -152,9 +152,158 @@ document.addEventListener('DOMContentLoaded', function() {
 
     if (signupForm) {
         signupForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            
             if (!validateForm(this)) {
-                e.preventDefault();
+                return;
             }
+
+            const email = document.getElementById('su-email').value;
+            const password = document.getElementById('su-password').value;
+            const confirmPassword = document.getElementById('su-confirm').value;
+
+            // Clear error
+            const existingError = signupForm.querySelector('.server-error');
+            if (existingError) {
+                existingError.remove();
+            }
+
+            // First valdate on server
+            const validateData = new FormData();
+            validateData.append('form_type', 'validate_signup');
+            validateData.append('email', email);
+            validateData.append('password', password);
+            validateData.append('confirm', confirmPassword);
+
+            fetch(window.location.href, {
+                method: 'POST',
+                body: validateData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (!data.success) {
+                    
+                    const errorDiv = document.createElement('div');
+                    errorDiv.className = 'server-error';
+                    errorDiv.textContent = data.error || 'Greška pri validaciji';
+                    signupForm.insertBefore(errorDiv, signupForm.querySelector('.actions'));
+                    return null;
+                }
+
+                // If validation passed, send verification code
+                const formData = new FormData();
+                formData.append('action', 'send_code');
+                formData.append('email', email);
+
+                return fetch('../../src/api/email_verification.php', {
+                    method: 'POST',
+                    body: formData
+                });
+            })
+            .then(response => {
+                if (!response) return null;
+                return response.json();
+            })
+            .then(data => {
+                if (!data) return;
+                
+                if (data.success) {
+                    
+                    const modal = document.getElementById('verificationModal');
+                    const codeInput = document.getElementById('verification-code');
+                    const verifyBtn = document.getElementById('verify-btn');
+                    const cancelBtn = document.getElementById('cancel-verify-btn');
+                    const errorMsg = document.getElementById('verification-error');
+                    
+                    modal.style.display = 'flex';
+                    codeInput.value = '';
+                    codeInput.focus();
+                    errorMsg.textContent = '';
+                    errorMsg.style.display = 'none';
+
+                    
+                    let storedEmail = email;
+                    let storedPassword = password;
+                    let storedConfirm = confirmPassword;
+
+                    
+                    codeInput.addEventListener('input', function() {
+                        this.value = this.value.replace(/[^0-9]/g, '');
+                    });
+
+                    
+                    function handleVerify() {
+                        const code = codeInput.value.trim();
+                        
+                        if (!code || code.length !== 6 || !/^\d{6}$/.test(code)) {
+                            errorMsg.textContent = 'Unesite 6-cifreni kod';
+                            errorMsg.style.display = 'block';
+                            return;
+                        }
+
+                        const verifyData = new FormData();
+                        verifyData.append('action', 'verify_code');
+                        verifyData.append('code', code);
+                        verifyData.append('email', storedEmail);
+
+                        fetch('../../src/api/email_verification.php', {
+                            method: 'POST',
+                            body: verifyData
+                        })
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.success) {
+                                
+                                modal.style.display = 'none';
+                                
+                                
+                                const hiddenForm = document.createElement('form');
+                                hiddenForm.method = 'POST';
+                                hiddenForm.style.display = 'none';
+                                
+                                hiddenForm.appendChild(createInput('form_type', 'signup'));
+                                hiddenForm.appendChild(createInput('email', storedEmail));
+                                hiddenForm.appendChild(createInput('password', storedPassword));
+                                hiddenForm.appendChild(createInput('confirm', storedConfirm));
+                                
+                                document.body.appendChild(hiddenForm);
+                                hiddenForm.submit();
+                            } else {
+                                errorMsg.textContent = data.message || 'Pogrešan kod';
+                                errorMsg.style.display = 'block';
+                            }
+                        })
+                        .catch(error => {
+                            errorMsg.textContent = 'Greška pri verifikaciji';
+                            errorMsg.style.display = 'block';
+                        });
+                    }
+
+                    function createInput(name, value) {
+                        const input = document.createElement('input');
+                        input.type = 'hidden';
+                        input.name = name;
+                        input.value = value;
+                        return input;
+                    }
+
+                    verifyBtn.onclick = handleVerify;
+                    codeInput.addEventListener('keypress', function(e) {
+                        if (e.key === 'Enter') {
+                            handleVerify();
+                        }
+                    });
+
+                    cancelBtn.onclick = function() {
+                        modal.style.display = 'none';
+                    };
+                } else {
+                    alert(data.message || 'Greška pri slanju verifikacionog koda');
+                }
+            })
+            .catch(error => {
+                alert('Greška pri slanju verifikacionog koda');
+            });
         });
     }
 });
