@@ -1147,7 +1147,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <select id="role" name="role">
                                 <option value="ADMIN">ADMIN</option>
                                 <option value="PROFESSOR">PROFESSOR</option>
-                                <option value="USER">USER</option>
                             </select>
 
                             <label for="professor_id">Povezan profesor (opcionalno):</label>
