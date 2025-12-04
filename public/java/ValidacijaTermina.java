@@ -1,22 +1,19 @@
 import java.sql.*;
 
 public class ValidacijaTermina {
-    
     public static void main(String[] args) {
         if (args.length < 1) {
             System.out.println("GRESKA: Nedostaje akcija");
             return;
         }
-        
+
         String akcija = args[0];
         Connection conn = null;
-        
         try {
             conn = BazaInicijalizacija.uspostaviKonekciju();
             EventValidationService service = new EventValidationService(conn);
-            
             String rezultat = "";
-            
+
             if (akcija.equals("dodajPredavanje")) {
                 if (args.length < 7) {
                     System.out.println("GRESKA: Nedostaju parametri");
@@ -29,7 +26,7 @@ public class ValidacijaTermina {
                 String vremeOd = args[5];
                 String vremeDo = args[6];
                 rezultat = service.dodajPredavanje(idPredmet, idSala, idProfesor, dan, vremeOd, vremeDo);
-                
+
             } else if (akcija.equals("dodajVjezbe")) {
                 if (args.length < 7) {
                     System.out.println("GRESKA: Nedostaju parametri");
@@ -42,7 +39,7 @@ public class ValidacijaTermina {
                 String vremeOd = args[5];
                 String vremeDo = args[6];
                 rezultat = service.dodajVjezbe(idPredmet, idSala, idProfesor, dan, vremeOd, vremeDo);
-                
+
             } else if (akcija.equals("dodajKolokvijum")) {
                 if (args.length < 8) {
                     System.out.println("GRESKA: Nedostaju parametri");
@@ -56,7 +53,7 @@ public class ValidacijaTermina {
                 String vremeOd = args[6];
                 String vremeDo = args[7];
                 rezultat = service.dodajKolokvijum(idPredmet, idSala, idProfesor, idDezurni, datum, vremeOd, vremeDo);
-                
+
             } else if (akcija.equals("dodajIspit")) {
                 if (args.length < 8) {
                     System.out.println("GRESKA: Nedostaju parametri");
@@ -70,7 +67,7 @@ public class ValidacijaTermina {
                 String vremeDo = args[6];
                 String tipIspita = args[7];
                 rezultat = service.dodajIspit(idPredmet, idSala, idProfesor, datum, vremeOd, vremeDo, tipIspita);
-                
+
             } else if (akcija.equals("generisiPredavanja")) {
                 if (args.length < 2) {
                     System.out.println("GRESKA: Nedostaje ID predmeta");
@@ -78,7 +75,7 @@ public class ValidacijaTermina {
                 }
                 int idPredmet = Integer.parseInt(args[1]);
                 rezultat = service.generisiRasporedPredavanja(idPredmet);
-                
+
             } else if (akcija.equals("generisiVjezbe")) {
                 if (args.length < 2) {
                     System.out.println("GRESKA: Nedostaje ID predmeta");
@@ -86,16 +83,28 @@ public class ValidacijaTermina {
                 }
                 int idPredmet = Integer.parseInt(args[1]);
                 rezultat = service.generisiRasporedVjezbi(idPredmet);
-                
+
+            } else if (akcija.equals("generisiKompletan")) {
+                rezultat = service.generisiKompletniRaspored();
+
             } else {
                 System.out.println("GRESKA: Nepoznata akcija");
+                System.out.println("Dostupne akcije:");
+                System.out.println("  - dodajPredavanje <id_predmet> <id_sala> <id_profesor> <dan> <vreme_od> <vreme_do>");
+                System.out.println("  - dodajVjezbe <id_predmet> <id_sala> <id_profesor> <dan> <vreme_od> <vreme_do>");
+                System.out.println("  - dodajKolokvijum <id_predmet> <id_sala> <id_profesor> <id_dezurni> <datum> <vreme_od> <vreme_do>");
+                System.out.println("  - dodajIspit <id_predmet> <id_sala> <id_profesor> <datum> <vreme_od> <vreme_do> <tip_ispita>");
+                System.out.println("  - generisiPredavanja <id_predmet>");
+                System.out.println("  - generisiVjezbe <id_predmet>");
+                System.out.println("  - generisiKompletan");
                 return;
             }
-            
+
             System.out.println(rezultat);
-            
+
         } catch (Exception e) {
             System.out.println("GRESKA: " + e.getMessage());
+            e.printStackTrace();
         } finally {
             if (conn != null) {
                 try {
