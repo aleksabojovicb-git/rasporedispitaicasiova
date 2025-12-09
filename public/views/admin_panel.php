@@ -111,89 +111,67 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 }
+
+/** ===== PARTIALS ===== */
+$pageTitle = "Profil Profesora";
+$pageCss = null; // page-specific CSS nije potreban
+include __DIR__ . "/partials/head.php";
+include __DIR__ . "/partials/admin_header.php";
 ?>
-<!DOCTYPE html>
-<html lang="sr">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Profil Profesora</title>
 
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
-    <link rel="stylesheet" href="../assets/css/professor_custom.css">
-</head>
-<body>
-<header>
-    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
-        <div class="container-fluid">
-            <a class="navbar-brand" href="index.php"><img src="../../img/fit-logo.png" alt="logo" id="logo"></a>
-            <ul class="navbar-nav ms-auto">
-                <li class="nav-item"><a class="nav-link" href="index.php">Početna</a></li>
-                <li class="nav-item"><a class="nav-link" href="logout.php">Odjavi se</a></li>
-            </ul>
-        </div>
-    </nav>
-</header>
-
-<div class="container mt-4">
-    <h2>Profil Profesora</h2>
+<div class="container">
+    <h2 class="section-title">Profil Profesora</h2>
 
     <?php if ($errorMessage): ?>
-        <div class="alert alert-danger"><?php echo htmlspecialchars($errorMessage); ?></div>
+        <div class="error"><?= htmlspecialchars($errorMessage); ?></div>
     <?php endif; ?>
+
     <?php if ($successMessage): ?>
-        <div class="alert alert-success"><?php echo htmlspecialchars($successMessage); ?></div>
+        <div class="success"><?= htmlspecialchars($successMessage); ?></div>
     <?php endif; ?>
 
-    <ul class="nav nav-tabs" id="profTab" role="tablist">
-        <li class="nav-item" role="presentation">
-            <button class="nav-link active" id="tab-profile" data-bs-toggle="tab" data-bs-target="#profileTab" type="button">Profil</button>
-        </li>
-        <li class="nav-item" role="presentation">
-            <button class="nav-link" id="tab-events" data-bs-toggle="tab" data-bs-target="#eventsTab" type="button">Događaji</button>
-        </li>
-        <li class="nav-item" role="presentation">
-            <button class="nav-link" id="tab-courses" data-bs-toggle="tab" data-bs-target="#coursesTab" type="button">Predmeti & Kolokvijumi</button>
-        </li>
-        <li class="nav-item" role="presentation">
-            <button class="nav-link" id="tab-avail" data-bs-toggle="tab" data-bs-target="#availabilityTab" type="button">Raspoloživost</button>
-        </li>
-    </ul>
+    <!-- ==== TABS ==== -->
+    <div class="tabs" data-active="profile">
+        <div class="tab-list">
+            <button class="tab-button active" data-target="profileTab">Profil</button>
+            <button class="tab-button" data-target="eventsTab">Događaji</button>
+            <button class="tab-button" data-target="coursesTab">Predmeti & Kolokvijumi</button>
+            <button class="tab-button" data-target="availabilityTab">Raspoloživost</button>
+        </div>
 
-    <div class="tab-content mt-3">
-        <!-- PROFILE -->
-        <div class="tab-pane fade show active" id="profileTab">
-            <div class="edit-controls mb-3">
-                <button id="toggleEditBtn" class="btn btn-secondary">Edit profil</button>
+        <div class="tab-content active" id="profileTab">
+            <div class="edit-controls">
+                <button id="toggleEditBtn" class="button button-secondary">Edit profil</button>
             </div>
 
             <div id="profileView">
-                <p><strong>Ime i prezime:</strong> <?php echo htmlspecialchars($currentProfessor['full_name']); ?></p>
-                <p><strong>Email:</strong> <?php echo htmlspecialchars($currentProfessor['email']); ?></p>
-                <p><strong>Username:</strong> <?php echo htmlspecialchars($currentProfessor['username'] ?? ''); ?></p>
+                <p><strong>Ime i prezime:</strong> <?= htmlspecialchars($currentProfessor['full_name']); ?></p>
+                <p><strong>Email:</strong> <?= htmlspecialchars($currentProfessor['email']); ?></p>
+                <p><strong>Username:</strong> <?= htmlspecialchars($currentProfessor['username'] ?? ''); ?></p>
             </div>
 
-            <div id="profileEdit" class="d-none">
-                <form method="post">
+            <div id="profileEdit" class="hidden">
+                <form method="post" class="form-container">
                     <input type="hidden" name="action" value="update_profile">
-                    <div class="mb-3">
-                        <label for="full_name" class="form-label">Ime i prezime:</label>
-                        <input type="text" id="full_name" name="full_name" class="form-control" value="<?php echo htmlspecialchars($currentProfessor['full_name']); ?>" required>
-                    </div>
-                    <div class="mb-3">
-                        <label for="email" class="form-label">Email:</label>
-                        <input type="email" id="email" name="email" class="form-control" value="<?php echo htmlspecialchars($currentProfessor['email']); ?>" readonly>
-                    </div>
-                    <button type="submit" class="btn btn-primary">Sačuvaj izmjene</button>
+
+                    <label for="full_name">Ime i prezime:</label>
+                    <input type="text" id="full_name" name="full_name" value="<?= htmlspecialchars($currentProfessor['full_name']); ?>" required>
+
+                    <label for="email">Email:</label>
+                    <input type="email" id="email" name="email" value="<?= htmlspecialchars($currentProfessor['email']); ?>" readonly>
+
+                    <button type="submit" class="button button-primary">Sačuvaj</button>
                 </form>
-                <button id="openModalBtn" class="btn btn-warning mt-2">Promijeni password</button>
+
+                <button id="openModalBtn" class="button button-secondary" style="margin-top: 12px;">Promijeni password</button>
             </div>
         </div>
 
         <!-- EVENTS -->
-        <div class="tab-pane fade" id="eventsTab">
-            <h3>Sva predavanja i kolokvijumi</h3>
-            <table class="table table-bordered">
+        <div class="tab-content" id="eventsTab">
+            <h3 class="section-title">Sva predavanja i kolokvijumi</h3>
+
+            <table class="table">
                 <thead>
                 <tr><th>ID</th><th>Predmet</th><th>Tip</th><th>Početak</th><th>Kraj</th><th>Sala</th><th>Napomena</th></tr>
                 </thead>
@@ -201,24 +179,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <?php
                 try {
                     $stmt = $pdo->prepare("
-                SELECT e.*, c.name as course_name, r.code as room_code
-                FROM academic_event e
-                LEFT JOIN course c ON e.course_id = c.id
-                LEFT JOIN room r ON e.room_id = r.id
-                JOIN event_professor ep ON ep.event_id = e.id
-                WHERE ep.professor_id = ?
-                ORDER BY e.starts_at DESC
-            ");
+                        SELECT e.*, c.name as course_name, r.code as room_code
+                        FROM academic_event e
+                        LEFT JOIN course c ON e.course_id = c.id
+                        LEFT JOIN room r ON e.room_id = r.id
+                        JOIN event_professor ep ON ep.event_id = e.id
+                        WHERE ep.professor_id = ?
+                        ORDER BY e.starts_at DESC
+                    ");
                     $stmt->execute([$professorId]);
                     while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-                        $event_type = ($row['type_enum'] === 'EXAM') ? 'Ispit' : (($row['type_enum']==='COLLOQUIUM')?'Kolokvijum':htmlspecialchars($row['type_enum']));
+                        $event_type = ($row['type_enum'] === 'EXAM') ? 'Ispit' :
+                            (($row['type_enum'] === 'COLLOQUIUM') ? 'Kolokvijum' : htmlspecialchars($row['type_enum']));
                         echo "<tr>";
                         echo "<td>".htmlspecialchars($row['id'])."</td>";
                         echo "<td>".htmlspecialchars($row['course_name'])."</td>";
                         echo "<td>".$event_type."</td>";
                         echo "<td>".date('d.m.Y H:i', strtotime($row['starts_at']))."</td>";
                         echo "<td>".date('d.m.Y H:i', strtotime($row['ends_at']))."</td>";
-                        echo "<td>".($row['is_online']?'Online':htmlspecialchars($row['room_code']))."</td>";
+                        echo "<td>".($row['is_online'] ? 'Online' : htmlspecialchars($row['room_code']))."</td>";
                         echo "<td>".htmlspecialchars($row['notes'])."</td>";
                         echo "</tr>";
                     }
@@ -231,26 +210,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
 
         <!-- COURSES -->
-        <div class="tab-pane fade" id="coursesTab">
-            <h3>Moji predmeti i izbor nedjelje kolokvijuma</h3>
-            <form id="examWeekForm" method="post">
+        <div class="tab-content" id="coursesTab">
+            <h3 class="section-title">Moji predmeti i izbor nedjelje kolokvijuma</h3>
+
+            <form method="post">
                 <input type="hidden" name="action" value="save_exam_weeks">
-                <table class="table table-bordered">
+
+                <table class="table">
                     <thead><tr><th>Predmet</th><th>Semestar</th><th>Uloga</th><th>Nedjelja kolokvijuma</th></tr></thead>
                     <tbody>
                     <?php
                     try {
                         $stmt = $pdo->prepare("
-                SELECT c.id, c.name, c.semester, cp.is_assistant
-                FROM course_professor cp
-                JOIN course c ON c.id = cp.course_id
-                WHERE cp.professor_id = ?
-                ORDER BY c.name
-            ");
+                            SELECT c.id, c.name, c.semester, cp.is_assistant
+                            FROM course_professor cp
+                            JOIN course c ON c.id = cp.course_id
+                            WHERE cp.professor_id = ?
+                            ORDER BY c.name
+                        ");
                         $stmt->execute([$professorId]);
                         $courses = $stmt->fetchAll(PDO::FETCH_ASSOC);
-                        if (!$courses) echo "<tr><td colspan='4'>Nema pridruženih predmeta.</td></tr>";
-                        else {
+
+                        if (!$courses) {
+                            echo "<tr><td colspan='4'>Nema pridruženih predmeta.</td></tr>";
+                        } else {
                             foreach($courses as $c){
                                 $role = $c['is_assistant'] ? 'Asistent' : 'Profesor';
                                 echo "<tr>";
@@ -274,65 +257,52 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
 
         <!-- AVAILABILITY -->
-        <div class="tab-pane fade" id="availabilityTab">
-            <h3>Raspoloživost</h3>
-            //ne radi
+        <div class="tab-content" id="availabilityTab">
+            <h3 class="section-title">Raspoloživost</h3>
+            <!-- još nedefinisano -->
         </div>
     </div>
 </div>
 
-<!-- Password modal -->
-<div class="modal fade" id="passwordModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <form method="post">
-                <input type="hidden" name="action" value="update_password">
-                <div class="modal-header"><h5 class="modal-title">Promjena passworda</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <div class="mb-3"><label for="oldPassword" class="form-label">Stari password</label>
-                        <input type="password" class="form-control" id="oldPassword" name="old_password" required></div>
+<?php include __DIR__ . "/partials/footer.php"; ?>
 
-                    <div class="mb-3"><label for="newPassword" class="form-label">Novi password</label>
-                        <input type="password" class="form-control" id="newPassword" name="new_password" required></div>
-
-                    <div class="mb-3"><label for="confirmPassword" class="form-label">Potvrdi novi password</label>
-                        <input type="password" class="form-control" id="confirmPassword" name="confirm_password" required></div>
-                </div>
-                <div class="modal-footer">
-                    <button type="submit" class="btn btn-primary">Sačuvaj</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
-    // Toggle edit profil
+    /** SIMPLE TAB UI (NO BOOTSTRAP) **/
+    const tabButtons = document.querySelectorAll('.tab-button');
+    const tabContents = document.querySelectorAll('.tab-content');
+
+    tabButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            tabButtons.forEach(b => b.classList.remove('active'));
+            tabContents.forEach(c => c.classList.remove('active'));
+
+            btn.classList.add('active');
+            const target = document.getElementById(btn.dataset.target);
+            target.classList.add('active');
+        });
+    });
+
+    /** EDIT PROFILE TOGGLE **/
     const toggleEditBtn = document.getElementById('toggleEditBtn');
     const profileEdit = document.getElementById('profileEdit');
     const profileView = document.getElementById('profileView');
 
     toggleEditBtn.addEventListener('click', () => {
-        const hidden = profileEdit.classList.contains('d-none');
-        if(hidden){
-            profileEdit.classList.remove('d-none');
-            profileView.classList.add('d-none');
+        const isHidden = profileEdit.classList.contains('hidden');
+        if(isHidden){
+            profileEdit.classList.remove('hidden');
+            profileView.classList.add('hidden');
             toggleEditBtn.textContent = 'Zatvori edit';
         } else {
-            profileEdit.classList.add('d-none');
-            profileView.classList.remove('d-none');
+            profileEdit.classList.add('hidden');
+            profileView.classList.remove('hidden');
             toggleEditBtn.textContent = 'Edit profil';
         }
     });
 
-    // Password modal
+    /** MODAL (FOR PASSWORD) — you will style as modal component **/
     const modalBtn = document.getElementById('openModalBtn');
     if(modalBtn){
-        modalBtn.addEventListener('click', ()=> new bootstrap.Modal(document.getElementById('passwordModal')).show());
+        alert("TODO: Implement your modal component UI here");
     }
 </script>
-</body>
-</html>
