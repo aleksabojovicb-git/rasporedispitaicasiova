@@ -1,0 +1,13 @@
+/* =============================
+   ADMIN PAGE SPECIFIC STYLES
+   ============================= */
+
+.admin-title {
+    font-size: var(--font-size-xl);
+    margin-bottom: var(--spacing-md);
+}
+
+.admin-grid {
+    display: grid;
+    gap: var(--spacing-lg);
+}

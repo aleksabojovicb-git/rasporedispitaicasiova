@@ -1,0 +1,35 @@
+/* =============================
+   STACK SCREENS (signin/signup)
+   ============================= */
+
+.stacks {
+  position: relative;
+  width: 100%;
+  min-height: auto;
+}
+
+.stack {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(10px);
+  transition: opacity .35s ease, transform .35s ease, visibility .35s ease;
+  position: absolute;
+  inset: 0;
+}
+
+/* ACTIVE SCREEN */
+.stack.active {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: none;
+  position: static;
+}
+
+/* OPTIONAL: full width in mobile */
+@media (max-width: 600px) {
+  .stack {
+    padding: var(--spacing-md);
+  }
+}
