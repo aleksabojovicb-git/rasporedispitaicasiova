@@ -1,5 +1,8 @@
 import java.sql.*;
+import java.sql.Date;
 import java.time.*;
+import java.time.format.DateTimeParseException;
+import java.time.temporal.TemporalAdjusters;
 import java.util.*;
 
 public class EventValidationService {
@@ -57,46 +60,42 @@ public class EventValidationService {
     
     private void ucitajSale() throws SQLException {
         String query = "SELECT * FROM sala";
-        Statement stmt = conn.createStatement();
-        ResultSet rs = stmt.executeQuery(query);
-        
-        int count = 0;
-        while (rs.next()) {
-            Room s = new Room();
-            s.idRoom = rs.getInt("id_sala");
-            s.naziv = rs.getString("naziv");
-            s.kapacitet = rs.getInt("kapacitet");
-            s.vrstaOpreme = rs.getString("vrsta_opreme");
-            s.tipSale = rs.getString("tip_sale");
-            sale.put(s.idRoom, s);
-            count++;
+        try (Statement stmt = conn.createStatement();
+            ResultSet rs = stmt.executeQuery(query)) {  // Try-with-resources
+            int count = 0;
+            while (rs.next()) {
+                Room s = new Room();
+                s.idRoom = rs.getInt("id_sala");
+                s.naziv = rs.getString("naziv");
+                s.kapacitet = rs.getInt("kapacitet");
+                s.vrstaOpreme = rs.getString("vrsta_opreme");
+                s.tipSale = rs.getString("tip_sale");
+                sale.put(s.idRoom, s);
+                count++;
+            }
+            System.out.println("Ucitano sala: " + count);
         }
-        
-        rs.close();
-        stmt.close();
-        System.out.println("Ucitano sala: " + count);
     }
+
     
     private void ucitajProfesore() throws SQLException {
         String query = "SELECT * FROM profesor";
-        Statement stmt = conn.createStatement();
-        ResultSet rs = stmt.executeQuery(query);
-        
-        int count = 0;
-        while (rs.next()) {
-            Professor prof = new Professor();
-            prof.idProfessor = rs.getInt("id_profesor");
-            prof.ime = rs.getString("ime");
-            prof.prezime = rs.getString("prezime");
-            prof.email = rs.getString("email");
-            profesori.put(prof.idProfessor, prof);
-            count++;
-        }
-        
-        rs.close();
-        stmt.close();
-        System.out.println("Ucitano profesora: " + count);
+        try (Statement stmt = conn.createStatement();
+            ResultSet rs = stmt.executeQuery(query)) {
+            int count = 0;
+            while (rs.next()) {
+                Professor prof = new Professor();
+                prof.idProfessor = rs.getInt("id_profesor");
+                prof.ime = rs.getString("ime");
+                prof.prezime = rs.getString("prezime");
+                prof.email = rs.getString("email");
+                profesori.put(prof.idProfessor, prof);
+                count++;
+            }
+            System.out.println("Ucitano profesora: " + count);
+        } // Auto-close! (čak i ako baci exception)
     }
+
     
     private void ucitajTermine() throws SQLException {
         termini.clear(); // Očisti prije reloada
@@ -117,7 +116,9 @@ public class EventValidationService {
             t.vremeOd = (vremeOdSQL != null) ? vremeOdSQL.toLocalTime() : null;
             t.vremeDo = (vremeDoSQL != null) ? vremeDoSQL.toLocalTime() : null;
             t.tipTermina = rs.getString("tip_termina");
-            t.datum = rs.getDate("datum") != null ? rs.getDate("datum").toLocalDate() : null;
+            Date datumSQL = rs.getDate("datum");
+            t.datum = (datumSQL != null) ? datumSQL.toLocalDate() : null;
+
             termini.add(t);
             count++;
         }
@@ -168,7 +169,11 @@ public class EventValidationService {
                     if (pocetak != null && kraj != null && t.vremeOd != null && t.vremeDo != null) {
                         // if (!(kraj.isBefore(t.vremeOd) || kraj.equals(t.vremeOd) ||
                         //     pocetak.isAfter(t.vremeDo) || pocetak.equals(t.vremeDo)))
-                        if (pocetak.isBefore(t.vremeDo) && kraj.isAfter(t.vremeOd)) {
+                        if (pocetak != null && kraj != null && 
+                            t.vremeOd != null && t.vremeDo != null &&
+                            pocetak.isBefore(t.vremeDo) && 
+                            kraj.isAfter(t.vremeOd) && 
+                            !pocetak.equals(kraj)) {
                             return true;
                         }
                     }
@@ -200,8 +205,8 @@ public class EventValidationService {
                 return "GRESKA: Professor ne postoji";
             }
             
-            LocalTime pocetak = LocalTime.parse(vremeOd);
-            LocalTime kraj = LocalTime.parse(vremeDo);
+            LocalTime pocetak = parseTime(vremeOd);
+            LocalTime kraj = parseTime(vremeDo);
             
             if (sala.kapacitet < predmet.brojStudenata) {
                 return "GRESKA: Room nema dovoljan kapacitet za broj studenata";
@@ -268,6 +273,16 @@ public class EventValidationService {
         }
     }
 
+    private LocalTime parseTime(String timeStr) throws IllegalArgumentException {
+        try {
+            return LocalTime.parse(timeStr);
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Invalid time format: " + timeStr + 
+                                            ". Expected HH:mm:ss or HH:mm", e);
+        }
+    }
+
+
     /**
      * REFAKTORISANO: Skraćeno jer koristi generičku metodu
      */
@@ -286,140 +301,175 @@ public class EventValidationService {
                                  "vjezbe", "vjezbe");
     }
     
-    public String dodajKolokvijum(int idPredmet, int idRoom, int idProfessor, int idDezurni,
-                                  String datum, String vremeOd, String vremeDo) {
+    public String dodajKolokvijum(int idPredmet, int idSala, int idProfesor, int idDezurni,
+                                String datum, String vremeOd, String vremeDo) {
         try {
             Course predmet = predmeti.get(idPredmet);
             if (predmet == null) {
                 return "GRESKA: Course ne postoji";
             }
-            
-            Room sala = sale.get(idRoom);
+
+            Room sala = sale.get(idSala);
             if (sala == null) {
                 return "GRESKA: Room ne postoji";
             }
-            
-            Professor profesor = profesori.get(idProfessor);
+
+            Professor profesor = profesori.get(idProfesor);
             if (profesor == null) {
                 return "GRESKA: Professor ne postoji";
             }
-            
+
             Professor dezurni = profesori.get(idDezurni);
             if (dezurni == null) {
-                return "GRESKA: Dezurni profesor ne postoji";
+                return "GRESKA: Dežurni profesor ne postoji";
             }
-            
+
             LocalDate datumKolokvijuma = LocalDate.parse(datum);
-            LocalTime pocetak = LocalTime.parse(vremeOd);
-            LocalTime kraj = LocalTime.parse(vremeDo);
-            
+            LocalTime pocetak = parseTime(vremeOd);
+            LocalTime kraj = parseTime(vremeDo);
+
+            // 1. VALIDACIJA: Nije nedjeljA ili praznik
             if (datumKolokvijuma.getDayOfWeek() == DayOfWeek.SUNDAY) {
-                return "GRESKA: Kolokvijum ne moze biti u nedjelju";
+                return "GRESKA: Kolokvijum se ne moze zakazati u nedjelju";
             }
-            
+
             for (Holiday p : praznici) {
                 if (p.datum.equals(datumKolokvijuma)) {
-                    return "GRESKA: Ne moze se zakazati kolokvijum za praznik: " + p.naziv;
+                    return "GRESKA: Kolokvijum ne moze biti na praznik: " + p.naziv;
                 }
             }
-            
-            if (!sala.tipSale.equals("vjezbe") && !sala.tipSale.equals("sve")) {
-                return "GRESKA: Kolokvijum mora biti u sali za vjezbe";
+
+            // 2. VALIDACIJA: Max 2 kolokvijuma u toj sedmici
+            LocalDate pocetakSedmice = datumKolokvijuma.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+            LocalDate krajSedmice = datumKolokvijuma.with(TemporalAdjusters.nextOrSame(DayOfWeek.FRIDAY));
+
+            int kolokvijumiUSedmici = 0;
+            for (AcademicEvent event : termini) {
+                if (event.tipTermina != null && event.tipTermina.equals("kolokvijum") &&
+                    event.datum != null &&
+                    !event.datum.isBefore(pocetakSedmice) &&
+                    !event.datum.isAfter(krajSedmice)) {
+                    kolokvijumiUSedmici++;
+                }
             }
-            
+
+            if (kolokvijumiUSedmici >= 2) {
+                return "GRESKA: Već postoje 2 kolokvijuma u ovoj sedmici, dozvoljena je max 2";
+            }
+
+            // 3. VALIDACIJA: Sala je slobodna i ima dovoljnu opremu
             if (sala.kapacitet < predmet.brojStudenata) {
                 return "GRESKA: Room nema dovoljan kapacitet";
             }
-            
-            // NOVA: Koristi helper metodu
-            if (imaKonflikt(null, datumKolokvijuma, idRoom, idProfessor, pocetak, kraj)) {
+
+            if (predmet.vrstaOpreme != null && !predmet.vrstaOpreme.isEmpty()) {
+                if (sala.vrstaOpreme == null || !sala.vrstaOpreme.contains(predmet.vrstaOpreme)) {
+                    return "GRESKA: Room nema potrebnu opremu: " + predmet.vrstaOpreme;
+                }
+            }
+
+            // 4. VALIDACIJA: Profesor i Dežurni nisu zauzeti
+            if (imaKonflikt(null, datumKolokvijuma, idSala, idProfesor, pocetak, kraj)) {
                 for (AcademicEvent t : termini) {
-                    if (t.datum != null && t.datum.equals(datumKolokvijuma)) {
-                        // if (!(kraj.isBefore(t.vremeOd) || kraj.equals(t.vremeOd) ||
-                        //       pocetak.isAfter(t.vremeDo) || pocetak.equals(t.vremeDo))) 
-                        if (pocetak.isBefore(t.vremeDo) && kraj.isAfter(t.vremeOd)) {
-                            if (t.idRoom == idRoom) {
-                                return "GRESKA: Room je zauzeta u tom terminu";
-                            }
-                            if (t.idProfessor == idProfessor) {
-                                return "GRESKA: Professor je zauzet u tom terminu";
-                            }
+                    if (t.datum != null && t.datum.equals(datumKolokvijuma) &&
+                        pocetak.isBefore(t.vremeDo) && kraj.isAfter(t.vremeOd)) {
+                        if (t.idProfessor == idProfesor) {
+                            return "GRESKA: Profesor je zauzet u tom terminu";
+                        }
+                        if (t.idRoom == idSala) {
+                            return "GRESKA: Room je zauzeta u tom terminu";
                         }
                     }
                 }
             }
 
-            int brojKolokvijumaTeNedjelje = 0;
-            LocalDate pocetakNedjelje = datumKolokvijuma.with(DayOfWeek.MONDAY);
-            LocalDate krajNedjelje = datumKolokvijuma.with(DayOfWeek.SUNDAY);
-            
-            for (AcademicEvent t : termini) {
-                if (t.tipTermina.equals("kolokvijum") && t.datum != null) {
-                    if (!t.datum.isBefore(pocetakNedjelje) && !t.datum.isAfter(krajNedjelje)) {
-                        brojKolokvijumaTeNedjelje++;
-                    }
+            // 5. VALIDACIJA: Dežurni nije preplavljeni (brojanje dežurstava)
+            int dezurstvaDezurnog = 0;
+            for (AcademicEvent event : termini) {
+                if (event.idProfessor == idDezurni && 
+                    event.tipTermina != null && event.tipTermina.equals("kolokvijum")) {
+                    dezurstvaDezurnog++;
                 }
             }
-            
-            if (brojKolokvijumaTeNedjelje >= 2) {
-                return "GRESKA: U jednoj nedjelji mogu biti maksimalno 2 kolokvijuma";
+
+            if (dezurstvaDezurnog >= 5) {  // Primjer: max 5 dežurstava
+                return "UPOZORENJE: Dežurni ima već " + dezurstvaDezurnog + " dežurstava";
             }
-            
-            int brojDezurstava = 0;
-            for (AcademicEvent t : termini) {
-                if (t.tipTermina.contains("kolokvijum") && t.datum != null) {
-                    if (!t.datum.isBefore(pocetakNedjelje) && !t.datum.isAfter(krajNedjelje)) {
-                        String query = "SELECT id_dezurni FROM kolokvijum WHERE id_termin = ?";
-                        PreparedStatement ps = conn.prepareStatement(query);
-                        ps.setInt(1, t.idAcademicEvent);
-                        ResultSet rs = ps.executeQuery();
-                        if (rs.next() && rs.getInt("id_dezurni") == idDezurni) {
-                            brojDezurstava++;
-                        }
-                        rs.close();
-                        ps.close();
-                    }
-                }
+
+            // 6. INSERT u bazu
+            String insert = "INSERT INTO termin (id_predmet, id_sala, id_profesor, datum, vreme_od, vreme_do, tip_termina, id_dezurni) " +
+                            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+
+            try (PreparedStatement pstmt = conn.prepareStatement(insert)) {
+                pstmt.setInt(1, idPredmet);
+                pstmt.setInt(2, idSala);
+                pstmt.setInt(3, idProfesor);
+                pstmt.setDate(4, java.sql.Date.valueOf(datumKolokvijuma));
+                pstmt.setTime(5, Time.valueOf(pocetak));
+                pstmt.setTime(6, Time.valueOf(kraj));
+                pstmt.setString(7, "kolokvijum");
+                pstmt.setInt(8, idDezurni);
+
+                pstmt.executeUpdate();
+
+                // Dodaj u lokalnu listu
+                AcademicEvent noviEvent = new AcademicEvent();
+                noviEvent.idCourse = idPredmet;
+                noviEvent.idRoom = idSala;
+                noviEvent.idProfessor = idProfesor;
+                noviEvent.datum = datumKolokvijuma;
+                noviEvent.vremeOd = pocetak;
+                noviEvent.vremeDo = kraj;
+                noviEvent.tipTermina = "kolokvijum";
+                termini.add(noviEvent);
+
+                return "OK: Kolokvijum uspjesno dodan";
             }
-            
-            if (brojDezurstava >= 2) {
-                return "GRESKA: Dezurni profesor vec ima 2 dezurstva te nedjelje";
-            }
-            
-            String insertTermin = "INSERT INTO termin (id_predmet, id_sala, id_profesor, datum, vreme_od, vreme_do, tip_termina) " +
-                                "VALUES (?, ?, ?, ?, ?, ?, 'kolokvijum')";
-            PreparedStatement pstmt = conn.prepareStatement(insertTermin, Statement.RETURN_GENERATED_KEYS);
-            pstmt.setInt(1, idPredmet);
-            pstmt.setInt(2, idRoom);
-            pstmt.setInt(3, idProfessor);
-            pstmt.setDate(4, java.sql.Date.valueOf(datumKolokvijuma));
-            pstmt.setTime(5, Time.valueOf(pocetak));
-            pstmt.setTime(6, Time.valueOf(kraj));
-            pstmt.executeUpdate();
-            
-            ResultSet rs = pstmt.getGeneratedKeys();
-            int idTermin = 0;
-            if (rs.next()) {
-                idTermin = rs.getInt(1);
-            }
-            rs.close();
-            pstmt.close();
-            
-            String insertKolokvijum = "INSERT INTO kolokvijum (id_termin, id_dezurni) VALUES (?, ?)";
-            PreparedStatement pstmt2 = conn.prepareStatement(insertKolokvijum);
-            pstmt2.setInt(1, idTermin);
-            pstmt2.setInt(2, idDezurni);
-            pstmt2.executeUpdate();
-            pstmt2.close();
-            
-            // IZBRISANO: ucitajTermine();
-            
-            return "OK: Kolokvijum uspjesno dodat";
-            
+
+        } catch (DateTimeParseException e) {
+            return "GRESKA: Neispravan format datuma (YYYY-MM-DD) ili vremena (HH:mm)";
         } catch (Exception e) {
             return "GRESKA: " + e.getMessage();
         }
     }
+
+    public String provjeriiFondCasova(int idPredmet) {
+        Course predmet = predmeti.get(idPredmet);
+        if (predmet == null) {
+            return "GRESKA: Course ne postoji";
+        }
+
+        int predavanjaUzeta = 0;
+        int vjezbiUzete = 0;
+
+        for (AcademicEvent event : termini) {
+            if (event.idCourse == idPredmet) {
+                if (event.tipTermina != null) {
+                    if (event.tipTermina.equals("predavanje")) {
+                        predavanjaUzeta++;
+                    } else if (event.tipTermina.equals("vjezbe")) {
+                        vjezbiUzete++;
+                    }
+                }
+            }
+        }
+
+        StringBuilder info = new StringBuilder();
+        info.append("PREDMET: ").append(predmet.naziv).append("\n");
+        info.append("PREDAVANJA: ").append(predavanjaUzeta).append(" / ").append(predmet.fondPredavanja).append("\n");
+        info.append("VJEZBE: ").append(vjezbiUzete).append(" / ").append(predmet.fondVjezbi).append("\n");
+
+        if (predavanjaUzeta < predmet.fondPredavanja) {
+            info.append("UPOZORENJE: Nedostaju ").append(predmet.fondPredavanja - predavanjaUzeta).append(" predavanja\n");
+        }
+        if (vjezbiUzete < predmet.fondVjezbi) {
+            info.append("UPOZORENJE: Nedostaju ").append(predmet.fondVjezbi - vjezbiUzete).append(" vjezbi\n");
+        }
+
+        return info.toString();
+    }
+
+
     
     public String dodajIspit(int idPredmet, int idRoom, int idProfessor, String datum,
                             String vremeOd, String vremeDo, String tipIspita) {
@@ -440,8 +490,8 @@ public class EventValidationService {
             }
             
             LocalDate datumIspita = LocalDate.parse(datum);
-            LocalTime pocetak = LocalTime.parse(vremeOd);
-            LocalTime kraj = LocalTime.parse(vremeDo);
+            LocalTime pocetak = parseTime(vremeOd);
+            LocalTime kraj = parseTime(vremeDo);
             
             if (datumIspita.getDayOfWeek() == DayOfWeek.SUNDAY) {
                 return "GRESKA: Ispit ne moze biti u nedjelju";
@@ -462,13 +512,68 @@ public class EventValidationService {
                     return "GRESKA: Room nema potrebnu opremu: " + predmet.vrstaOpreme;
                 }
             }
+
+            // ✅ NOVA VALIDACIJA: Profesor dostupan?
+            for (AcademicEvent event : termini) {
+                // 1. Profesor ima ispit u istom vremenu
+                if (event.idProfessor == idProfessor && 
+                    event.datum != null &&
+                    event.datum.equals(datumIspita) &&
+                    event.tipTermina.contains("ispit")) {
+                    
+                    if (pocetak.isBefore(event.vremeDo) && kraj.isAfter(event.vremeOd)) {
+                        return "GRESKA: Professor je već zauzet za ispit " + event.datum + 
+                               " od " + event.vremeOd + " do " + event.vremeDo;
+                    }
+                }
+                
+                // 2. Profesor dežuri na kolokvijumu u istom vremenu
+                if (event.idProfessor == idProfessor && 
+                    event.datum != null &&
+                    event.datum.equals(datumIspita) &&
+                    event.tipTermina.contains("kolokvijum")) {
+                    
+                    if (pocetak.isBefore(event.vremeDo) && kraj.isAfter(event.vremeOd)) {
+                        return "GRESKA: Professor je designiran kao dežurni na kolokvijumu " +
+                               event.datum + " " + event.vremeOd + "-" + event.vremeDo;
+                    }
+                }
+            }
             
+            // ✅ NOVA VALIDACIJA: Profesor ima nastavu (predavanja/vjezbe)?
+            for (AcademicEvent event : termini) {
+                if (event.idProfessor == idProfessor && 
+                    (event.tipTermina.equals("predavanje") || event.tipTermina.equals("vjezbe"))) {
+                    
+                    // Ako je redovna nastava (dan)
+                    if (event.dan != null && event.datum == null) {
+                        LocalDate sledecaOdgovarajucaDatum = datumIspita.with(
+                            TemporalAdjusters.previousOrSame(
+                                DayOfWeek.valueOf(event.dan.toUpperCase())));
+                        
+                        if (sledecaOdgovarajucaDatum.equals(datumIspita) &&
+                            pocetak.isBefore(event.vremeDo) && 
+                            kraj.isAfter(event.vremeOd)) {
+                            return "GRESKA: Professor ima " + event.tipTermina + 
+                                   " " + event.dan + " " + event.vremeOd;
+                        }
+                    }
+                    
+                    // Ako je specifičan datum
+                    if (event.datum != null && event.datum.equals(datumIspita)) {
+                        if (pocetak.isBefore(event.vremeDo) && 
+                            kraj.isAfter(event.vremeOd)) {
+                            return "GRESKA: Professor ima " + event.tipTermina + 
+                                   " " + event.datum + " " + event.vremeOd;
+                        }
+                    }
+                }
+            }
+
             // NOVA: Koristi helper metodu
             if (imaKonflikt(null, datumIspita, idRoom, idProfessor, pocetak, kraj)) {
                 for (AcademicEvent t : termini) {
                     if (t.datum != null && t.datum.equals(datumIspita)) {
-                        // if (!(kraj.isBefore(t.vremeOd) || kraj.equals(t.vremeOd) ||
-                        //       pocetak.isAfter(t.vremeDo) || pocetak.equals(t.vremeDo))) 
                         if (pocetak.isBefore(t.vremeDo) && kraj.isAfter(t.vremeOd)) {
                             if (t.idRoom == idRoom) {
                                 return "GRESKA: Room je zauzeta u tom terminu";
@@ -496,8 +601,6 @@ public class EventValidationService {
             ResultSet rs = pstmt.getGeneratedKeys();
             rs.close();
             pstmt.close();
-            
-            // IZBRISANO: ucitajTermine();
             
             return "OK: Ispit uspjesno dodat";
             
@@ -973,7 +1076,7 @@ public class EventValidationService {
                     }
                     
                     String vremeOd = prefVremena.getOrDefault(dan, "10:00:00");
-                    LocalTime pocetak = LocalTime.parse(vremeOd);
+                    LocalTime pocetak = parseTime(vremeOd);
                     LocalTime kraj = pocetak.plusHours(1);
                     
                     // NOVA: Koristi helper metodu umjesto dvostrukih petlji
