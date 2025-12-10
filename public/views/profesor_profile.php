@@ -9,10 +9,18 @@ if (isset($_GET['logout'])) {
     exit;
 }
 
-if (!isset($_SESSION['user_id']) || !isset($_SESSION['professor_id'])) {
-    header('Location: ./authorization.php');
+// USER mora biti ulogovan
+if (!isset($_SESSION['user_id'])) {
+    header('Location: authorization.php');
     exit;
 }
+
+// PROFESOR mora imati professor_id (ADMIN ne ide ovdje)
+if (!isset($_SESSION['professor_id'])) {
+    header('Location: authorization.php');
+    exit;
+}
+
 
 $successMessage = null;
 $errorMessage = null;
