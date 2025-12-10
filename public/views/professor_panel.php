@@ -8,11 +8,16 @@ if (isset($_GET['logout'])) {
     header('Location: ./authorization.php');
     exit;
 }
-
-if (!isset($_SESSION['user_id']) || !isset($_SESSION['professor_id'])) {
+if (!isset($_SESSION['user_id'])) {
     header('Location: ./authorization.php');
     exit;
 }
+
+if ($_SESSION['role'] !== 'PROFESSOR') {
+    header('Location: ./admin_panel.php');
+    exit;
+}
+
 
 $successMessage = null;
 $errorMessage = null;

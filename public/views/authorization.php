@@ -12,7 +12,7 @@ if (isset($_SESSION['user_id'])) {
         header('Location: ./admin_panel.php');
         exit;
     }
-    header('Location: ./profesor_profile.php');
+    header('Location: ./professor_panel.php');
     exit;
 }
 
@@ -172,7 +172,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['user_id'] = (int)$user['user_id'];
             $_SESSION['professor_id'] = (int)$user['professor_id'];
             $_SESSION['role'] = $user['role_enum'];
-            header("Location: ./profesor_profile.php");
+            header("Location: ./professor_panel.php");
             exit;
         }
     }
@@ -208,7 +208,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-/** ===== PARTIALS ===== */
 $pageTitle = "Prijava / Registracija";
 include __DIR__ . "/partials/head.php";
 ?>
@@ -227,7 +226,7 @@ include __DIR__ . "/partials/head.php";
         </div>
 
         <!-- STACKS -->
-        <div class="stacks" data-active="<?= htmlspecialchars($activeTab) ?>">
+        <div id="stacks" class="stacks" data-active="<?= htmlspecialchars($activeTab) ?>">
 
             <!-- SIGN IN -->
             <form id="signin" class="stack" method="post">
@@ -235,12 +234,12 @@ include __DIR__ . "/partials/head.php";
 
                 <div class="field">
                     <label>Email</label>
-                    <input name="email" value="<?= htmlspecialchars($signinEmailValue) ?>">
+                    <input name="email" required value="<?= htmlspecialchars($signinEmailValue) ?>">
                 </div>
 
                 <div class="field">
                     <label>Password</label>
-                    <input type="password" name="password">
+                    <input type="password" name="password" required>
                 </div>
 
                 <?php if ($signinError): ?>
@@ -256,17 +255,17 @@ include __DIR__ . "/partials/head.php";
 
                 <div class="field">
                     <label>Email</label>
-                    <input name="email" value="<?= htmlspecialchars($signupEmailValue) ?>">
+                    <input name="email" required value="<?= htmlspecialchars($signupEmailValue) ?>">
                 </div>
 
                 <div class="field">
                     <label>Password</label>
-                    <input type="password" name="password">
+                    <input type="password" name="password" required>
                 </div>
 
                 <div class="field">
                     <label>Confirm password</label>
-                    <input type="password" name="confirm">
+                    <input type="password" name="confirm" required>
                 </div>
 
                 <?php if ($signupError): ?>
@@ -284,4 +283,4 @@ include __DIR__ . "/partials/head.php";
 </main>
 
 <?php include __DIR__ . "/partials/footer.php"; ?>
-<script src="/public/assets/js/pages/auth-form.js"></script>
+<script src="/rasporedispitaicasiova/public/assets/js/pages/auth-form.js"></script>

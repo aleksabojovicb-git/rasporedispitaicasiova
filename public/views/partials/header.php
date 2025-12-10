@@ -9,7 +9,7 @@ $loggedIn = isset($_SESSION['user_id']);
 $panelHref = './authorization.php';
 
 if ($loggedIn) {
-    $panelHref = './profesor_profile.php';
+    $panelHref = './professor_panel.php';
     if ($role === 'ADMIN') {
         $panelHref = './admin_panel.php';
     }
