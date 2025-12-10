@@ -6,174 +6,228 @@ import java.time.temporal.TemporalAdjusters;
 import java.util.*;
 
 public class EventValidationService {
-    
     private Connection conn;
-    private Map<Integer, Course> predmeti;
-    private Map<Integer, Room> sale;
-    private Map<Integer, Professor> profesori;
-    private List<AcademicEvent> termini;
-    private List<Holiday> praznici;
+    private Map<Integer, Course> courses;
+    private Map<Integer, Room> rooms;
+    private Map<Integer, Professor> professors;
+    private Map<Integer, AcademicEvent> academicEvents;
+    private List<Holiday> holidays;
 
-    
     public EventValidationService(Connection connection) {
         this.conn = connection;
-        this.predmeti = new HashMap<>();
-        this.sale = new HashMap<>();
-        this.profesori = new HashMap<>();
-        this.termini = new ArrayList<>();
-        this.praznici = new ArrayList<>();
-        ucitajPodatkeIzBaze();
+        this.courses = new HashMap<>();
+        this.rooms = new HashMap<>();
+        this.professors = new HashMap<>();
+        this.academicEvents = new HashMap<>();
+        this.holidays = new ArrayList<>();
+        loadDataFromDatabase();
     }
-    
-    private void ucitajPodatkeIzBaze() {
+
+    private void loadDataFromDatabase() {
         try {
-            ucitajPredmete();
-            ucitajSale();
-            ucitajProfesore();
-            ucitajTermine();
-            ucitajPraznike();
+            loadCourses();
+            loadRooms();
+            loadProfessors();
+            loadAcademicEvents();
+            loadHolidays();
         } catch (SQLException e) {
-            System.err.println("Greska pri ucitavanju podataka: " + e.getMessage());
+            System.err.println("Error loading data: " + e.getMessage());
         }
     }
-    
-    private void ucitajPredmete() throws SQLException {
-        String query = "SELECT id_predmet, naziv, semestar, fond_predavanja, fond_vjezbi, vrsta_opreme, broj_studenata FROM predmet";
-        try (Statement stmt = conn.createStatement();
-            ResultSet rs = stmt.executeQuery(query)) {
+
+    private void loadCourses() throws SQLException {
+        String query = "SELECT id, name, semester, code FROM course";
+        try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery(query)) {
             int count = 0;
             while (rs.next()) {
-                Course p = new Course();
-                p.idCourse = rs.getInt("id_predmet");
-                p.naziv = rs.getString("naziv");
-                p.semestar = rs.getInt("semestar");
-                p.fondPredavanja = rs.getInt("fond_predavanja");
-                p.fondVjezbi = rs.getInt("fond_vjezbi");
-                p.vrstaOpreme = rs.getString("vrsta_opreme");
-                p.brojStudenata = rs.getInt("broj_studenata");
-                predmeti.put(p.idCourse, p);
+                Course course = new Course();
+                course.idCourse = rs.getInt("id");
+                course.name = rs.getString("name");
+                course.semester = rs.getInt("semester");
+                course.code = rs.getString("code");
+                courses.put(course.idCourse, course);
                 count++;
             }
-            System.out.println("Ucitano predmeta: " + count);
+            System.out.println("Loaded courses: " + count);
         }
     }
-    
-    private void ucitajSale() throws SQLException {
-        String query = "SELECT * FROM sala";
-        try (Statement stmt = conn.createStatement();
-            ResultSet rs = stmt.executeQuery(query)) {  // Try-with-resources
+
+    private void loadRooms() throws SQLException {
+        String query = "SELECT id, code, capacity, is_computer_lab, is_active FROM room";
+        try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery(query)) {
             int count = 0;
             while (rs.next()) {
-                Room s = new Room();
-                s.idRoom = rs.getInt("id_sala");
-                s.naziv = rs.getString("naziv");
-                s.kapacitet = rs.getInt("kapacitet");
-                s.vrstaOpreme = rs.getString("vrsta_opreme");
-                s.tipSale = rs.getString("tip_sale");
-                sale.put(s.idRoom, s);
+                Room room = new Room();
+                room.idRoom = rs.getInt("id");
+                room.name = rs.getString("code");
+                room.capacity = rs.getInt("capacity");
+                room.equipmentType = rs.getString("is_computer_lab");
+                room.roomType = rs.getString("is_active");
+                rooms.put(room.idRoom, room);
                 count++;
             }
-            System.out.println("Ucitano sala: " + count);
+            System.out.println("Loaded rooms: " + count);
         }
     }
 
-    
-    private void ucitajProfesore() throws SQLException {
-        String query = "SELECT * FROM profesor";
-        try (Statement stmt = conn.createStatement();
-            ResultSet rs = stmt.executeQuery(query)) {
+    private void loadProfessors() throws SQLException {
+        String query = "SELECT id, full_name, email, is_active FROM professor";
+        try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery(query)) {
             int count = 0;
             while (rs.next()) {
-                Professor prof = new Professor();
-                prof.idProfessor = rs.getInt("id_profesor");
-                prof.ime = rs.getString("ime");
-                prof.prezime = rs.getString("prezime");
-                prof.email = rs.getString("email");
-                profesori.put(prof.idProfessor, prof);
+                Professor professor = new Professor();
+                professor.idProfessor = rs.getInt("id");
+                professor.fullName = rs.getString("full_name");
+                professor.email = rs.getString("email");
+                professor.isActive = rs.getBoolean("is_active");
+                professors.put(professor.idProfessor, professor);
                 count++;
             }
-            System.out.println("Ucitano profesora: " + count);
-        } // Auto-close! (čak i ako baci exception)
-    }
-
-    
-    private void ucitajTermine() throws SQLException {
-        termini.clear(); // Očisti prije reloada
-        String query = "SELECT * FROM termin";
-        Statement stmt = conn.createStatement();
-        ResultSet rs = stmt.executeQuery(query);
-        
-        int count = 0;
-        while (rs.next()) {
-            AcademicEvent t = new AcademicEvent();
-            t.idAcademicEvent = rs.getInt("id_termin");
-            t.idCourse = rs.getInt("id_predmet");
-            t.idRoom = rs.getInt("id_sala");
-            t.idProfessor = rs.getInt("id_profesor");
-            t.dan = rs.getString("dan");
-            Time vremeOdSQL = rs.getTime("vreme_od");
-            Time vremeDoSQL = rs.getTime("vreme_do");
-            t.vremeOd = (vremeOdSQL != null) ? vremeOdSQL.toLocalTime() : null;
-            t.vremeDo = (vremeDoSQL != null) ? vremeDoSQL.toLocalTime() : null;
-            t.tipTermina = rs.getString("tip_termina");
-            Date datumSQL = rs.getDate("datum");
-            t.datum = (datumSQL != null) ? datumSQL.toLocalDate() : null;
-
-            termini.add(t);
-            count++;
+            System.out.println("Loaded professors: " + count);
         }
-        
-        rs.close();
-        stmt.close();
-        System.out.println("Ucitano termina: " + count);
-    }
-    
-    private void ucitajPraznike() throws SQLException {
-        String query = "SELECT * FROM praznik";
-        Statement stmt = conn.createStatement();
-        ResultSet rs = stmt.executeQuery(query);
-        
-        int count = 0;
-        while (rs.next()) {
-            Holiday p = new Holiday();
-            p.idHoliday = rs.getInt("id_praznik");
-            p.naziv = rs.getString("naziv");
-            p.datum = rs.getDate("datum").toLocalDate();
-            praznici.add(p);
-            count++;
-        }
-        
-        rs.close();
-        stmt.close();
-        System.out.println("Ucitano praznika: " + count);
     }
 
-    /*
-        Zavrsili sa ucitavanjem
-    */
-    
-    /**
-     * NOVA HELPER METODA: Provjerava sve konflikte (salu i profesora)
-     * dan = null ako se koristi datum, datum = null ako se koristi dan
-     */
-    private boolean imaKonflikt(String dan, LocalDate datum, int idRoom, int idProfessor,
-                            LocalTime pocetak, LocalTime kraj) {
-        for (AcademicEvent t : termini) {
-            boolean danMatch = (dan != null && t.dan != null && t.dan.equals(dan));
-            boolean datumMatch = (datum != null && t.datum != null && t.datum.equals(datum));
-            if (danMatch || datumMatch) {
-                boolean salaMatch = (t.idRoom == idRoom);
-                boolean profesorMatch = (t.idProfessor == idProfessor);
-                if (salaMatch || profesorMatch) {
-                    // Null check za vremenske objekte
-                    if (pocetak != null && kraj != null && t.vremeOd != null && t.vremeDo != null) {
-                        // if (!(kraj.isBefore(t.vremeOd) || kraj.equals(t.vremeOd) ||
-                        //     pocetak.isAfter(t.vremeDo) || pocetak.equals(t.vremeDo)))
-                        if (pocetak != null && kraj != null && 
-                            t.vremeOd != null && t.vremeDo != null &&
-                            pocetak.isBefore(t.vremeDo) && 
-                            kraj.isAfter(t.vremeOd) && 
-                            !pocetak.equals(kraj)) {
+    private void loadAcademicEvents() throws SQLException {
+        String query = "SELECT id, course_id, created_by_professor, type_enum, starts_at, ends_at, " +
+                "is_online, room_id, notes, is_published, locked_by_admin, schedule_id, day FROM academic_event";
+        try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery(query)) {
+            int count = 0;
+            while (rs.next()) {
+                AcademicEvent event = new AcademicEvent();
+                event.idAcademicEvent = rs.getInt("id");
+                event.idCourse = rs.getInt("course_id");
+                event.idProfessor = (int) rs.getLong("created_by_professor");
+                event.typeEnum = rs.getString("type_enum");
+                event.day = rs.getString("day");
+                event.notes = rs.getString("notes");
+                event.isOnline = rs.getBoolean("is_online");
+                event.isPublished = rs.getBoolean("is_published");
+                event.lockedByAdmin = rs.getBoolean("locked_by_admin");
+                event.scheduleId = rs.getInt("schedule_id");
+                event.idRoom = rs.getInt("room_id");
+
+                Timestamp startTs = rs.getTimestamp("starts_at");
+                Timestamp endTs = rs.getTimestamp("ends_at");
+
+                if (startTs != null) {
+                    LocalDateTime startLdt = startTs.toLocalDateTime();
+                    event.startsAt = startLdt;
+                    event.date = startLdt.toLocalDate();
+                    event.startTime = startLdt.toLocalTime();
+                }
+                if (endTs != null) {
+                    LocalDateTime endLdt = endTs.toLocalDateTime();
+                    event.endsAt = endLdt;
+                    event.endTime = endLdt.toLocalTime();
+                }
+
+                academicEvents.put(event.idAcademicEvent, event);
+                count++;
+            }
+            System.out.println("Loaded academic events: " + count);
+        }
+    }
+
+    private void loadHolidays() throws SQLException {
+        String query = "SELECT id, name, date FROM holiday";
+        try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery(query)) {
+            int count = 0;
+            while (rs.next()) {
+                Holiday holiday = new Holiday();
+                holiday.idHoliday = rs.getInt("id");
+                holiday.name = rs.getString("name");
+                holiday.date = rs.getDate("date").toLocalDate();
+                holidays.add(holiday);
+                count++;
+            }
+            System.out.println("Loaded holidays: " + count);
+        }
+    }
+
+    private int generateNewScheduleId() throws SQLException {
+        String query = "SELECT COALESCE(MAX(schedule_id), 0) + 1 as novi_id FROM academic_event";
+        try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery(query)) {
+            if (rs.next()) {
+                return rs.getInt("novi_id");
+            }
+            return 1;
+        }
+    }
+
+    private void saveToAcademicEvent(int scheduleId, int courseId, int professorId, String day,
+            LocalDateTime startsAt, LocalDateTime endsAt, int roomId) throws SQLException {
+        String insert = "INSERT INTO academic_event " +
+                "(course_id, created_by_professor, type_enum, starts_at, ends_at, " +
+                "is_online, room_id, notes, is_published, locked_by_admin, schedule_id, day) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        try (PreparedStatement pstmt = conn.prepareStatement(insert)) {
+            pstmt.setInt(1, courseId);
+            pstmt.setLong(2, professorId);
+            pstmt.setString(3, "LECTURE");
+            pstmt.setTimestamp(4, Timestamp.valueOf(startsAt));
+            pstmt.setTimestamp(5, Timestamp.valueOf(endsAt));
+            pstmt.setBoolean(6, false);
+            pstmt.setInt(7, roomId);
+            pstmt.setNull(8, java.sql.Types.VARCHAR);
+            pstmt.setBoolean(9, true);
+            pstmt.setBoolean(10, false);
+            pstmt.setInt(11, scheduleId);
+            pstmt.setString(12, day);
+            pstmt.executeUpdate();
+        }
+    }
+
+    private LocalDateTime convertDayToDate(String day, LocalTime time) {
+        LocalDate today = LocalDate.now();
+        DayOfWeek targetDay = parseDayOfWeek(day);
+        LocalDate targetDate = today.with(TemporalAdjusters.nextOrSame(targetDay));
+        return LocalDateTime.of(targetDate, time);
+    }
+
+    private DayOfWeek parseDayOfWeek(String day) {
+        switch (day.toLowerCase()) {
+            case "ponedeljak":
+            case "monday":
+                return DayOfWeek.MONDAY;
+            case "utorak":
+            case "tuesday":
+                return DayOfWeek.TUESDAY;
+            case "srijeda":
+            case "sreda":
+            case "wednesday":
+                return DayOfWeek.WEDNESDAY;
+            case "cetvrtak":
+            case "thursday":
+                return DayOfWeek.THURSDAY;
+            case "petak":
+            case "friday":
+                return DayOfWeek.FRIDAY;
+            case "subota":
+            case "saturday":
+                return DayOfWeek.SATURDAY;
+            case "nedelja":
+            case "nedjelja":
+            case "sunday":
+                return DayOfWeek.SUNDAY;
+            default:
+                return DayOfWeek.MONDAY;
+        }
+    }
+
+    private boolean hasConflict(String day, LocalDate date, int roomId, int professorId,
+            LocalTime startTime, LocalTime endTime) {
+        for (AcademicEvent event : academicEvents.values()) {
+            boolean dayMatch = (day != null && event.day != null && event.day.equals(day));
+            boolean dateMatch = (date != null && event.date != null && event.date.equals(date));
+
+            if (dayMatch || dateMatch) {
+                boolean roomMatch = (event.idRoom == roomId);
+                boolean professorMatch = (event.idProfessor == professorId);
+
+                if (roomMatch || professorMatch) {
+                    if (startTime != null && endTime != null && event.startTime != null && event.endTime != null) {
+                        if (startTime.isBefore(event.endTime) && endTime.isAfter(event.startTime) &&
+                                !startTime.equals(endTime)) {
                             return true;
                         }
                     }
@@ -183,93 +237,785 @@ public class EventValidationService {
         return false;
     }
 
-    /**
-     * NOVA HELPER METODA: Generiška metoda za dodavanje predavanja i vježbi
-     */
-    private String dodajTerminNastave(int idPredmet, int idRoom, int idProfessor, String dan,
-                                      String vremeOd, String vremeDo,
-                                      String tipTermina, String potrebanTipSale) {
+    private String addTeachingTerm(int courseId, int roomId, int professorId, String day,
+            String startTimeStr, String endTimeStr, String typeEnum, String requiredRoomType) {
         try {
-            Course predmet = predmeti.get(idPredmet);
-            if (predmet == null) {
-                return "GRESKA: Course ne postoji";
+            Course course = courses.get(courseId);
+            if (course == null) {
+                return "ERROR: Course does not exist";
             }
-            
-            Room sala = sale.get(idRoom);
-            if (sala == null) {
-                return "GRESKA: Room ne postoji";
+
+            Room room = rooms.get(roomId);
+            if (room == null) {
+                return "ERROR: Room does not exist";
             }
-            
-            Professor profesor = profesori.get(idProfessor);
-            if (profesor == null) {
-                return "GRESKA: Professor ne postoji";
+
+            Professor professor = professors.get(professorId);
+            if (professor == null) {
+                return "ERROR: Professor does not exist";
             }
-            
-            LocalTime pocetak = parseTime(vremeOd);
-            LocalTime kraj = parseTime(vremeDo);
-            
-            if (sala.kapacitet < predmet.brojStudenata) {
-                return "GRESKA: Room nema dovoljan kapacitet za broj studenata";
+
+            if (!professor.isActive) {
+                return "ERROR: Professor is not active";
             }
-            
-            if (predmet.vrstaOpreme != null && !predmet.vrstaOpreme.isEmpty()) {
-                if (sala.vrstaOpreme == null || !sala.vrstaOpreme.contains(predmet.vrstaOpreme)) {
-                    return "GRESKA: Room nema potrebnu opremu: " + predmet.vrstaOpreme;
+
+            LocalTime startTime = parseTime(startTimeStr);
+            LocalTime endTime = parseTime(endTimeStr);
+
+            if (room.capacity < 0) {
+                return "ERROR: Room capacity is invalid";
+            }
+
+            if (room.equipmentType != null && !room.equipmentType.isEmpty()) {
+                if (!requiredRoomType.equalsIgnoreCase(room.roomType)) {
+                    return "ERROR: Room type does not match required type: " + requiredRoomType;
                 }
             }
-            
-            if (!sala.tipSale.equals(potrebanTipSale) && !sala.tipSale.equals("sve")) {
-                return "GRESKA: Room nije pogodna za " + tipTermina;
-            }
-            
-            // NOVA: Koristi helper metodu umjesto dvostrukih petlji
-            if (imaKonflikt(dan, null, idRoom, idProfessor, pocetak, kraj)) {
-                // Provjeri ko je u konfliktu
-                for (AcademicEvent t : termini) {
-                    if (t.dan != null && t.dan.equals(dan)) {
-                        // if (!(kraj.isBefore(t.vremeOd) || kraj.equals(t.vremeOd) ||
-                        //       pocetak.isAfter(t.vremeDo) || pocetak.equals(t.vremeDo))) 
-                        if (pocetak.isBefore(t.vremeDo) && kraj.isAfter(t.vremeOd)) {
-                            if (t.idRoom == idRoom) {
-                                return "GRESKA: Room je zauzeta u tom terminu";
+
+            if (hasConflict(day, null, roomId, professorId, startTime, endTime)) {
+                for (AcademicEvent event : academicEvents.values()) {
+                    if (event.day != null && event.day.equals(day)) {
+                        if (startTime.isBefore(event.endTime) && endTime.isAfter(event.startTime)) {
+                            if (event.idRoom == roomId) {
+                                return "ERROR: Room is occupied at that time";
                             }
-                            if (t.idProfessor == idProfessor) {
-                                return "GRESKA: Professor je zauzet u tom terminu";
+                            if (event.idProfessor == professorId) {
+                                return "ERROR: Professor is occupied at that time";
                             }
                         }
                     }
                 }
             }
-            
-            String insert = "INSERT INTO termin (id_predmet, id_sala, id_profesor, dan, vreme_od, vreme_do, tip_termina) " +
-                          "VALUES (?, ?, ?, ?, ?, ?, ?)";
-            PreparedStatement pstmt = conn.prepareStatement(insert);
-            pstmt.setInt(1, idPredmet);
-            pstmt.setInt(2, idRoom);
-            pstmt.setInt(3, idProfessor);
-            pstmt.setString(4, dan);
-            pstmt.setTime(5, Time.valueOf(pocetak));
-            pstmt.setTime(6, Time.valueOf(kraj));
-            pstmt.setString(7, tipTermina);
-            pstmt.executeUpdate();
-            pstmt.close();
-            
-            // IZBRISANO: ucitajTermine(); 
-            // Umjesto toga, ručno dodaj u listu
-            AcademicEvent noviTermin = new AcademicEvent();
-            noviTermin.idCourse = idPredmet;
-            noviTermin.idRoom = idRoom;
-            noviTermin.idProfessor = idProfessor;
-            noviTermin.dan = dan;
-            noviTermin.vremeOd = pocetak;
-            noviTermin.vremeDo = kraj;
-            noviTermin.tipTermina = tipTermina;
-            termini.add(noviTermin);
-            
-            return "OK: " + tipTermina + " uspjesno dodato";
-            
+
+            String insert = "INSERT INTO academic_event (course_id, created_by_professor, type_enum, " +
+                    "starts_at, ends_at, is_online, room_id, is_published, locked_by_admin, day) " +
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+            try (PreparedStatement pstmt = conn.prepareStatement(insert)) {
+                LocalDateTime startsAt = convertDayToDate(day, startTime);
+                LocalDateTime endsAt = convertDayToDate(day, endTime);
+
+                pstmt.setInt(1, courseId);
+                pstmt.setLong(2, professorId);
+                pstmt.setString(3, typeEnum);
+                pstmt.setTimestamp(4, Timestamp.valueOf(startsAt));
+                pstmt.setTimestamp(5, Timestamp.valueOf(endsAt));
+                pstmt.setBoolean(6, false);
+                pstmt.setInt(7, roomId);
+                pstmt.setBoolean(8, true);
+                pstmt.setBoolean(9, false);
+                pstmt.setString(10, day);
+                pstmt.executeUpdate();
+
+                AcademicEvent newEvent = new AcademicEvent();
+                newEvent.idCourse = courseId;
+                newEvent.idRoom = roomId;
+                newEvent.idProfessor = professorId;
+                newEvent.day = day;
+                newEvent.startTime = startTime;
+                newEvent.endTime = endTime;
+                newEvent.typeEnum = typeEnum;
+                newEvent.date = startsAt.toLocalDate();
+                newEvent.startsAt = startsAt;
+                newEvent.endsAt = endsAt;
+                academicEvents.put(newEvent.idAcademicEvent, newEvent);
+            }
+
+            return "OK: " + typeEnum + " successfully added";
         } catch (Exception e) {
-            return "GRESKA: " + e.getMessage();
+            return "ERROR: " + e.getMessage();
+        }
+    }
+
+    public String addLecture(int courseId, int roomId, int professorId, String day,
+            String startTime, String endTime) {
+        return addTeachingTerm(courseId, roomId, professorId, day, startTime, endTime, "LECTURE", "predavaliste");
+    }
+
+    public String addExercise(int courseId, int roomId, int professorId, String day,
+            String startTime, String endTime) {
+        return addTeachingTerm(courseId, roomId, professorId, day, startTime, endTime, "EXERCISE", "vjezbe");
+    }
+
+    public String addColloquium(int courseId, int roomId, int professorId, int supervisorProfessorId,
+            String date, String startTimeStr, String endTimeStr) {
+        try {
+            Course course = courses.get(courseId);
+            if (course == null) {
+                return "ERROR: Course does not exist";
+            }
+
+            Room room = rooms.get(roomId);
+            if (room == null) {
+                return "ERROR: Room does not exist";
+            }
+
+            Professor professor = professors.get(professorId);
+            if (professor == null) {
+                return "ERROR: Professor does not exist";
+            }
+
+            Professor supervisor = professors.get(supervisorProfessorId);
+            if (supervisor == null) {
+                return "ERROR: Supervisor professor does not exist";
+            }
+
+            if (!professor.isActive || !supervisor.isActive) {
+                return "ERROR: One or more professors are not active";
+            }
+
+            LocalDate colloquiumDate = LocalDate.parse(date);
+            LocalTime startTime = parseTime(startTimeStr);
+            LocalTime endTime = parseTime(endTimeStr);
+
+            if (colloquiumDate.getDayOfWeek() == DayOfWeek.SUNDAY) {
+                return "ERROR: Colloquium cannot be scheduled on Sunday";
+            }
+
+            for (Holiday holiday : holidays) {
+                if (holiday.date.equals(colloquiumDate)) {
+                    return "ERROR: Colloquium cannot be on holiday: " + holiday.name;
+                }
+            }
+
+            LocalDate weekStart = colloquiumDate.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+            LocalDate weekEnd = colloquiumDate.with(TemporalAdjusters.nextOrSame(DayOfWeek.FRIDAY));
+            int colloquia = 0;
+            for (AcademicEvent event : academicEvents.values()) {
+                if ("COLLOQUIUM".equals(event.typeEnum) && event.date != null &&
+                        !event.date.isBefore(weekStart) && !event.date.isAfter(weekEnd)) {
+                    colloquia++;
+                }
+            }
+
+            if (colloquia >= 2) {
+                return "ERROR: Maximum 2 colloquia per week allowed";
+            }
+
+            if (room.capacity <= 0) {
+                return "ERROR: Room capacity is invalid";
+            }
+
+            if (hasConflict(null, colloquiumDate, roomId, professorId, startTime, endTime)) {
+                for (AcademicEvent event : academicEvents.values()) {
+                    if (event.date != null && event.date.equals(colloquiumDate)) {
+                        if (startTime.isBefore(event.endTime) && endTime.isAfter(event.startTime)) {
+                            if (event.idProfessor == professorId) {
+                                return "ERROR: Professor is occupied at that time";
+                            }
+                            if (event.idRoom == roomId) {
+                                return "ERROR: Room is occupied at that time";
+                            }
+                        }
+                    }
+                }
+            }
+
+            int supervisorCount = 0;
+            for (AcademicEvent event : academicEvents.values()) {
+                if ("COLLOQUIUM".equals(event.typeEnum) && event.idProfessor == supervisorProfessorId) {
+                    supervisorCount++;
+                }
+            }
+
+            if (supervisorCount >= 5) {
+                return "WARNING: Supervisor already has " + supervisorCount + " colloquium supervisions";
+            }
+
+            String insert = "INSERT INTO academic_event (course_id, created_by_professor, type_enum, " +
+                    "starts_at, ends_at, is_online, room_id, is_published, locked_by_admin) " +
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+            try (PreparedStatement pstmt = conn.prepareStatement(insert)) {
+                LocalDateTime startsAt = LocalDateTime.of(colloquiumDate, startTime);
+                LocalDateTime endsAt = LocalDateTime.of(colloquiumDate, endTime);
+
+                pstmt.setInt(1, courseId);
+                pstmt.setLong(2, professorId);
+                pstmt.setString(3, "COLLOQUIUM");
+                pstmt.setTimestamp(4, Timestamp.valueOf(startsAt));
+                pstmt.setTimestamp(5, Timestamp.valueOf(endsAt));
+                pstmt.setBoolean(6, false);
+                pstmt.setInt(7, roomId);
+                pstmt.setBoolean(8, true);
+                pstmt.setBoolean(9, false);
+                pstmt.executeUpdate();
+
+                AcademicEvent newEvent = new AcademicEvent();
+                newEvent.idCourse = courseId;
+                newEvent.idRoom = roomId;
+                newEvent.idProfessor = professorId;
+                newEvent.typeEnum = "COLLOQUIUM";
+                newEvent.date = colloquiumDate;
+                newEvent.startTime = startTime;
+                newEvent.endTime = endTime;
+                newEvent.startsAt = LocalDateTime.of(colloquiumDate, startTime);
+                newEvent.endsAt = LocalDateTime.of(colloquiumDate, endTime);
+                academicEvents.put(newEvent.idAcademicEvent, newEvent);
+            }
+
+            return "OK: Colloquium successfully added";
+        } catch (DateTimeParseException e) {
+            return "ERROR: Invalid date format (YYYY-MM-DD) or time format (HH:mm:ss)";
+        } catch (Exception e) {
+            return "ERROR: " + e.getMessage();
+        }
+    }
+
+    public String addExam(int courseId, int roomId, int professorId, String date,
+            String startTimeStr, String endTimeStr, String examType) {
+        try {
+            Course course = courses.get(courseId);
+            if (course == null) {
+                return "ERROR: Course does not exist";
+            }
+
+            Room room = rooms.get(roomId);
+            if (room == null) {
+                return "ERROR: Room does not exist";
+            }
+
+            Professor professor = professors.get(professorId);
+            if (professor == null) {
+                return "ERROR: Professor does not exist";
+            }
+
+            if (!professor.isActive) {
+                return "ERROR: Professor is not active";
+            }
+
+            LocalDate examDate = LocalDate.parse(date);
+            LocalTime startTime = parseTime(startTimeStr);
+            LocalTime endTime = parseTime(endTimeStr);
+
+            if (examDate.getDayOfWeek() == DayOfWeek.SUNDAY) {
+                return "ERROR: Exam cannot be scheduled on Sunday";
+            }
+
+            for (Holiday holiday : holidays) {
+                if (holiday.date.equals(examDate)) {
+                    return "ERROR: Exam cannot be scheduled on holiday: " + holiday.name;
+                }
+            }
+
+            if (room.capacity <= 0) {
+                return "ERROR: Room capacity is invalid";
+            }
+
+            for (AcademicEvent event : academicEvents.values()) {
+                if (event.idProfessor == professorId && event.date != null && event.date.equals(examDate)) {
+                    if (event.typeEnum.contains("EXAM") || event.typeEnum.contains("COLLOQUIUM")) {
+                        if (startTime.isBefore(event.endTime) && endTime.isAfter(event.startTime)) {
+                            return "ERROR: Professor is already assigned to another exam at that time";
+                        }
+                    }
+                }
+
+                if (event.idProfessor == professorId &&
+                        (event.typeEnum.equals("LECTURE") || event.typeEnum.equals("EXERCISE"))) {
+                    if (event.day != null && event.date == null) {
+                        LocalDate nextOccurrence = examDate.with(
+                                TemporalAdjusters.previousOrSame(DayOfWeek.valueOf(event.day.toUpperCase())));
+                        if (nextOccurrence.equals(examDate) &&
+                                startTime.isBefore(event.endTime) && endTime.isAfter(event.startTime)) {
+                            return "ERROR: Professor has " + event.typeEnum + " on " + event.day;
+                        }
+                    } else if (event.date != null && event.date.equals(examDate)) {
+                        if (startTime.isBefore(event.endTime) && endTime.isAfter(event.startTime)) {
+                            return "ERROR: Professor has " + event.typeEnum + " at that time";
+                        }
+                    }
+                }
+            }
+
+            if (hasConflict(null, examDate, roomId, professorId, startTime, endTime)) {
+                for (AcademicEvent event : academicEvents.values()) {
+                    if (event.date != null && event.date.equals(examDate)) {
+                        if (startTime.isBefore(event.endTime) && endTime.isAfter(event.startTime)) {
+                            if (event.idRoom == roomId) {
+                                return "ERROR: Room is occupied at that time";
+                            }
+                            if (event.idProfessor == professorId) {
+                                return "ERROR: Professor is occupied at that time";
+                            }
+                        }
+                    }
+                }
+            }
+
+            String insert = "INSERT INTO academic_event (course_id, created_by_professor, type_enum, " +
+                    "starts_at, ends_at, is_online, room_id, is_published, locked_by_admin) " +
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+            try (PreparedStatement pstmt = conn.prepareStatement(insert)) {
+                LocalDateTime startsAt = LocalDateTime.of(examDate, startTime);
+                LocalDateTime endsAt = LocalDateTime.of(examDate, endTime);
+
+                pstmt.setInt(1, courseId);
+                pstmt.setLong(2, professorId);
+                pstmt.setString(3, examType);
+                pstmt.setTimestamp(4, Timestamp.valueOf(startsAt));
+                pstmt.setTimestamp(5, Timestamp.valueOf(endsAt));
+                pstmt.setBoolean(6, false);
+                pstmt.setInt(7, roomId);
+                pstmt.setBoolean(8, true);
+                pstmt.setBoolean(9, false);
+                pstmt.executeUpdate();
+
+                AcademicEvent newEvent = new AcademicEvent();
+                newEvent.idCourse = courseId;
+                newEvent.idRoom = roomId;
+                newEvent.idProfessor = professorId;
+                newEvent.typeEnum = examType;
+                newEvent.date = examDate;
+                newEvent.startTime = startTime;
+                newEvent.endTime = endTime;
+                newEvent.startsAt = LocalDateTime.of(examDate, startTime);
+                newEvent.endsAt = LocalDateTime.of(examDate, endTime);
+                academicEvents.put(newEvent.idAcademicEvent, newEvent);
+            }
+
+            return "OK: Exam successfully added";
+        } catch (DateTimeParseException e) {
+            return "ERROR: Invalid date format (YYYY-MM-DD) or time format (HH:mm:ss)";
+        } catch (Exception e) {
+            return "ERROR: " + e.getMessage();
+        }
+    }
+
+    public String checkCourseHours(int courseId) {
+        Course course = courses.get(courseId);
+        if (course == null) {
+            return "ERROR: Course does not exist";
+        }
+
+        int lectureCount = 0;
+        int exerciseCount = 0;
+
+        for (AcademicEvent event : academicEvents.values()) {
+            if (event.idCourse == courseId) {
+                if ("LECTURE".equals(event.typeEnum)) {
+                    lectureCount++;
+                } else if ("EXERCISE".equals(event.typeEnum)) {
+                    exerciseCount++;
+                }
+            }
+        }
+
+        StringBuilder info = new StringBuilder();
+        info.append("COURSE: ").append(course.name).append("\n");
+        info.append("CODE: ").append(course.code).append("\n");
+        info.append("SEMESTER: ").append(course.semester).append("\n");
+        info.append("--- EVENT COUNT ---\n");
+        info.append("LECTURES: ").append(lectureCount).append("\n");
+        info.append("EXERCISES: ").append(exerciseCount).append("\n");
+
+        return info.toString();
+    }
+
+    public String generateCompleteSchedule() {
+        try {
+            System.out.println("=== STARTING AUTOMATIC COMPLETE SCHEDULE GENERATION ===\n");
+
+            int scheduleId = generateNewScheduleId();
+            System.out.println("Generated schedule_id: " + scheduleId + "\n");
+
+            Map<Integer, Double> professorFlexibility = analyzeProfessorFlexibility();
+            List<CoursePriority> priorities = determinePriorities(professorFlexibility);
+
+            System.out.println("--- COURSE PRIORITIES ---");
+            for (CoursePriority cp : priorities) {
+                System.out.printf("Course: %-30s | Priority: %.2f\n",
+                        cp.course.name, cp.priority);
+            }
+
+            int successfulLectures = 0;
+            int partialLectures = 0;
+            int failedLectures = 0;
+            int successfulExercises = 0;
+            int partialExercises = 0;
+            int failedExercises = 0;
+
+            StringBuilder details = new StringBuilder();
+            details.append("\n\n=== GENERATION DETAILS ===\n");
+
+            for (CoursePriority cp : priorities) {
+                Course course = cp.course;
+                details.append("\n--- ").append(course.name).append(" (ID: ").append(course.idCourse)
+                        .append(") ---\n");
+
+                if (cp.primaryProfessor != null) {
+                    String lectureResult = generateLectureSchedule(course.idCourse, scheduleId);
+                    details.append(" [LECTURES] ").append(lectureResult).append("\n");
+                    if (lectureResult.startsWith("OK")) {
+                        successfulLectures++;
+                    } else if (lectureResult.startsWith("WARNING")) {
+                        partialLectures++;
+                    } else {
+                        failedLectures++;
+                    }
+                } else {
+                    details.append(" [LECTURES] ERROR: No professor assigned\n");
+                    failedLectures++;
+                }
+
+                if (cp.secondaryProfessor != null) {
+                    String exerciseResult = generateExerciseSchedule(course.idCourse, scheduleId);
+                    details.append(" [EXERCISES] ").append(exerciseResult).append("\n");
+                    if (exerciseResult.startsWith("OK")) {
+                        successfulExercises++;
+                    } else if (exerciseResult.startsWith("WARNING")) {
+                        partialExercises++;
+                    } else {
+                        failedExercises++;
+                    }
+                } else {
+                    details.append(" [EXERCISES] ERROR: No assistant assigned\n");
+                    failedExercises++;
+                }
+            }
+
+            System.out.println(details.toString());
+
+            String summary = String.format(
+                    "\n=== SCHEDULE GENERATION COMPLETED ===\n" +
+                            "SCHEDULE_ID: %d\n" +
+                            "\nLECTURES:\n" +
+                            " ✓ Successful: %d\n" +
+                            " ⚠ Partial: %d\n" +
+                            " ✗ Failed: %d\n" +
+                            "\nEXERCISES:\n" +
+                            " ✓ Successful: %d\n" +
+                            " ⚠ Partial: %d\n" +
+                            " ✗ Failed: %d\n" +
+                            "\nTOTAL COURSES PROCESSED: %d\n" +
+                            "================================================",
+                    scheduleId, successfulLectures, partialLectures, failedLectures,
+                    successfulExercises, partialExercises, failedExercises, priorities.size());
+
+            System.out.println(summary);
+
+            loadAcademicEvents();
+
+            if (failedLectures > 0 || failedExercises > 0) {
+                return "WARNING: Schedule partially generated (schedule_id: " + scheduleId +
+                        "). Check details above.";
+            }
+
+            return "OK: Complete schedule successfully generated for all courses (schedule_id: " + scheduleId + ")!";
+        } catch (Exception e) {
+            e.printStackTrace();
+            return "ERROR: " + e.getMessage();
+        }
+    }
+
+    private Map<Integer, Double> analyzeProfessorFlexibility() {
+        Map<Integer, Double> flexibility = new HashMap<>();
+
+        for (Professor prof : professors.values()) {
+            double score = 1.0;
+
+            try {
+                String queryPref = "SELECT COUNT(DISTINCT day) as broj_dana FROM professor_preference " +
+                        "WHERE id = ?";
+                try (PreparedStatement ps = conn.prepareStatement(queryPref)) {
+                    ps.setInt(1, prof.idProfessor);
+                    try (ResultSet rs = ps.executeQuery()) {
+                        int preferredDays = 0;
+                        if (rs.next()) {
+                            preferredDays = rs.getInt("broj_dana");
+                        }
+
+                        if (preferredDays == 0) {
+                            score *= 0.8;
+                        } else if (preferredDays == 1) {
+                            score *= 0.3;
+                        } else if (preferredDays == 2) {
+                            score *= 0.5;
+                        } else if (preferredDays == 3) {
+                            score *= 0.7;
+                        } else {
+                            score *= 1.0;
+                        }
+                    }
+                }
+
+                int busyTerms = 0;
+                for (AcademicEvent event : academicEvents.values()) {
+                    if (event.idProfessor == prof.idProfessor) {
+                        busyTerms++;
+                    }
+                }
+
+                if (busyTerms == 0) {
+                    score *= 1.0;
+                } else if (busyTerms <= 4) {
+                    score *= 0.9;
+                } else if (busyTerms <= 9) {
+                    score *= 0.7;
+                } else if (busyTerms <= 14) {
+                    score *= 0.5;
+                } else if (busyTerms <= 19) {
+                    score *= 0.3;
+                } else {
+                    score *= 0.1;
+                }
+            } catch (SQLException e) {
+                System.err.println("Error analyzing professor " + prof.idProfessor + ": " + e.getMessage());
+                score = 0.5;
+            }
+
+            flexibility.put(prof.idProfessor, score);
+        }
+
+        return flexibility;
+    }
+
+    private List<CoursePriority> determinePriorities(Map<Integer, Double> professorFlexibility) {
+        List<CoursePriority> priorities = new ArrayList<>();
+
+        for (Course course : courses.values()) {
+            try {
+                CoursePriority cp = new CoursePriority();
+                cp.course = course;
+
+                String queryLec = "SELECT professor_id FROM course_professor WHERE course_id = ? " +
+                        "AND is_assistant = false";
+                try (PreparedStatement ps = conn.prepareStatement(queryLec)) {
+                    ps.setInt(1, course.idCourse);
+                    try (ResultSet rs = ps.executeQuery()) {
+                        if (rs.next()) {
+                            int profId = rs.getInt("professor_id");
+                            cp.primaryProfessor = professors.get(profId);
+                            cp.primaryFlexibility = professorFlexibility.getOrDefault(profId, 0.5);
+                        }
+                    }
+                }
+
+                String queryEx = "SELECT professor_id FROM course_professor WHERE course_id = ? " +
+                        "AND is_assistant = true";
+                try (PreparedStatement ps = conn.prepareStatement(queryEx)) {
+                    ps.setInt(1, course.idCourse);
+                    try (ResultSet rs = ps.executeQuery()) {
+                        if (rs.next()) {
+                            int profId = rs.getInt("professor_id");
+                            cp.secondaryProfessor = professors.get(profId);
+                            cp.secondaryFlexibility = professorFlexibility.getOrDefault(profId, 0.5);
+                        }
+                    }
+                }
+
+                double avgFlexibility = (cp.primaryFlexibility + cp.secondaryFlexibility) / 2.0;
+                cp.priority = 1.0 - avgFlexibility;
+
+                if (cp.primaryProfessor == null) {
+                    cp.priority += 0.5;
+                }
+                if (cp.secondaryProfessor == null) {
+                    cp.priority += 0.5;
+                }
+
+                priorities.add(cp);
+            } catch (SQLException e) {
+                System.err.println("Error determining priority for course " + course.idCourse + ": " +
+                        e.getMessage());
+            }
+        }
+
+        priorities.sort((a, b) -> Double.compare(b.priority, a.priority));
+        return priorities;
+    }
+
+    public String generateLectureSchedule(int courseId) {
+        return generateLectureSchedule(courseId, null);
+    }
+
+    public String generateLectureSchedule(int courseId, Integer scheduleIdParam) {
+        try {
+            Course course = courses.get(courseId);
+            if (course == null) {
+                return "ERROR: Course does not exist";
+            }
+
+            int scheduleId = (scheduleIdParam != null) ? scheduleIdParam : generateNewScheduleId();
+
+            String queryProf = "SELECT professor_id FROM course_professor WHERE course_id = ? " +
+                    "AND is_assistant = false";
+            int professorId = 0;
+            try (PreparedStatement ps = conn.prepareStatement(queryProf)) {
+                ps.setInt(1, courseId);
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (rs.next()) {
+                        professorId = (int) rs.getLong("created_by_professor");
+                    } else {
+                        return "ERROR: No professor assigned for lectures";
+                    }
+                }
+            }
+
+            Professor professor = professors.get(professorId);
+            if (professor == null || !professor.isActive) {
+                return "ERROR: Professor not found or not active";
+            }
+
+            List<String> preferredDays = new ArrayList<>();
+            Map<String, String> preferredTimes = new HashMap<>();
+
+            String queryPref = "SELECT day, starts_at FROM professor_preference WHERE id = ?";
+            try (PreparedStatement ps = conn.prepareStatement(queryPref)) {
+                ps.setInt(1, professorId);
+                try (ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) {
+                        String day = rs.getString("day");
+                        Time time = rs.getTime("starts_at");
+                        preferredDays.add(day);
+                        preferredTimes.put(day, time != null ? time.toString() : "09:00:00");
+                    }
+                }
+            }
+
+            if (preferredDays.isEmpty()) {
+                preferredDays.addAll(Arrays.asList("ponedeljak", "utorak", "srijeda"));
+            }
+
+            List<Room> suitableRooms = new ArrayList<>();
+            for (Room room : rooms.values()) {
+                if ("predavaliste".equals(room.roomType) || "sve".equals(room.roomType)) {
+                    suitableRooms.add(room);
+                }
+            }
+
+            if (suitableRooms.isEmpty()) {
+                return "ERROR: No suitable rooms for lectures";
+            }
+
+            int addedTerms = 0;
+            for (String day : preferredDays) {
+                for (Room room : suitableRooms) {
+                    String timeStr = preferredTimes.getOrDefault(day, "09:00:00");
+                    LocalTime startTime = parseTime(timeStr);
+                    LocalTime endTime = startTime.plusHours(1);
+
+                    if (!hasConflict(day, null, room.idRoom, professorId, startTime, endTime)) {
+                        LocalDateTime startsAt = convertDayToDate(day, startTime);
+                        LocalDateTime endsAt = convertDayToDate(day, endTime);
+
+                        saveToAcademicEvent(scheduleId, courseId, professorId, day, startsAt, endsAt, room.idRoom);
+
+                        AcademicEvent newEvent = new AcademicEvent();
+                        newEvent.idCourse = courseId;
+                        newEvent.idRoom = room.idRoom;
+                        newEvent.idProfessor = professorId;
+                        newEvent.day = day;
+                        newEvent.startTime = startTime;
+                        newEvent.endTime = endTime;
+                        newEvent.typeEnum = "LECTURE";
+                        newEvent.scheduleId = scheduleId;
+                        academicEvents.put(newEvent.idAcademicEvent, newEvent);
+                        addedTerms++;
+                        break;
+                    }
+                }
+            }
+
+            return "OK: Lectures scheduled (" + addedTerms + " terms, schedule_id: " + scheduleId + ")";
+        } catch (Exception e) {
+            return "ERROR: " + e.getMessage();
+        }
+    }
+
+    public String generateExerciseSchedule(int courseId) {
+        return generateExerciseSchedule(courseId, null);
+    }
+
+    public String generateExerciseSchedule(int courseId, Integer scheduleIdParam) {
+        try {
+            Course course = courses.get(courseId);
+            if (course == null) {
+                return "ERROR: Course does not exist";
+            }
+
+            int scheduleId = (scheduleIdParam != null) ? scheduleIdParam : generateNewScheduleId();
+
+            String queryProf = "SELECT professor_id FROM course_professor WHERE course_id = ? " +
+                    "AND is_assistant = true";
+            int professorId = 0;
+            try (PreparedStatement ps = conn.prepareStatement(queryProf)) {
+                ps.setInt(1, courseId);
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (rs.next()) {
+                        professorId = (int) rs.getLong("created_by_professor");
+                    } else {
+                        return "ERROR: No professor assigned for exercises";
+                    }
+                }
+            }
+
+            Professor professor = professors.get(professorId);
+            if (professor == null || !professor.isActive) {
+                return "ERROR: Professor not found or not active";
+            }
+
+            List<String> preferredDays = new ArrayList<>();
+            Map<String, String> preferredTimes = new HashMap<>();
+
+            String queryPref = "SELECT day, starts_at FROM professor_preference WHERE id = ?";
+            try (PreparedStatement ps = conn.prepareStatement(queryPref)) {
+                ps.setInt(1, professorId);
+                try (ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) {
+                        String day = rs.getString("day");
+                        Time time = rs.getTime("starts_at");
+                        preferredDays.add(day);
+                        preferredTimes.put(day, time != null ? time.toString() : "10:00:00");
+                    }
+                }
+            }
+
+            if (preferredDays.isEmpty()) {
+                preferredDays.addAll(Arrays.asList("utorak", "cetvrtak"));
+            }
+
+            List<Room> suitableRooms = new ArrayList<>();
+            for (Room room : rooms.values()) {
+                if ("vjezbe".equals(room.roomType) || "sve".equals(room.roomType)) {
+                    suitableRooms.add(room);
+                }
+            }
+
+            if (suitableRooms.isEmpty()) {
+                return "ERROR: No suitable rooms for exercises";
+            }
+
+            int addedTerms = 0;
+            for (String day : preferredDays) {
+                for (Room room : suitableRooms) {
+                    String timeStr = preferredTimes.getOrDefault(day, "10:00:00");
+                    LocalTime startTime = parseTime(timeStr);
+                    LocalTime endTime = startTime.plusHours(1);
+
+                    if (!hasConflict(day, null, room.idRoom, professorId, startTime, endTime)) {
+                        LocalDateTime startsAt = convertDayToDate(day, startTime);
+                        LocalDateTime endsAt = convertDayToDate(day, endTime);
+
+                        saveToAcademicEvent(scheduleId, courseId, professorId, day, startsAt, endsAt, room.idRoom);
+
+                        AcademicEvent newEvent = new AcademicEvent();
+                        newEvent.idCourse = courseId;
+                        newEvent.idRoom = room.idRoom;
+                        newEvent.idProfessor = professorId;
+                        newEvent.day = day;
+                        newEvent.startTime = startTime;
+                        newEvent.endTime = endTime;
+                        newEvent.typeEnum = "EXERCISE";
+                        newEvent.scheduleId = scheduleId;
+                        academicEvents.put(newEvent.idAcademicEvent, newEvent);
+                        addedTerms++;
+                        break;
+                    }
+                }
+            }
+
+            return "OK: Exercises scheduled (" + addedTerms + " terms, schedule_id: " + scheduleId + ")";
+        } catch (Exception e) {
+            return "ERROR: " + e.getMessage();
         }
     }
 
@@ -277,924 +1023,74 @@ public class EventValidationService {
         try {
             return LocalTime.parse(timeStr);
         } catch (Exception e) {
-            throw new IllegalArgumentException("Invalid time format: " + timeStr + 
-                                            ". Expected HH:mm:ss or HH:mm", e);
+            throw new IllegalArgumentException("Invalid time format: " + timeStr +
+                    ". Expected HH:mm:ss or HH:mm", e);
         }
     }
 
-
-    /**
-     * REFAKTORISANO: Skraćeno jer koristi generičku metodu
-     */
-    public String dodajPredavanje(int idPredmet, int idRoom, int idProfessor, String dan,
-                                  String vremeOd, String vremeDo) {
-        return dodajTerminNastave(idPredmet, idRoom, idProfessor, dan, vremeOd, vremeDo,
-                                 "predavanje", "predavaliste");
-    }
-
-    /**
-     * REFAKTORISANO: Skraćeno jer koristi generičku metodu
-     */
-    public String dodajVjezbe(int idPredmet, int idRoom, int idProfessor, String dan,
-                             String vremeOd, String vremeDo) {
-        return dodajTerminNastave(idPredmet, idRoom, idProfessor, dan, vremeOd, vremeDo,
-                                 "vjezbe", "vjezbe");
-    }
-    
-    public String dodajKolokvijum(int idPredmet, int idSala, int idProfesor, int idDezurni,
-                                String datum, String vremeOd, String vremeDo) {
-        try {
-            Course predmet = predmeti.get(idPredmet);
-            if (predmet == null) {
-                return "GRESKA: Course ne postoji";
-            }
-
-            Room sala = sale.get(idSala);
-            if (sala == null) {
-                return "GRESKA: Room ne postoji";
-            }
-
-            Professor profesor = profesori.get(idProfesor);
-            if (profesor == null) {
-                return "GRESKA: Professor ne postoji";
-            }
-
-            Professor dezurni = profesori.get(idDezurni);
-            if (dezurni == null) {
-                return "GRESKA: Dežurni profesor ne postoji";
-            }
-
-            LocalDate datumKolokvijuma = LocalDate.parse(datum);
-            LocalTime pocetak = parseTime(vremeOd);
-            LocalTime kraj = parseTime(vremeDo);
-
-            // 1. VALIDACIJA: Nije nedjeljA ili praznik
-            if (datumKolokvijuma.getDayOfWeek() == DayOfWeek.SUNDAY) {
-                return "GRESKA: Kolokvijum se ne moze zakazati u nedjelju";
-            }
-
-            for (Holiday p : praznici) {
-                if (p.datum.equals(datumKolokvijuma)) {
-                    return "GRESKA: Kolokvijum ne moze biti na praznik: " + p.naziv;
-                }
-            }
-
-            // 2. VALIDACIJA: Max 2 kolokvijuma u toj sedmici
-            LocalDate pocetakSedmice = datumKolokvijuma.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
-            LocalDate krajSedmice = datumKolokvijuma.with(TemporalAdjusters.nextOrSame(DayOfWeek.FRIDAY));
-
-            int kolokvijumiUSedmici = 0;
-            for (AcademicEvent event : termini) {
-                if (event.tipTermina != null && event.tipTermina.equals("kolokvijum") &&
-                    event.datum != null &&
-                    !event.datum.isBefore(pocetakSedmice) &&
-                    !event.datum.isAfter(krajSedmice)) {
-                    kolokvijumiUSedmici++;
-                }
-            }
-
-            if (kolokvijumiUSedmici >= 2) {
-                return "GRESKA: Već postoje 2 kolokvijuma u ovoj sedmici, dozvoljena je max 2";
-            }
-
-            // 3. VALIDACIJA: Sala je slobodna i ima dovoljnu opremu
-            if (sala.kapacitet < predmet.brojStudenata) {
-                return "GRESKA: Room nema dovoljan kapacitet";
-            }
-
-            if (predmet.vrstaOpreme != null && !predmet.vrstaOpreme.isEmpty()) {
-                if (sala.vrstaOpreme == null || !sala.vrstaOpreme.contains(predmet.vrstaOpreme)) {
-                    return "GRESKA: Room nema potrebnu opremu: " + predmet.vrstaOpreme;
-                }
-            }
-
-            // 4. VALIDACIJA: Profesor i Dežurni nisu zauzeti
-            if (imaKonflikt(null, datumKolokvijuma, idSala, idProfesor, pocetak, kraj)) {
-                for (AcademicEvent t : termini) {
-                    if (t.datum != null && t.datum.equals(datumKolokvijuma) &&
-                        pocetak.isBefore(t.vremeDo) && kraj.isAfter(t.vremeOd)) {
-                        if (t.idProfessor == idProfesor) {
-                            return "GRESKA: Profesor je zauzet u tom terminu";
-                        }
-                        if (t.idRoom == idSala) {
-                            return "GRESKA: Room je zauzeta u tom terminu";
-                        }
-                    }
-                }
-            }
-
-            // 5. VALIDACIJA: Dežurni nije preplavljeni (brojanje dežurstava)
-            int dezurstvaDezurnog = 0;
-            for (AcademicEvent event : termini) {
-                if (event.idProfessor == idDezurni && 
-                    event.tipTermina != null && event.tipTermina.equals("kolokvijum")) {
-                    dezurstvaDezurnog++;
-                }
-            }
-
-            if (dezurstvaDezurnog >= 5) {  // Primjer: max 5 dežurstava
-                return "UPOZORENJE: Dežurni ima već " + dezurstvaDezurnog + " dežurstava";
-            }
-
-            // 6. INSERT u bazu
-            String insert = "INSERT INTO termin (id_predmet, id_sala, id_profesor, datum, vreme_od, vreme_do, tip_termina, id_dezurni) " +
-                            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
-
-            try (PreparedStatement pstmt = conn.prepareStatement(insert)) {
-                pstmt.setInt(1, idPredmet);
-                pstmt.setInt(2, idSala);
-                pstmt.setInt(3, idProfesor);
-                pstmt.setDate(4, java.sql.Date.valueOf(datumKolokvijuma));
-                pstmt.setTime(5, Time.valueOf(pocetak));
-                pstmt.setTime(6, Time.valueOf(kraj));
-                pstmt.setString(7, "kolokvijum");
-                pstmt.setInt(8, idDezurni);
-
-                pstmt.executeUpdate();
-
-                // Dodaj u lokalnu listu
-                AcademicEvent noviEvent = new AcademicEvent();
-                noviEvent.idCourse = idPredmet;
-                noviEvent.idRoom = idSala;
-                noviEvent.idProfessor = idProfesor;
-                noviEvent.datum = datumKolokvijuma;
-                noviEvent.vremeOd = pocetak;
-                noviEvent.vremeDo = kraj;
-                noviEvent.tipTermina = "kolokvijum";
-                termini.add(noviEvent);
-
-                return "OK: Kolokvijum uspjesno dodan";
-            }
-
-        } catch (DateTimeParseException e) {
-            return "GRESKA: Neispravan format datuma (YYYY-MM-DD) ili vremena (HH:mm)";
-        } catch (Exception e) {
-            return "GRESKA: " + e.getMessage();
-        }
-    }
-
-    public String provjeriiFondCasova(int idPredmet) {
-        Course predmet = predmeti.get(idPredmet);
-        if (predmet == null) {
-            return "GRESKA: Course ne postoji";
-        }
-
-        int predavanjaUzeta = 0;
-        int vjezbiUzete = 0;
-
-        for (AcademicEvent event : termini) {
-            if (event.idCourse == idPredmet) {
-                if (event.tipTermina != null) {
-                    if (event.tipTermina.equals("predavanje")) {
-                        predavanjaUzeta++;
-                    } else if (event.tipTermina.equals("vjezbe")) {
-                        vjezbiUzete++;
-                    }
-                }
-            }
-        }
-
-        StringBuilder info = new StringBuilder();
-        info.append("PREDMET: ").append(predmet.naziv).append("\n");
-        info.append("PREDAVANJA: ").append(predavanjaUzeta).append(" / ").append(predmet.fondPredavanja).append("\n");
-        info.append("VJEZBE: ").append(vjezbiUzete).append(" / ").append(predmet.fondVjezbi).append("\n");
-
-        if (predavanjaUzeta < predmet.fondPredavanja) {
-            info.append("UPOZORENJE: Nedostaju ").append(predmet.fondPredavanja - predavanjaUzeta).append(" predavanja\n");
-        }
-        if (vjezbiUzete < predmet.fondVjezbi) {
-            info.append("UPOZORENJE: Nedostaju ").append(predmet.fondVjezbi - vjezbiUzete).append(" vjezbi\n");
-        }
-
-        return info.toString();
-    }
-
-
-    
-    public String dodajIspit(int idPredmet, int idRoom, int idProfessor, String datum,
-                            String vremeOd, String vremeDo, String tipIspita) {
-        try {
-            Course predmet = predmeti.get(idPredmet);
-            if (predmet == null) {
-                return "GRESKA: Course ne postoji";
-            }
-            
-            Room sala = sale.get(idRoom);
-            if (sala == null) {
-                return "GRESKA: Room ne postoji";
-            }
-            
-            Professor profesor = profesori.get(idProfessor);
-            if (profesor == null) {
-                return "GRESKA: Professor ne postoji";
-            }
-            
-            LocalDate datumIspita = LocalDate.parse(datum);
-            LocalTime pocetak = parseTime(vremeOd);
-            LocalTime kraj = parseTime(vremeDo);
-            
-            if (datumIspita.getDayOfWeek() == DayOfWeek.SUNDAY) {
-                return "GRESKA: Ispit ne moze biti u nedjelju";
-            }
-            
-            for (Holiday p : praznici) {
-                if (p.datum.equals(datumIspita)) {
-                    return "GRESKA: Ne moze se zakazati ispit za praznik: " + p.naziv;
-                }
-            }
-            
-            if (sala.kapacitet < predmet.brojStudenata) {
-                return "GRESKA: Room nema dovoljan kapacitet";
-            }
-            
-            if (predmet.vrstaOpreme != null && !predmet.vrstaOpreme.isEmpty()) {
-                if (sala.vrstaOpreme == null || !sala.vrstaOpreme.contains(predmet.vrstaOpreme)) {
-                    return "GRESKA: Room nema potrebnu opremu: " + predmet.vrstaOpreme;
-                }
-            }
-
-            // ✅ NOVA VALIDACIJA: Profesor dostupan?
-            for (AcademicEvent event : termini) {
-                // 1. Profesor ima ispit u istom vremenu
-                if (event.idProfessor == idProfessor && 
-                    event.datum != null &&
-                    event.datum.equals(datumIspita) &&
-                    event.tipTermina.contains("ispit")) {
-                    
-                    if (pocetak.isBefore(event.vremeDo) && kraj.isAfter(event.vremeOd)) {
-                        return "GRESKA: Professor je već zauzet za ispit " + event.datum + 
-                               " od " + event.vremeOd + " do " + event.vremeDo;
-                    }
-                }
-                
-                // 2. Profesor dežuri na kolokvijumu u istom vremenu
-                if (event.idProfessor == idProfessor && 
-                    event.datum != null &&
-                    event.datum.equals(datumIspita) &&
-                    event.tipTermina.contains("kolokvijum")) {
-                    
-                    if (pocetak.isBefore(event.vremeDo) && kraj.isAfter(event.vremeOd)) {
-                        return "GRESKA: Professor je designiran kao dežurni na kolokvijumu " +
-                               event.datum + " " + event.vremeOd + "-" + event.vremeDo;
-                    }
-                }
-            }
-            
-            // ✅ NOVA VALIDACIJA: Profesor ima nastavu (predavanja/vjezbe)?
-            for (AcademicEvent event : termini) {
-                if (event.idProfessor == idProfessor && 
-                    (event.tipTermina.equals("predavanje") || event.tipTermina.equals("vjezbe"))) {
-                    
-                    // Ako je redovna nastava (dan)
-                    if (event.dan != null && event.datum == null) {
-                        LocalDate sledecaOdgovarajucaDatum = datumIspita.with(
-                            TemporalAdjusters.previousOrSame(
-                                DayOfWeek.valueOf(event.dan.toUpperCase())));
-                        
-                        if (sledecaOdgovarajucaDatum.equals(datumIspita) &&
-                            pocetak.isBefore(event.vremeDo) && 
-                            kraj.isAfter(event.vremeOd)) {
-                            return "GRESKA: Professor ima " + event.tipTermina + 
-                                   " " + event.dan + " " + event.vremeOd;
-                        }
-                    }
-                    
-                    // Ako je specifičan datum
-                    if (event.datum != null && event.datum.equals(datumIspita)) {
-                        if (pocetak.isBefore(event.vremeDo) && 
-                            kraj.isAfter(event.vremeOd)) {
-                            return "GRESKA: Professor ima " + event.tipTermina + 
-                                   " " + event.datum + " " + event.vremeOd;
-                        }
-                    }
-                }
-            }
-
-            // NOVA: Koristi helper metodu
-            if (imaKonflikt(null, datumIspita, idRoom, idProfessor, pocetak, kraj)) {
-                for (AcademicEvent t : termini) {
-                    if (t.datum != null && t.datum.equals(datumIspita)) {
-                        if (pocetak.isBefore(t.vremeDo) && kraj.isAfter(t.vremeOd)) {
-                            if (t.idRoom == idRoom) {
-                                return "GRESKA: Room je zauzeta u tom terminu";
-                            }
-                            if (t.idProfessor == idProfessor) {
-                                return "GRESKA: Professor je zauzet u tom terminu";
-                            }
-                        }
-                    }
-                }
-            }
-            
-            String insertTermin = "INSERT INTO termin (id_predmet, id_sala, id_profesor, datum, vreme_od, vreme_do, tip_termina) " +
-                                "VALUES (?, ?, ?, ?, ?, ?, ?)";
-            PreparedStatement pstmt = conn.prepareStatement(insertTermin, Statement.RETURN_GENERATED_KEYS);
-            pstmt.setInt(1, idPredmet);
-            pstmt.setInt(2, idRoom);
-            pstmt.setInt(3, idProfessor);
-            pstmt.setDate(4, java.sql.Date.valueOf(datumIspita));
-            pstmt.setTime(5, Time.valueOf(pocetak));
-            pstmt.setTime(6, Time.valueOf(kraj));
-            pstmt.setString(7, tipIspita);
-            pstmt.executeUpdate();
-            
-            ResultSet rs = pstmt.getGeneratedKeys();
-            rs.close();
-            pstmt.close();
-            
-            return "OK: Ispit uspjesno dodat";
-            
-        } catch (Exception e) {
-            return "GRESKA: " + e.getMessage();
-        }
-    }
-
-    /**
-     * Generiše kompletan raspored za SVE predmete (predavanja + vježbe)
-     * Prioritizuje predmete na osnovu fleksibilnosti profesora
-     */
-    public String generisiKompletniRaspored() {
-        try {
-            System.out.println("=== POKRETANJE AUTOMATSKOG GENERISANJA KOMPLETNOG RASPOREDA ===\n");
-            
-            // 1. Analiza fleksibilnosti profesora
-            Map<Integer, Double> fleksibilnostProfesora = analizirajFleksibilnostProfesora();
-            
-            // 2. Određivanje prioriteta predmeta
-            List<PredmetPrioritet> prioriteti = odrediPrioritete(fleksibilnostProfesora);
-            
-            System.out.println("--- PRIORITETI PREDMETA ---");
-            for (PredmetPrioritet pp : prioriteti) {
-                System.out.printf("Predmet: %-30s | Prioritet: %.2f | Prof.Pred: %-20s (flex: %.2f) | Prof.Vjez: %-20s (flex: %.2f)\n",
-                    pp.predmet.naziv,
-                    pp.prioritet,
-                    pp.profesorPredavanja != null ? pp.profesorPredavanja.ime + " " + pp.profesorPredavanja.prezime : "NEMA",
-                    pp.fleksibilnostPredavanja,
-                    pp.profesorVjezbi != null ? pp.profesorVjezbi.ime + " " + pp.profesorVjezbi.prezime : "NEMA",
-                    pp.fleksibilnostVjezbi
-                );
-            }
-            
-            // 3. Generisanje rasporeda po prioritetu
-            int uspjesnoPredavanja = 0;
-            int djelimicnoPredavanja = 0;
-            int neuspjesnoPredavanja = 0;
-            
-            int uspjesnoVjezbi = 0;
-            int djelimicnoVjezbi = 0;
-            int neuspjesnoVjezbi = 0;
-            
-            StringBuilder detalji = new StringBuilder();
-            detalji.append("\n\n=== DETALJI GENERISANJA ===\n");
-            
-            for (PredmetPrioritet pp : prioriteti) {
-                Course predmet = pp.predmet;
-                detalji.append("\n--- ").append(predmet.naziv).append(" (ID: ").append(predmet.idCourse).append(") ---\n");
-                
-                // Generiši predavanja ako ima fond i profesora
-                if (predmet.fondPredavanja > 0 && pp.profesorPredavanja != null) {
-                    String rezultatPredavanja = generisiRasporedPredavanja(predmet.idCourse);
-                    detalji.append("  [PREDAVANJA] ").append(rezultatPredavanja).append("\n");
-                    
-                    if (rezultatPredavanja.startsWith("OK")) {
-                        uspjesnoPredavanja++;
-                    } else if (rezultatPredavanja.startsWith("UPOZORENJE")) {
-                        djelimicnoPredavanja++;
-                    } else {
-                        neuspjesnoPredavanja++;
-                    }
-                } else if (predmet.fondPredavanja > 0) {
-                    detalji.append("  [PREDAVANJA] GRESKA: Nema dodijeljenog profesora\n");
-                    neuspjesnoPredavanja++;
-                } else {
-                    detalji.append("  [PREDAVANJA] Nema fonda - preskočeno\n");
-                }
-                
-                // Generiši vježbe ako ima fond i asistenta
-                if (predmet.fondVjezbi > 0 && pp.profesorVjezbi != null) {
-                    String rezultatVjezbi = generisiRasporedVjezbi(predmet.idCourse);
-                    detalji.append("  [VJEZBE] ").append(rezultatVjezbi).append("\n");
-                    
-                    if (rezultatVjezbi.startsWith("OK")) {
-                        uspjesnoVjezbi++;
-                    } else if (rezultatVjezbi.startsWith("UPOZORENJE")) {
-                        djelimicnoVjezbi++;
-                    } else {
-                        neuspjesnoVjezbi++;
-                    }
-                } else if (predmet.fondVjezbi > 0) {
-                    detalji.append("  [VJEZBE] GRESKA: Nema dodijeljenog asistenta\n");
-                    neuspjesnoVjezbi++;
-                } else {
-                    detalji.append("  [VJEZBE] Nema fonda - preskočeno\n");
-                }
-            }
-            
-            // 4. Ispis detalja
-            System.out.println(detalji.toString());
-            
-            // 5. Sažetak rezultata
-            String sazetak = String.format(
-                "\n=== ZAVRŠENO GENERISANJE KOMPLETNOG RASPOREDA ===\n" +
-                "PREDAVANJA:\n" +
-                "  ✓ Potpuno uspješno:  %d\n" +
-                "  ⚠ Djelimično:        %d\n" +
-                "  ✗ Neuspješno:        %d\n" +
-                "\n" +
-                "VJEŽBE:\n" +
-                "  ✓ Potpuno uspješno:  %d\n" +
-                "  ⚠ Djelimično:        %d\n" +
-                "  ✗ Neuspješno:        %d\n" +
-                "\n" +
-                "UKUPNO PREDMETA OBRAĐENO: %d\n" +
-                "================================================",
-                uspjesnoPredavanja, djelimicnoPredavanja, neuspjesnoPredavanja,
-                uspjesnoVjezbi, djelimicnoVjezbi, neuspjesnoVjezbi,
-                prioriteti.size()
-            );
-            
-            System.out.println(sazetak);
-            
-            // NOVA: Učitaj sve termine jednom na kraju
-            ucitajTermine();
-            
-            if (neuspjesnoPredavanja > 0 || neuspjesnoVjezbi > 0) {
-                return "UPOZORENJE: Raspored djelimično generisan. Provjerite detalje iznad.";
-            }
-            
-            if (djelimicnoPredavanja > 0 || djelimicnoVjezbi > 0) {
-                return "UPOZORENJE: Neki predmeti nisu dobili sve potrebne termine. Provjerite detalje iznad.";
-            }
-            
-            return "OK: Kompletan raspored uspješno generisan za sve predmete!";
-            
-        } catch (Exception e) {
-            e.printStackTrace();
-            return "GRESKA: " + e.getMessage();
-        }
-    }
-
-    /**
-     * Analizira fleksibilnost svakog profesora
-     * Fleksibilnost = 0.0 (nefleksibilan) do 1.0 (veoma fleksibilan)
-     */
-    private Map<Integer, Double> analizirajFleksibilnostProfesora() {
-        Map<Integer, Double> fleksibilnost = new HashMap<>();
-        
-        for (Professor prof : profesori.values()) {
-            double score = 1.0; // Početni maksimalni score
-            
-            try {
-                // FAKTOR 1: Broj preferiranih dana
-                String queryPref = "SELECT COUNT(DISTINCT dan) as broj_dana FROM profesor_preferencije WHERE id_profesor = ?";
-                PreparedStatement ps = conn.prepareStatement(queryPref);
-                ps.setInt(1, prof.idProfessor);
-                ResultSet rs = ps.executeQuery();
-                
-                int brojPreferiranih = 0;
-                if (rs.next()) {
-                    brojPreferiranih = rs.getInt("broj_dana");
-                }
-                rs.close();
-                ps.close();
-                
-                // Manje dana = manje fleksibilnosti
-                if (brojPreferiranih == 0) {
-                    score *= 0.8; // Defaultni dani, srednja fleksibilnost
-                } else if (brojPreferiranih == 1) {
-                    score *= 0.3; // Samo 1 dan = VEOMA nefleksibilan!
-                } else if (brojPreferiranih == 2) {
-                    score *= 0.5; // 2 dana = malo fleksibilan
-                } else if (brojPreferiranih == 3) {
-                    score *= 0.7; // 3 dana = srednje fleksibilan
-                } else {
-                    score *= 1.0; // 4+ dana = veoma fleksibilan
-                }
-                
-                // FAKTOR 2: Koliko je već zauzet
-                int zauzetiTermini = 0;
-                for (AcademicEvent termin : termini) {
-                    if (termin.idProfessor == prof.idProfessor) {
-                        zauzetiTermini++;
-                    }
-                }
-                
-                // Više zauzetih termina = manje fleksibilnosti
-                if (zauzetiTermini == 0) {
-                    score *= 1.0; // Potpuno slobodan
-                } else if (zauzetiTermini <= 4) {
-                    score *= 0.9; // Malo zauzet
-                } else if (zauzetiTermini <= 9) {
-                    score *= 0.7; // Osrednje zauzet
-                } else if (zauzetiTermini <= 14) {
-                    score *= 0.5; // Dosta zauzet
-                } else if (zauzetiTermini <= 19) {
-                    score *= 0.3; // Veoma zauzet
-                } else {
-                    score *= 0.1; // Preopterećen
-                }
-                
-            } catch (SQLException e) {
-                System.err.println("Greška pri analizi profesora " + prof.idProfessor + ": " + e.getMessage());
-                score = 0.5; // Default srednja fleksibilnost ako je greška
-            }
-            
-            fleksibilnost.put(prof.idProfessor, score);
-        }
-        
-        return fleksibilnost;
-    }
-
-    /**
-     * Određuje prioritete predmeta na osnovu fleksibilnosti profesora
-     * Veći prioritet (viši broj) = obrađuje se PRIJE
-     */
-    private List<PredmetPrioritet> odrediPrioritete(Map<Integer, Double> fleksibilnostProfesora) {
-        List<PredmetPrioritet> prioriteti = new ArrayList<>();
-        
-        for (Course predmet : predmeti.values()) {
-            try {
-                PredmetPrioritet pp = new PredmetPrioritet();
-                pp.predmet = predmet;
-                
-                // Pronađi profesora za predavanja
-                if (predmet.fondPredavanja > 0) {
-                    String queryPred = "SELECT id_profesor FROM predmet_profesor WHERE id_predmet = ? AND tip = 'predavanje'";
-                    PreparedStatement ps1 = conn.prepareStatement(queryPred);
-                    ps1.setInt(1, predmet.idCourse);
-                    ResultSet rs1 = ps1.executeQuery();
-                    
-                    if (rs1.next()) {
-                        int idProf = rs1.getInt("id_profesor");
-                        pp.profesorPredavanja = profesori.get(idProf);
-                        pp.fleksibilnostPredavanja = fleksibilnostProfesora.getOrDefault(idProf, 0.5);
-                    }
-                    rs1.close();
-                    ps1.close();
-                }
-                
-                // Pronađi profesora za vježbe
-                if (predmet.fondVjezbi > 0) {
-                    String queryVjez = "SELECT id_profesor FROM predmet_profesor WHERE id_predmet = ? AND tip = 'vjezbe'";
-                    PreparedStatement ps2 = conn.prepareStatement(queryVjez);
-                    ps2.setInt(1, predmet.idCourse);
-                    ResultSet rs2 = ps2.executeQuery();
-                    
-                    if (rs2.next()) {
-                        int idProf = rs2.getInt("id_profesor");
-                        pp.profesorVjezbi = profesori.get(idProf);
-                        pp.fleksibilnostVjezbi = fleksibilnostProfesora.getOrDefault(idProf, 0.5);
-                    }
-                    rs2.close();
-                    ps2.close();
-                }
-                
-                // PRIORITET = 1.0 - prosječna fleksibilnost (inverzija)
-                // Manja fleksibilnost = viši prioritet (bliže 1.0 nakon inverzije)
-                double prosjecnaFleksibilnost = (pp.fleksibilnostPredavanja + pp.fleksibilnostVjezbi) / 2.0;
-                pp.prioritet = 1.0 - prosjecnaFleksibilnost;
-                
-                // Dodatni boost prioriteta ako nema profesora (problem!)
-                if (pp.profesorPredavanja == null && predmet.fondPredavanja > 0) {
-                    pp.prioritet += 0.5; // Označi kao problem
-                }
-                if (pp.profesorVjezbi == null && predmet.fondVjezbi > 0) {
-                    pp.prioritet += 0.5; // Označi kao problem
-                }
-                
-                prioriteti.add(pp);
-                
-            } catch (SQLException e) {
-                System.err.println("Greška pri određivanju prioriteta za predmet " + predmet.idCourse + ": " + e.getMessage());
-            }
-        }
-        
-        // Sortiraj od NAJVIŠEG ka NAJNIŽEM prioritetu (veći broj = viši prioritet)
-        prioriteti.sort((a, b) -> Double.compare(b.prioritet, a.prioritet));
-        
-        return prioriteti;
-    }
-
-    public String generisiRasporedPredavanja(int idPredmet) {
-        try {
-            Course predmet = predmeti.get(idPredmet);
-            if (predmet == null) {
-                return "GRESKA: Course ne postoji";
-            }
-            
-            if (predmet.fondPredavanja <= 0) {
-                return "GRESKA: Course nema fond predavanja";
-            }
-            
-            String queryProf = "SELECT id_profesor FROM predmet_profesor WHERE id_predmet = ? AND tip = 'predavanje'";
-            PreparedStatement ps = conn.prepareStatement(queryProf);
-            ps.setInt(1, idPredmet);
-            ResultSet rs = ps.executeQuery();
-            
-            int idProfessor = 0;
-            if (rs.next()) {
-                idProfessor = rs.getInt("id_profesor");
-            } else {
-                rs.close();
-                ps.close();
-                return "GRESKA: Course nema dodijeljenog profesora za predavanja";
-            }
-            rs.close();
-            ps.close();
-            
-            String queryPref = "SELECT * FROM profesor_preferencije WHERE id_profesor = ?";
-            PreparedStatement ps2 = conn.prepareStatement(queryPref);
-            ps2.setInt(1, idProfessor);
-            ResultSet rs2 = ps2.executeQuery();
-            
-            List<String> prefDani = new ArrayList<>();
-            Map<String, String> prefVremena = new HashMap<>();
-            
-            while (rs2.next()) {
-                String dan = rs2.getString("dan");
-                prefDani.add(dan);
-                prefVremena.put(dan, rs2.getTime("vreme_od").toString());
-            }
-            rs2.close();
-            ps2.close();
-            
-            if (prefDani.isEmpty()) {
-                prefDani.add("ponedeljak");
-                prefDani.add("utorak");
-                prefDani.add("srijeda");
-            }
-            
-            List<Room> pogodneSale = new ArrayList<>();
-            for (Room s : sale.values()) {
-                if (s.tipSale.equals("predavaliste") || s.tipSale.equals("sve")) {
-                    if (s.kapacitet >= predmet.brojStudenata) {
-                        if (predmet.vrstaOpreme == null || predmet.vrstaOpreme.isEmpty() ||
-                            (s.vrstaOpreme != null && s.vrstaOpreme.contains(predmet.vrstaOpreme))) {
-                            pogodneSale.add(s);
-                        }
-                    }
-                }
-            }
-            
-            if (pogodneSale.isEmpty()) {
-                return "GRESKA: Nema pogodnih sala za predavanja";
-            }
-            
-            int dodanoTermina = 0;
-            int potrebnoTermina = predmet.fondPredavanja;
-            
-            for (String dan : prefDani) {
-                if (dodanoTermina >= potrebnoTermina) {
-                    break;
-                }
-                
-                for (Room sala : pogodneSale) {
-                    if (dodanoTermina >= potrebnoTermina) {
-                        break;
-                    }
-                    
-                    String vremeOd = prefVremena.getOrDefault(dan, "09:00:00");
-                    LocalTime pocetak = LocalTime.parse(vremeOd);
-                    LocalTime kraj = pocetak.plusHours(1);
-                    
-                    // NOVA: Koristi helper metodu umjesto dvostrukih petlji
-                    if (!imaKonflikt(dan, null, sala.idRoom, idProfessor, pocetak, kraj)) {
-                        String insert = "INSERT INTO termin (id_predmet, id_sala, id_profesor, dan, vreme_od, vreme_do, tip_termina) " +
-                                      "VALUES (?, ?, ?, ?, ?, ?, 'predavanje')";
-                        PreparedStatement pstmt = conn.prepareStatement(insert);
-                        pstmt.setInt(1, idPredmet);
-                        pstmt.setInt(2, sala.idRoom);
-                        pstmt.setInt(3, idProfessor);
-                        pstmt.setString(4, dan);
-                        pstmt.setTime(5, Time.valueOf(pocetak));
-                        pstmt.setTime(6, Time.valueOf(kraj));
-                        pstmt.executeUpdate();
-                        pstmt.close();
-                        
-                        // NOVA: Ručno dodaj u listu umjesto reloada
-                        AcademicEvent noviTermin = new AcademicEvent();
-                        noviTermin.idCourse = idPredmet;
-                        noviTermin.idRoom = sala.idRoom;
-                        noviTermin.idProfessor = idProfessor;
-                        noviTermin.dan = dan;
-                        noviTermin.vremeOd = pocetak;
-                        noviTermin.vremeDo = kraj;
-                        noviTermin.tipTermina = "predavanje";
-                        termini.add(noviTermin);
-                        
-                        dodanoTermina++;
-                    }
-                }
-            }
-            
-            if (dodanoTermina < potrebnoTermina) {
-                return "UPOZORENJE: Generisano " + dodanoTermina + " od " + potrebnoTermina + " potrebnih termina";
-            }
-            
-            return "OK: Automatski generisan raspored predavanja (" + dodanoTermina + " termina)";
-            
-        } catch (Exception e) {
-            return "GRESKA: " + e.getMessage();
-        }
-    }
-    
-    public String generisiRasporedVjezbi(int idPredmet) {
-        try {
-            Course predmet = predmeti.get(idPredmet);
-            if (predmet == null) {
-                return "GRESKA: Course ne postoji";
-            }
-            
-            if (predmet.fondVjezbi <= 0) {
-                return "GRESKA: Course nema fond vjezbi";
-            }
-            
-            String queryProf = "SELECT id_profesor FROM predmet_profesor WHERE id_predmet = ? AND tip = 'vjezbe'";
-            PreparedStatement ps = conn.prepareStatement(queryProf);
-            ps.setInt(1, idPredmet);
-            ResultSet rs = ps.executeQuery();
-            
-            int idProfessor = 0;
-            if (rs.next()) {
-                idProfessor = rs.getInt("id_profesor");
-            } else {
-                rs.close();
-                ps.close();
-                return "GRESKA: Course nema dodijeljenog asistenta za vjezbe";
-            }
-            rs.close();
-            ps.close();
-            
-            String queryPref = "SELECT * FROM profesor_preferencije WHERE id_profesor = ?";
-            PreparedStatement ps2 = conn.prepareStatement(queryPref);
-            ps2.setInt(1, idProfessor);
-            ResultSet rs2 = ps2.executeQuery();
-            
-            List<String> prefDani = new ArrayList<>();
-            Map<String, String> prefVremena = new HashMap<>();
-            
-            while (rs2.next()) {
-                String dan = rs2.getString("dan");
-                prefDani.add(dan);
-                prefVremena.put(dan, rs2.getTime("vreme_od").toString());
-            }
-            rs2.close();
-            ps2.close();
-            
-            if (prefDani.isEmpty()) {
-                prefDani.add("utorak");
-                prefDani.add("cetvrtak");
-            }
-            
-            List<Room> pogodneSale = new ArrayList<>();
-            for (Room s : sale.values()) {
-                if (s.tipSale.equals("vjezbe") || s.tipSale.equals("sve")) {
-                    if (s.kapacitet >= predmet.brojStudenata) {
-                        if (predmet.vrstaOpreme == null || predmet.vrstaOpreme.isEmpty() ||
-                            (s.vrstaOpreme != null && s.vrstaOpreme.contains(predmet.vrstaOpreme))) {
-                            pogodneSale.add(s);
-                        }
-                    }
-                }
-            }
-            
-            if (pogodneSale.isEmpty()) {
-                return "GRESKA: Nema pogodnih sala za vjezbe";
-            }
-            
-            int dodanoTermina = 0;
-            int potrebnoTermina = predmet.fondVjezbi;
-            
-            for (String dan : prefDani) {
-                if (dodanoTermina >= potrebnoTermina) {
-                    break;
-                }
-                
-                for (Room sala : pogodneSale) {
-                    if (dodanoTermina >= potrebnoTermina) {
-                        break;
-                    }
-                    
-                    String vremeOd = prefVremena.getOrDefault(dan, "10:00:00");
-                    LocalTime pocetak = parseTime(vremeOd);
-                    LocalTime kraj = pocetak.plusHours(1);
-                    
-                    // NOVA: Koristi helper metodu umjesto dvostrukih petlji
-                    if (!imaKonflikt(dan, null, sala.idRoom, idProfessor, pocetak, kraj)) {
-                        String insert = "INSERT INTO termin (id_predmet, id_sala, id_profesor, dan, vreme_od, vreme_do, tip_termina) " +
-                                      "VALUES (?, ?, ?, ?, ?, ?, 'vjezbe')";
-                        PreparedStatement pstmt = conn.prepareStatement(insert);
-                        pstmt.setInt(1, idPredmet);
-                        pstmt.setInt(2, sala.idRoom);
-                        pstmt.setInt(3, idProfessor);
-                        pstmt.setString(4, dan);
-                        pstmt.setTime(5, Time.valueOf(pocetak));
-                        pstmt.setTime(6, Time.valueOf(kraj));
-                        pstmt.executeUpdate();
-                        pstmt.close();
-                        
-                        // NOVA: Ručno dodaj u listu umjesto reloada
-                        AcademicEvent noviTermin = new AcademicEvent();
-                        noviTermin.idCourse = idPredmet;
-                        noviTermin.idRoom = sala.idRoom;
-                        noviTermin.idProfessor = idProfessor;
-                        noviTermin.dan = dan;
-                        noviTermin.vremeOd = pocetak;
-                        noviTermin.vremeDo = kraj;
-                        noviTermin.tipTermina = "vjezbe";
-                        termini.add(noviTermin);
-                        
-                        dodanoTermina++;
-                    }
-                }
-            }
-            
-            if (dodanoTermina < potrebnoTermina) {
-                return "UPOZORENJE: Generisano " + dodanoTermina + " od " + potrebnoTermina + " potrebnih termina";
-            }
-            
-            return "OK: Automatski generisan raspored vjezbi (" + dodanoTermina + " termina)";
-            
-        } catch (Exception e) {
-            return "GRESKA: " + e.getMessage();
-        }
-    }
     public List<AcademicEvent> getEventsBySchedule(int scheduleIdFilter) throws SQLException {
-    List<AcademicEvent> result = new ArrayList<>();
+        List<AcademicEvent> result = new ArrayList<>();
+        String sql = "SELECT id, course_id, created_by_professor, type_enum, " +
+                "starts_at, ends_at, is_online, room_id, notes, schedule_id " +
+                "FROM academic_event WHERE schedule_id = ? ORDER BY starts_at";
 
-    String sql = "SELECT id, course_id, created_by_professor, type_enum, " +
-                 "starts_at, ends_at, is_online, room_id, notes, schedule_id " +
-                 "FROM academic_event " +
-                 "WHERE schedule_id = ? " +
-                 "ORDER BY starts_at";
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, scheduleIdFilter);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    AcademicEvent event = new AcademicEvent();
+                    event.idAcademicEvent = rs.getInt("id");
+                    event.idCourse = rs.getInt("course_id");
+                    event.idRoom = rs.getInt("room_id");
+                    event.idProfessor = (int) rs.getLong("created_by_professor");
+                    event.typeEnum = rs.getString("type_enum");
+                    event.notes = rs.getString("notes");
+                    event.isOnline = rs.getBoolean("is_online");
+                    event.scheduleId = rs.getInt("schedule_id");
 
-    try (PreparedStatement ps = conn.prepareStatement(sql)) {
-        ps.setInt(1, scheduleIdFilter);
+                    Timestamp startTs = rs.getTimestamp("starts_at");
+                    Timestamp endTs = rs.getTimestamp("ends_at");
 
-        try (ResultSet rs = ps.executeQuery()) {
-            while (rs.next()) {
-                AcademicEvent ev = new AcademicEvent();
+                    if (startTs != null) {
+                        LocalDateTime startLdt = startTs.toLocalDateTime();
+                        event.date = startLdt.toLocalDate();
+                        event.startTime = startLdt.toLocalTime();
+                        event.startsAt = startLdt;
+                    }
+                    if (endTs != null) {
+                        LocalDateTime endLdt = endTs.toLocalDateTime();
+                        event.endTime = endLdt.toLocalTime();
+                        event.endsAt = endLdt;
+                    }
 
-                ev.idAcademicEvent = rs.getInt("id");
-                ev.idCourse        = rs.getInt("course_id");
-                ev.idRoom          = rs.getInt("room_id");
-                ev.idProfessor     = (int) rs.getLong("created_by_professor");
-                ev.tipTermina      = rs.getString("type_enum");
-
-                java.sql.Timestamp tsStart = rs.getTimestamp("starts_at");
-                java.sql.Timestamp tsEnd   = rs.getTimestamp("ends_at");
-
-                if (tsStart != null) {
-                    LocalDateTime ldtStart = tsStart.toLocalDateTime();
-                    ev.datum   = ldtStart.toLocalDate();
-                    ev.vremeOd = ldtStart.toLocalTime();
-                    ev.dan     = ev.datum.getDayOfWeek().toString().toLowerCase();
+                    result.add(event);
                 }
-
-                if (tsEnd != null) {
-                    LocalDateTime ldtEnd = tsEnd.toLocalDateTime();
-                    ev.vremeDo = ldtEnd.toLocalTime();
-                }
-
-                ev.jeOnline   = rs.getBoolean("is_online");
-                ev.teze      = rs.getString("notes");
-                ev.rasporedID = rs.getInt("schedule_id");
-
-                result.add(ev);
             }
         }
+        return result;
     }
-
-    return result;
 }
-
-}
-
-// ============ MODEL KLASE ============
 
 class Course {
     public int idCourse;
-    public String naziv;
-    public int semestar;
-    public int fondPredavanja;
-    public int fondVjezbi;
-    public String vrstaOpreme;
-    public int brojStudenata;
+    public String name;
+    public int semester;
+    public String code;
 }
 
 class Professor {
     public int idProfessor;
-    public String ime;
-    public String prezime;
+    public String fullName;
     public String email;
+    public boolean isActive;
 }
 
 class Room {
     public int idRoom;
-    public String naziv;
-    public int kapacitet;
-    public String vrstaOpreme;
-    public String tipSale;
+    public String name;
+    public int capacity;
+    public String equipmentType;
+    public String roomType;
 }
 
 class AcademicEvent {
@@ -1202,30 +1098,31 @@ class AcademicEvent {
     public int idCourse;
     public int idRoom;
     public int idProfessor;
-    public String dan;
-    public LocalTime vremeOd;
-    public LocalTime vremeDo;
-    public String tipTermina;
-    public LocalDate datum;
-
-    public boolean jeOnline;
-    public String teze;
-    public int rasporedID;
+    public String day;
+    public LocalTime startTime;
+    public LocalTime endTime;
+    public String typeEnum;
+    public LocalDate date;
+    public boolean isOnline;
+    public String notes;
+    public boolean isPublished;
+    public boolean lockedByAdmin;
+    public int scheduleId;
+    public LocalDateTime startsAt;
+    public LocalDateTime endsAt;
 }
-
-
 
 class Holiday {
     public int idHoliday;
-    public String naziv;
-    public LocalDate datum;
+    public String name;
+    public LocalDate date;
 }
 
-class PredmetPrioritet {
-    public Course predmet;
-    public Professor profesorPredavanja;
-    public Professor profesorVjezbi;
-    public double fleksibilnostPredavanja = 0.5;
-    public double fleksibilnostVjezbi = 0.5;
-    public double prioritet = 0.5;
+class CoursePriority {
+    public Course course;
+    public Professor primaryProfessor;
+    public Professor secondaryProfessor;
+    public double primaryFlexibility = 0.5;
+    public double secondaryFlexibility = 0.5;
+    public double priority = 0.5;
 }
