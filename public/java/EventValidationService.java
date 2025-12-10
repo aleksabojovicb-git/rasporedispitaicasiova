@@ -1016,6 +1016,55 @@ public class EventValidationService {
             return "GRESKA: " + e.getMessage();
         }
     }
+    public List<AcademicEvent> getEventsBySchedule(int scheduleIdFilter) throws SQLException {
+    List<AcademicEvent> result = new ArrayList<>();
+
+    String sql = "SELECT id, course_id, created_by_professor, type_enum, " +
+                 "starts_at, ends_at, is_online, room_id, notes, schedule_id " +
+                 "FROM academic_event " +
+                 "WHERE schedule_id = ? " +
+                 "ORDER BY starts_at";
+
+    try (PreparedStatement ps = conn.prepareStatement(sql)) {
+        ps.setInt(1, scheduleIdFilter);
+
+        try (ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                AcademicEvent ev = new AcademicEvent();
+
+                ev.idAcademicEvent = rs.getInt("id");
+                ev.idCourse        = rs.getInt("course_id");
+                ev.idRoom          = rs.getInt("room_id");
+                ev.idProfessor     = (int) rs.getLong("created_by_professor");
+                ev.tipTermina      = rs.getString("type_enum");
+
+                java.sql.Timestamp tsStart = rs.getTimestamp("starts_at");
+                java.sql.Timestamp tsEnd   = rs.getTimestamp("ends_at");
+
+                if (tsStart != null) {
+                    LocalDateTime ldtStart = tsStart.toLocalDateTime();
+                    ev.datum   = ldtStart.toLocalDate();
+                    ev.vremeOd = ldtStart.toLocalTime();
+                    ev.dan     = ev.datum.getDayOfWeek().toString().toLowerCase();
+                }
+
+                if (tsEnd != null) {
+                    LocalDateTime ldtEnd = tsEnd.toLocalDateTime();
+                    ev.vremeDo = ldtEnd.toLocalTime();
+                }
+
+                ev.jeOnline   = rs.getBoolean("is_online");
+                ev.teze      = rs.getString("notes");
+                ev.rasporedID = rs.getInt("schedule_id");
+
+                result.add(ev);
+            }
+        }
+    }
+
+    return result;
+}
+
 }
 
 // ============ MODEL KLASE ============
@@ -1055,7 +1104,13 @@ class AcademicEvent {
     public LocalTime vremeDo;
     public String tipTermina;
     public LocalDate datum;
+
+    public boolean jeOnline;
+    public String teze;
+    public int rasporedID;
 }
+
+
 
 class Holiday {
     public int idHoliday;
