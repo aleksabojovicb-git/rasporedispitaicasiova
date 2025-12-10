@@ -1,5 +1,5 @@
 import java.sql.*;
-
+import java.util.List;
 public class ValidacijaTermina {
     public static void main(String[] args) {
         if (args.length < 1) {
@@ -84,7 +84,50 @@ public class ValidacijaTermina {
                 int idPredmet = Integer.parseInt(args[1]);
                 rezultat = service.generisiRasporedVjezbi(idPredmet);
 
-            } else if (akcija.equals("generisiKompletan")) {
+            }else if (akcija.equals("prikaziRaspored")) {
+    if (args.length != 2) {
+        System.out.println("GRESKA Nedostaje ID rasporeda");
+        return;
+    }
+
+    int scheduleId = Integer.parseInt(args[1]);
+
+    try {
+        List<AcademicEvent> events = service.getEventsBySchedule(scheduleId);
+
+        if (events.isEmpty()) {
+            System.out.println("NEMA ZAPISA za schedule_id = " + scheduleId);
+            return;
+        }
+
+        System.out.println("idTermin;rasporedId;idCourse;idProfessor;idRoom;dan;datum;vremeOd;vremeDo;tipTermina;jeOnline;teze");
+
+        for (AcademicEvent ev : events) {
+            String tezeSafe = (ev.teze != null) ? ev.teze.replace(";", ",") : "";
+
+            System.out.println(
+                ev.idAcademicEvent + ";" +
+                ev.rasporedID + ";" +
+                ev.idCourse + ";" +
+                ev.idProfessor + ";" +
+                ev.idRoom + ";" +
+                (ev.dan != null ? ev.dan : "") + ";" +
+                (ev.datum != null ? ev.datum.toString() : "") + ";" +
+                (ev.vremeOd != null ? ev.vremeOd.toString() : "") + ";" +
+                (ev.vremeDo != null ? ev.vremeDo.toString() : "") + ";" +
+                (ev.tipTermina != null ? ev.tipTermina : "") + ";" +
+                ev.jeOnline + ";" +
+                tezeSafe
+            );
+        }
+    } catch (Exception e) {
+        System.out.println("GRESKA " + e.getMessage());
+        e.printStackTrace();
+    }
+
+    return;
+}
+ else if (akcija.equals("generisiKompletan")) {
                 rezultat = service.generisiKompletniRaspored();
 
             } else {
@@ -99,6 +142,7 @@ public class ValidacijaTermina {
                 System.out.println("  - generisiKompletan");
                 return;
             }
+            
 
             System.out.println(rezultat);
 
