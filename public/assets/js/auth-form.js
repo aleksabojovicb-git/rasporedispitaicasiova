@@ -11,7 +11,7 @@ document.addEventListener('DOMContentLoaded', function() {
     function switchTab(tabName) {
         tabs.setAttribute('data-active', tabName);
         stacks.setAttribute('data-active', tabName);
-        
+
         if (tabName === 'signin') {
             tabSignin.setAttribute('aria-selected', 'true');
             tabSignup.setAttribute('aria-selected', 'false');
@@ -19,7 +19,7 @@ document.addEventListener('DOMContentLoaded', function() {
             tabSignin.setAttribute('aria-selected', 'false');
             tabSignup.setAttribute('aria-selected', 'true');
         }
-        
+
         // Clear any existing errors when switching
         clearErrors();
     }
@@ -33,7 +33,7 @@ document.addEventListener('DOMContentLoaded', function() {
         button.addEventListener('click', function() {
             const targetId = this.getAttribute('data-toggle');
             const passwordInput = document.getElementById(targetId);
-            
+
             if (passwordInput.type === 'password') {
                 passwordInput.type = 'text';
                 this.textContent = '😄';
@@ -49,7 +49,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Password strength meter
     const passwordInput = document.getElementById('su-password');
     const pwdMeter = document.getElementById('pwd-meter');
-    
+
     function calculatePasswordStrength(password) {
         let score = 0;
         if (password.length >= 6) score += 1;

@@ -39,9 +39,12 @@ function buildUsernameFromFullName(string $fullName): string
 {
     $fullName = strtolower(trim(preg_replace('/\s+/', ' ', $fullName)));
     if ($fullName === '') return '';
+
     $parts = explode(' ', $fullName);
     $first = $parts[0];
-    $last = $parts[count($parts) - 1] ?: $first;
+    $last = $parts[count($parts) - 1];
+    if ($last === '') $last = $first;
+
     return $first . '.' . $last;
 }
 
@@ -59,7 +62,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 try {
                     $pdo->beginTransaction();
-
                     $stmt = $pdo->prepare("UPDATE professor SET full_name = ? WHERE id = ?");
                     $stmt->execute([$fullName, $professorId]);
 
@@ -109,34 +111,50 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 }
-
-/** PAGE TITLE */
-$pageTitle = "Profil Profesora";
-
-/** HEAD partial – all CSS in one place */
-include __DIR__ . "/partials/head.php";
 ?>
+<!DOCTYPE html>
+<html lang="sr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Profil Profesora</title>
 
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="../assets/css/admin.css" />
+    <link rel="stylesheet" href="../assets/css/base.css" />
+    <link rel="stylesheet" href="../assets/css/fields.css" />
+    <link rel="stylesheet" href="../assets/css/colors.css" />
+    <link rel="stylesheet" href="../assets/css/stacks.css" />
+    <link rel="stylesheet" href="../assets/css/tabs.css" />
+    <link rel="stylesheet" href="../assets/css/table.css" />
+    <link rel="stylesheet" href="../assets/css/profesor_profile.css">
+</head>
 <body>
-
-<?php include __DIR__ . "/partials/header.php"; ?>
+<?php require __DIR__ . '/partials/header.php'; ?>
 
 <div class="container mt-4">
     <h2>Profil Profesora</h2>
 
     <?php if ($errorMessage): ?>
-        <div class="alert alert-danger"><?= htmlspecialchars($errorMessage) ?></div>
+        <div class="alert alert-danger"><?php echo htmlspecialchars($errorMessage); ?></div>
     <?php endif; ?>
-
     <?php if ($successMessage): ?>
-        <div class="alert alert-success"><?= htmlspecialchars($successMessage) ?></div>
+        <div class="alert alert-success"><?php echo htmlspecialchars($successMessage); ?></div>
     <?php endif; ?>
 
     <ul class="nav nav-tabs" id="profTab" role="tablist">
-        <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#profileTab">Profil</button></li>
-        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#eventsTab">Događaji</button></li>
-        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#coursesTab">Predmeti & Kolokvijumi</button></li>
-        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#availabilityTab">Raspoloživost</button></li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="tab-profile" data-bs-toggle="tab" data-bs-target="#profileTab" type="button">Profil</button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="tab-events" data-bs-toggle="tab" data-bs-target="#eventsTab" type="button">Događaji</button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="tab-courses" data-bs-toggle="tab" data-bs-target="#coursesTab" type="button">Predmeti & Kolokvijumi</button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="tab-avail" data-bs-toggle="tab" data-bs-target="#availabilityTab" type="button">Raspoloživost</button>
+        </li>
     </ul>
 
     <div class="tab-content mt-3">
@@ -147,30 +165,24 @@ include __DIR__ . "/partials/head.php";
             </div>
 
             <div id="profileView">
-                <p><strong>Ime i prezime:</strong> <?= htmlspecialchars($currentProfessor['full_name']) ?></p>
-                <p><strong>Email:</strong> <?= htmlspecialchars($currentProfessor['email']) ?></p>
-                <p><strong>Username:</strong> <?= htmlspecialchars($currentProfessor['username'] ?? '') ?></p>
+                <p><strong>Ime i prezime:</strong> <?php echo htmlspecialchars($currentProfessor['full_name']); ?></p>
+                <p><strong>Email:</strong> <?php echo htmlspecialchars($currentProfessor['email']); ?></p>
+                <p><strong>Username:</strong> <?php echo htmlspecialchars($currentProfessor['username'] ?? ''); ?></p>
             </div>
 
             <div id="profileEdit" class="d-none">
                 <form method="post">
                     <input type="hidden" name="action" value="update_profile">
-
                     <div class="mb-3">
-                        <label class="form-label">Ime i prezime:</label>
-                        <input type="text" name="full_name" class="form-control"
-                               value="<?= htmlspecialchars($currentProfessor['full_name']) ?>" required>
+                        <label for="full_name" class="form-label">Ime i prezime:</label>
+                        <input type="text" id="full_name" name="full_name" class="form-control" value="<?php echo htmlspecialchars($currentProfessor['full_name']); ?>" required>
                     </div>
-
                     <div class="mb-3">
-                        <label class="form-label">Email:</label>
-                        <input type="email" name="email" class="form-control"
-                               value="<?= htmlspecialchars($currentProfessor['email']) ?>" readonly>
+                        <label for="email" class="form-label">Email:</label>
+                        <input type="email" id="email" name="email" class="form-control" value="<?php echo htmlspecialchars($currentProfessor['email']); ?>" readonly>
                     </div>
-
                     <button type="submit" class="btn btn-primary">Sačuvaj izmjene</button>
                 </form>
-
                 <button id="openModalBtn" class="btn btn-warning mt-2">Promijeni password</button>
             </div>
         </div>
@@ -180,35 +192,30 @@ include __DIR__ . "/partials/head.php";
             <h3>Sva predavanja i kolokvijumi</h3>
             <table class="table table-bordered">
                 <thead>
-                <tr>
-                    <th>ID</th><th>Predmet</th><th>Tip</th><th>Početak</th><th>Kraj</th><th>Sala</th><th>Napomena</th>
-                </tr>
+                <tr><th>ID</th><th>Predmet</th><th>Tip</th><th>Početak</th><th>Kraj</th><th>Sala</th><th>Napomena</th></tr>
                 </thead>
                 <tbody>
                 <?php
                 try {
                     $stmt = $pdo->prepare("
-                            SELECT e.*, c.name as course_name, r.code as room_code
-                            FROM academic_event e
-                            LEFT JOIN course c ON e.course_id = c.id
-                            LEFT JOIN room r ON e.room_id = r.id
-                            JOIN event_professor ep ON ep.event_id = e.id
-                            WHERE ep.professor_id = ?
-                            ORDER BY e.starts_at DESC
-                        ");
+                SELECT e.*, c.name as course_name, r.code as room_code
+                FROM academic_event e
+                LEFT JOIN course c ON e.course_id = c.id
+                LEFT JOIN room r ON e.room_id = r.id
+                JOIN event_professor ep ON ep.event_id = e.id
+                WHERE ep.professor_id = ?
+                ORDER BY e.starts_at DESC
+            ");
                     $stmt->execute([$professorId]);
                     while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-                        $event_type = ($row['type_enum'] === 'EXAM')
-                            ? 'Ispit'
-                            : (($row['type_enum'] === 'COLLOQUIUM') ? 'Kolokvijum' : htmlspecialchars($row['type_enum']));
-
+                        $event_type = ($row['type_enum'] === 'EXAM') ? 'Ispit' : (($row['type_enum']==='COLLOQUIUM')?'Kolokvijum':htmlspecialchars($row['type_enum']));
                         echo "<tr>";
                         echo "<td>".htmlspecialchars($row['id'])."</td>";
                         echo "<td>".htmlspecialchars($row['course_name'])."</td>";
                         echo "<td>".$event_type."</td>";
                         echo "<td>".date('d.m.Y H:i', strtotime($row['starts_at']))."</td>";
                         echo "<td>".date('d.m.Y H:i', strtotime($row['ends_at']))."</td>";
-                        echo "<td>".($row['is_online'] ? 'Online' : htmlspecialchars($row['room_code']))."</td>";
+                        echo "<td>".($row['is_online']?'Online':htmlspecialchars($row['room_code']))."</td>";
                         echo "<td>".htmlspecialchars($row['notes'])."</td>";
                         echo "</tr>";
                     }
@@ -225,37 +232,31 @@ include __DIR__ . "/partials/head.php";
             <h3>Moji predmeti i izbor nedjelje kolokvijuma</h3>
             <form id="examWeekForm" method="post">
                 <input type="hidden" name="action" value="save_exam_weeks">
-
                 <table class="table table-bordered">
-                    <thead>
-                    <tr><th>Predmet</th><th>Semestar</th><th>Uloga</th><th>Nedjelja kolokvijuma</th></tr>
-                    </thead>
+                    <thead><tr><th>Predmet</th><th>Semestar</th><th>Uloga</th><th>Nedjelja kolokvijuma</th></tr></thead>
                     <tbody>
                     <?php
                     try {
                         $stmt = $pdo->prepare("
-                                SELECT c.id, c.name, c.semester, cp.is_assistant
-                                FROM course_professor cp
-                                JOIN course c ON c.id = cp.course_id
-                                WHERE cp.professor_id = ?
-                                ORDER BY c.name
-                            ");
+                SELECT c.id, c.name, c.semester, cp.is_assistant
+                FROM course_professor cp
+                JOIN course c ON c.id = cp.course_id
+                WHERE cp.professor_id = ?
+                ORDER BY c.name
+            ");
                         $stmt->execute([$professorId]);
                         $courses = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-                        if (!$courses) {
-                            echo "<tr><td colspan='4'>Nema pridruženih predmeta.</td></tr>";
-                        } else {
-                            foreach ($courses as $c) {
+                        if (!$courses) echo "<tr><td colspan='4'>Nema pridruženih predmeta.</td></tr>";
+                        else {
+                            foreach($courses as $c){
                                 $role = $c['is_assistant'] ? 'Asistent' : 'Profesor';
-
                                 echo "<tr>";
                                 echo "<td>".htmlspecialchars($c['name'])."</td>";
                                 echo "<td>".htmlspecialchars($c['semester'])."</td>";
                                 echo "<td>".$role."</td>";
                                 echo "<td><select name='exam_week[".(int)$c['id']."]'>";
                                 echo "<option value=''>-- Izaberi --</option>";
-                                for ($w=5; $w<=13; $w++) echo "<option value='$w'>$w</option>";
+                                for($w=5;$w<=13;$w++) echo "<option value='$w'>$w</option>";
                                 echo "</select></td>";
                                 echo "</tr>";
                             }
@@ -272,40 +273,30 @@ include __DIR__ . "/partials/head.php";
         <!-- AVAILABILITY -->
         <div class="tab-pane fade" id="availabilityTab">
             <h3>Raspoloživost</h3>
-            <!-- Ovdje ide tvoj JS grid -->
+            <!-- Tvoj JS grid kod ide ovdje -->
         </div>
     </div>
 </div>
 
-<!-- PASSWORD MODAL -->
+<!-- Password modal -->
 <div class="modal fade" id="passwordModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
             <form method="post">
                 <input type="hidden" name="action" value="update_password">
-
-                <div class="modal-header">
-                    <h5 class="modal-title">Promjena passworda</h5>
+                <div class="modal-header"><h5 class="modal-title">Promjena passworda</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
-
                 <div class="modal-body">
-                    <div class="mb-3">
-                        <label class="form-label">Stari password</label>
-                        <input type="password" class="form-control" name="old_password" required>
-                    </div>
+                    <div class="mb-3"><label for="oldPassword" class="form-label">Stari password</label>
+                        <input type="password" class="form-control" id="oldPassword" name="old_password" required></div>
 
-                    <div class="mb-3">
-                        <label class="form-label">Novi password</label>
-                        <input type="password" class="form-control" name="new_password" required>
-                    </div>
+                    <div class="mb-3"><label for="newPassword" class="form-label">Novi password</label>
+                        <input type="password" class="form-control" id="newPassword" name="new_password" required></div>
 
-                    <div class="mb-3">
-                        <label class="form-label">Potvrdi novi password</label>
-                        <input type="password" class="form-control" name="confirm_password" required>
-                    </div>
+                    <div class="mb-3"><label for="confirmPassword" class="form-label">Potvrdi novi password</label>
+                        <input type="password" class="form-control" id="confirmPassword" name="confirm_password" required></div>
                 </div>
-
                 <div class="modal-footer">
                     <button type="submit" class="btn btn-primary">Sačuvaj</button>
                 </div>
@@ -314,16 +305,14 @@ include __DIR__ . "/partials/head.php";
     </div>
 </div>
 
-<?php include __DIR__ . "/partials/footer.php"; ?>
-
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-
 <script>
+    // Toggle edit profil
     const toggleEditBtn = document.getElementById('toggleEditBtn');
     const profileEdit = document.getElementById('profileEdit');
     const profileView = document.getElementById('profileView');
 
-    toggleEditBtn?.addEventListener('click', () => {
+    toggleEditBtn.addEventListener('click', () => {
         const hidden = profileEdit.classList.contains('d-none');
         if(hidden){
             profileEdit.classList.remove('d-none');
@@ -336,11 +325,11 @@ include __DIR__ . "/partials/head.php";
         }
     });
 
+    // Password modal
     const modalBtn = document.getElementById('openModalBtn');
     if(modalBtn){
         modalBtn.addEventListener('click', ()=> new bootstrap.Modal(document.getElementById('passwordModal')).show());
     }
 </script>
-
 </body>
 </html>

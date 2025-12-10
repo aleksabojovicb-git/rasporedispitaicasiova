@@ -1,12 +1,15 @@
 <?php
 session_start();
-
+// Load PDO instance from config. The file now returns the PDO.
 $pdo = require '../../config/dbconnection.php';
 
+// Runtime guard to ensure $pdo exists and is PDO
 if (!isset($pdo) || !($pdo instanceof PDO)) {
-    throw new RuntimeException('Missing or invalid PDO instance');
+    // short English comment: ensure DB connection
+    throw new RuntimeException('Missing or invalid PDO instance from config/dbconnection.php');
 }
 
+// If already logged in, redirect by role
 if (isset($_SESSION['user_id'])) {
     if (isset($_SESSION['role']) && $_SESSION['role'] === 'ADMIN') {
         header('Location: ./admin_panel.php');
@@ -26,13 +29,18 @@ $activeTab = 'signin';
 function buildUsernameFromFullName(string $fullName): string
 {
     $fullName = strtolower(trim(preg_replace('/\s+/', ' ', $fullName)));
-    if ($fullName === '') return '';
+    if ($fullName === '') {
+        return '';
+    }
+
     $parts = explode(' ', $fullName);
     $first = $parts[0];
     $last = $parts[count($parts) - 1] ?: $first;
+
     return $first . '.' . $last;
 }
 
+//Signup validation
 function validateSignup(PDO $pdo, string $email, string $password, string $confirm): array
 {
     if ($email === '' || $password === '' || $confirm === '') {
@@ -48,18 +56,19 @@ function validateSignup(PDO $pdo, string $email, string $password, string $confi
         return ['error' => "Lozinke se ne poklapaju."];
     }
 
-    $stmt = $pdo->prepare("
-        SELECT p.id, p.full_name, p.is_active, ua.id AS user_id
-        FROM professor p
-        LEFT JOIN user_account ua ON ua.professor_id = p.id
-        WHERE p.email = ?
-        LIMIT 1
-    ");
+    //  One query professor + existing user_account
+    $stmt = $pdo->prepare(
+        "SELECT p.id, p.full_name, p.is_active, ua.id AS user_id
+         FROM professor p
+         LEFT JOIN user_account ua ON ua.professor_id = p.id
+         WHERE p.email = ?
+         LIMIT 1"
+    );
     $stmt->execute([$email]);
     $row = $stmt->fetch();
 
     if (!$row || !$row['is_active']) {
-        return ['error' => "Nije se moguće registrovati ovom email adresom."];
+        return ['error' => "Nije se moguce registrovati ovom email adresom."];
     }
     if (!empty($row['user_id'])) {
         return ['error' => "Nalog je već registrovan."];
@@ -68,6 +77,7 @@ function validateSignup(PDO $pdo, string $email, string $password, string $confi
     return ['professor' => $row];
 }
 
+// Signin validation - find user by email or username and verify password
 function validateSignin(PDO $pdo, string $identifier, string $password): array
 {
     $identifier = trim($identifier);
@@ -75,9 +85,9 @@ function validateSignin(PDO $pdo, string $identifier, string $password): array
         return ['error' => 'Unesite email i lozinku.'];
     }
 
-    // find by email
-    $stmt = $pdo->prepare("
-        SELECT 
+    // Try find by email (typical for professors)
+    $stmt = $pdo->prepare(
+        "SELECT 
             ua.id AS user_id,
             ua.username,
             ua.password_hash,
@@ -90,15 +100,15 @@ function validateSignin(PDO $pdo, string $identifier, string $password): array
         FROM user_account ua
         JOIN professor p ON ua.professor_id = p.id
         WHERE p.email = ?
-        LIMIT 1
-    ");
+        LIMIT 1"
+    );
     $stmt->execute([$identifier]);
     $user = $stmt->fetch();
 
-    // find by username (admin only)
+    //If not found, try by username(admin only)
     if (!$user) {
-        $stmt = $pdo->prepare("
-            SELECT 
+        $stmt = $pdo->prepare(
+            "SELECT 
                 ua.id AS user_id,
                 ua.username,
                 ua.password_hash,
@@ -111,8 +121,8 @@ function validateSignin(PDO $pdo, string $identifier, string $password): array
             FROM user_account ua
             LEFT JOIN professor p ON ua.professor_id = p.id
             WHERE ua.username = ? AND ua.role_enum = 'ADMIN'
-            LIMIT 1
-        ");
+            LIMIT 1"
+        );
         $stmt->execute([$identifier]);
         $user = $stmt->fetch();
     }
@@ -121,25 +131,30 @@ function validateSignin(PDO $pdo, string $identifier, string $password): array
         return ['error' => 'Pogrešan email ili lozinka.'];
     }
 
+    //Check if account is active
     if (empty($user['user_active'])) {
-        return ['error' => 'Račun nije aktivan.'];
+        return ['error' => 'Račun nije aktivan. Kontaktirajte administratora.'];
     }
 
+    // For non-admins require active professor
     if ($user['role_enum'] !== 'ADMIN' && !empty($user['professor_id'])) {
         if (empty($user['professor_active'])) {
             return ['error' => 'Pogrešan email ili lozinka.'];
         }
     }
 
+    //Password check: password_verify, then md5/plain fallback
     $hash = $user['password_hash'] ?? '';
     $passwordOk = false;
-
     if ($hash !== '' && password_verify($password, $hash)) {
         $passwordOk = true;
-    } elseif ($hash !== '' && strlen($hash) === 32 && strtolower($hash) === md5($password)) {
-        $passwordOk = true;
-    } elseif ($hash === $password) {
-        $passwordOk = true;
+    } else {
+        // md5 fallback
+        if ($hash !== '' && strlen($hash) === 32 && strtolower($hash) === md5($password)) {
+            $passwordOk = true;
+        } elseif ($hash === $password) {
+            $passwordOk = true;
+        }
     }
 
     if (!$passwordOk) {
@@ -155,64 +170,90 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($formType === 'signin') {
         $signinEmailValue = trim($_POST['email'] ?? '');
         $password = $_POST['password'] ?? '';
-        $res = validateSignin($pdo, $signinEmailValue, $password);
 
+        // Use validateSignin function
+        $res = validateSignin($pdo, $signinEmailValue, $password);
         if (!empty($res['error'])) {
             $signinError = $res['error'];
         } else {
             $user = $res['user'];
 
-            if ($user['role_enum'] === 'ADMIN') {
-                $_SESSION['user_id'] = (int)$user['user_id'];
+            // If user is ADMIN -> redirect to admin panel
+            if (isset($user['role_enum']) && $user['role_enum'] === 'ADMIN') {
+                // set admin session (no professor_id)
+                $_SESSION['user_id'] = (int) $user['user_id'];
+                $_SESSION['professor_id'] = null;
+                $_SESSION['professor_email'] = $user['email'] ?? null;
+                $_SESSION['professor_name'] = $user['full_name'] ?? ($user['username'] ?? 'Admin');
                 $_SESSION['role'] = $user['role_enum'];
+
+                // short English comment: redirect admin
                 header("Location: ./admin_panel.php");
                 exit;
             }
 
-            $_SESSION['user_id'] = (int)$user['user_id'];
-            $_SESSION['professor_id'] = (int)$user['professor_id'];
-            $_SESSION['role'] = $user['role_enum'];
+            //Set session for professors
+            $_SESSION['user_id'] = (int) $user['user_id'];
+            $_SESSION['professor_id'] = isset($user['professor_id']) && $user['professor_id'] !== null ? (int) $user['professor_id'] : null;
+            $_SESSION['professor_email'] = $user['email'] ?? null;
+            $_SESSION['professor_name'] = $user['full_name'] ?? ($user['username'] ?? 'User');
+            $_SESSION['role'] = $user['role_enum'] ?? null;
+
             header("Location: ./profesor_profile.php");
             exit;
         }
-    }
-
-    if ($formType === 'signup') {
+    } elseif ($formType === 'signup') {
         $activeTab = 'signup';
         $signupEmailValue = trim($_POST['email'] ?? '');
         $password = $_POST['password'] ?? '';
         $confirmPassword = $_POST['confirm'] ?? '';
 
+        //Use validateSignup (returns 'error' or 'professor')
         $validation = validateSignup($pdo, $signupEmailValue, $password, $confirmPassword);
 
         if (!empty($validation['error'])) {
             $signupError = $validation['error'];
         } else {
             $professor = $validation['professor'];
+
             $username = buildUsernameFromFullName($professor['full_name']);
+            if ($username === '') {
+                $signupError = "Bug ako se unesu 2 prezimena. Podaci profesora nisu validni. Obratite se administratoru.";
+            } else {
+                try {
+                    $stmt = $pdo->prepare(
+                        "INSERT INTO user_account (username, password_hash, role_enum, is_active, professor_id)\n                        VALUES (?, ?, 'PROFESSOR', TRUE, ?)"
+                    );
+                    $stmt->execute([
+                        $username,
+                        password_hash($password, PASSWORD_DEFAULT),
+                        (int) $professor['id']
+                    ]);
 
-            $stmt = $pdo->prepare("
-                INSERT INTO user_account (username, password_hash, role_enum, is_active, professor_id)
-                VALUES (?, ?, 'PROFESSOR', TRUE, ?)
-            ");
-            $stmt->execute([
-                $username,
-                password_hash($password, PASSWORD_DEFAULT),
-                (int)$professor['id']
-            ]);
-
-            $signupSuccess = "Nalog je uspješno kreiran.";
-            $signupError = null;
-            $activeTab = 'signin';
+                    $signupSuccess = "Nalog je uspješno kreiran. Sada se možete prijaviti.";
+                    $signupError = null;
+                    $activeTab = 'signin';
+                } catch (PDOException $e) {
+                    $signupError = "Greška pri kreiranju naloga: " . $e->getMessage();
+                }
+            }
         }
     }
 }
-
-/** ===== PARTIALS ===== */
-$pageTitle = "Prijava / Registracija";
-include __DIR__ . "/partials/head.php";
 ?>
-
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sign in & Sign up</title>
+    <link rel="stylesheet" href="../assets/css/base.css" />
+    <link rel="stylesheet" href="../assets/css/fields.css" />
+    <link rel="stylesheet" href="../assets/css/colors.css" />
+    <link rel="stylesheet" href="../assets/css/stacks.css" />
+    <link rel="stylesheet" href="../assets/css/tabs.css" />
+</head>
+<body>
 <main class="container">
     <section class="card">
         <div class="header-section">
@@ -220,68 +261,72 @@ include __DIR__ . "/partials/head.php";
             <p class="subtitle">Sign in or create an account</p>
         </div>
 
-        <!-- TABS -->
-        <div class="tabs" id="tabs" data-active="<?= htmlspecialchars($activeTab) ?>">
-            <button type="button" class="tab-button" data-target="signin">Sign in</button>
-            <button type="button" class="tab-button" data-target="signup">Sign up</button>
+        <!-- Tabs -->
+        <div class="tabs" id="tabs" data-active="<?php echo htmlspecialchars($activeTab); ?>" aria-label="Switch forms">
+            <div class="tab-indicator" aria-hidden="true"></div>
+            <button type="button" id="tab-signin" class="tab-btn" aria-controls="signin" aria-selected="<?php echo $activeTab === 'signin' ? 'true' : 'false'; ?>">Sign in</button>
+            <button type="button" id="tab-signup" class="tab-btn" aria-controls="signup" aria-selected="<?php echo $activeTab === 'signup' ? 'true' : 'false'; ?>">Sign up</button>
         </div>
 
-        <!-- STACKS -->
-        <div class="stacks" data-active="<?= htmlspecialchars($activeTab) ?>">
-
-            <!-- SIGN IN -->
-            <form id="signin" class="stack" method="post">
+        <!-- Stacks-->
+        <div class="stacks" id="stacks" data-active="<?php echo htmlspecialchars($activeTab); ?>">
+            <!-- Sign In -->
+            <form id="signin" class="stack" autocomplete="on" novalidate method="post">
                 <input type="hidden" name="form_type" value="signin" />
-
                 <div class="field">
-                    <label>Email</label>
-                    <input name="email" value="<?= htmlspecialchars($signinEmailValue) ?>">
+                    <label for="si-email">Email</label>
+                    <input type="text" id="si-email" name="email" inputmode="email" placeholder="you@example.com" value="<?php echo htmlspecialchars($signinEmailValue); ?>" required />
+                    <p class="error" data-error-for="si-email"></p>
                 </div>
-
-                <div class="field">
-                    <label>Password</label>
-                    <input type="password" name="password">
+                <div class="field pwd-wrap">
+                    <label for="si-password">Password</label>
+                    <input type="password" id="si-password" name="password" placeholder="••••••••" minlength="6" required />
+                    <button tabindex="-1" type="button" class="toggle-eye" data-toggle="si-password" aria-label="Show/Hide password">👁️</button>
+                    <p class="error" data-error-for="si-password"></p>
                 </div>
-
                 <?php if ($signinError): ?>
-                    <div class="error"><?= htmlspecialchars($signinError) ?></div>
+                    <div class="server-error"><?php echo htmlspecialchars($signinError); ?></div>
                 <?php endif; ?>
-
-                <button class="button button-primary" type="submit">Sign in</button>
+                <div class="actions">
+                    <button class="btn" type="submit">Sign in</button>
+                </div>
             </form>
 
-            <!-- SIGN UP -->
-            <form id="signup" class="stack" method="post">
+            <!-- Sign Up -->
+            <form id="signup" class="stack" autocomplete="on" novalidate method="post">
                 <input type="hidden" name="form_type" value="signup" />
-
                 <div class="field">
-                    <label>Email</label>
-                    <input name="email" value="<?= htmlspecialchars($signupEmailValue) ?>">
+                    <label for="su-email">Email</label>
+                    <input type="email" id="su-email" name="email" inputmode="email" placeholder="you@example.com" value="<?php echo htmlspecialchars($signupEmailValue); ?>" required />
+                    <p class="error" data-error-for="su-email"></p>
                 </div>
-
+                <div class="field pwd-wrap">
+                    <label for="su-password">Password</label>
+                    <input type="password" id="su-password" name="password" placeholder="at least 6 characters" minlength="6" required />
+                    <button tabindex="-1" type="button" class="toggle-eye" data-toggle="su-password" aria-label="Show/Hide password">👁️</button>
+                    <div class="meter" aria-hidden="true"><i id="pwd-meter"></i></div>
+                    <p class="help" id="pwd-hint">Use upper/lowercase letters and digits.</p>
+                    <p class="error" data-error-for="su-password"></p>
+                </div>
                 <div class="field">
-                    <label>Password</label>
-                    <input type="password" name="password">
+                    <label for="su-confirm">Confirm password</label>
+                    <input type="password" id="su-confirm" name="confirm" placeholder="repeat your password" minlength="6" required />
+                    <p class="error" data-error-for="su-confirm"></p>
                 </div>
-
-                <div class="field">
-                    <label>Confirm password</label>
-                    <input type="password" name="confirm">
+                <div class="actions">
+                    <button class="btn" type="submit">Create account</button>
                 </div>
-
                 <?php if ($signupError): ?>
-                    <div class="error"><?= htmlspecialchars($signupError) ?></div>
+                    <div class="server-error"><?php echo htmlspecialchars($signupError); ?></div>
                 <?php endif; ?>
-
                 <?php if ($signupSuccess): ?>
-                    <div class="success"><?= htmlspecialchars($signupSuccess) ?></div>
+                    <div class="success-server"><?php echo htmlspecialchars($signupSuccess); ?></div>
                 <?php endif; ?>
-
-                <button class="button button-primary" type="submit">Create account</button>
             </form>
         </div>
     </section>
 </main>
 
-<?php include __DIR__ . "/partials/footer.php"; ?>
-<script src="/public/assets/js/pages/auth-form.js"></script>
+<script src="../assets/js/auth-form.js"></script>
+</body>
+</html>
