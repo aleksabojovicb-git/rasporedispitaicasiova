@@ -1,0 +1,14 @@
+/* =============================
+   MODAL COMPONENT
+   ============================= */
+
+.modal-content {
+    background: var(--color-bg-white);
+    padding: var(--spacing-lg);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-lg);
+}
+
+.modal-content.dark {
+    background: #1f2937; /* optional dark theme */
+}
