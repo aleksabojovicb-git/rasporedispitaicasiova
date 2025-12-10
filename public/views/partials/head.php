@@ -5,23 +5,21 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= $pageTitle ?? "FTN Sistem" ?></title>
 
-    <!-- ===== BASE ===== -->
-    <link rel="stylesheet" href="../assets/css/base/variables.css">
-    <link rel="stylesheet" href="../assets/css/base/base.css">
+    <link rel="stylesheet" href="/rasporedispitaicasiova/public/assets/css/base/variables.css">
+    <link rel="stylesheet" href="/rasporedispitaicasiova/public/assets/css/base/base.css">
 
-    <!-- ===== COMPONENTS ===== -->
-    <link rel="stylesheet" href="../assets/css/components/buttons.css">
-    <link rel="stylesheet" href="../assets/css/components/forms.css">
-    <link rel="stylesheet" href="../assets/css/components/cards.css">
-    <link rel="stylesheet" href="../assets/css/components/tables.css">
-    <link rel="stylesheet" href="../assets/css/components/tabs.css">
-    <link rel="stylesheet" href="../assets/css/components/stacks.css">
-    <link rel="stylesheet" href="../assets/css/components/modals.css">
+    <link rel="stylesheet" href="/rasporedispitaicasiova/public/assets/css/components/buttons.css">
+    <link rel="stylesheet" href="/rasporedispitaicasiova/public/assets/css/components/forms.css">
+    <link rel="stylesheet" href="/rasporedispitaicasiova/public/assets/css/components/cards.css">
+    <link rel="stylesheet" href="/rasporedispitaicasiova/public/assets/css/components/tables.css">
+    <link rel="stylesheet" href="/rasporedispitaicasiova/public/assets/css/components/tabs.css">
+    <link rel="stylesheet" href="/rasporedispitaicasiova/public/assets/css/components/stacks.css">
+    <link rel="stylesheet" href="/rasporedispitaicasiova/public/assets/css/components/modals.css">
 
-    <!-- ===== LAYOUTS ===== -->
-    <link rel="stylesheet" href="../assets/css/layouts/public_layout.css">
-    <link rel="stylesheet" href="../assets/css/layouts/admin_layout.css">
-    <link rel="stylesheet" href="../assets/css/layouts/admin_header.css">
+    <link rel="stylesheet" href="/rasporedispitaicasiova/public/assets/css/layouts/public_layout.css">
+    <link rel="stylesheet" href="/rasporedispitaicasiova/public/assets/css/layouts/admin_layout.css">
+    <link rel="stylesheet" href="/rasporedispitaicasiova/public/assets/css/layouts/admin_header.css">
+
 
     <!-- ===== PAGE SPECIFIC (optional) ===== -->
     <?php if (!empty($pageCss)): ?>

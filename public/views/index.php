@@ -4,7 +4,7 @@ session_start();
 $professorPanelHref = './authorization.php';
 
 if (isset($_SESSION['user_id'])) {
-    $professorPanelHref = './profesor_profile.php';
+    $professorPanelHref = './professor_panel.php';
 }
 
 if (isset($_SESSION['role']) && $_SESSION['role'] === 'ADMIN') {
@@ -68,6 +68,6 @@ include __DIR__ . "/partials/head.php";
 
 <?php include __DIR__ . "/partials/footer.php"; ?>
 
-<script src="/public/assets/js/pages/index.js"></script>
+<script src="/rasporedispitaicasiova//public/assets/js/pages/index.js"></script>
 </body>
 </html>
