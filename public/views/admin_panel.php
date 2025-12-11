@@ -1279,35 +1279,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         echo "<h2>Dobrodošli u Admin Panel</h2>";
                         echo "<p>Odaberite opciju ispod da generišete raspored časova:</p>";
 
-                        echo "<button id='generate-schedule' class='option-button'>Generiši raspored časova</button>";
-
-                        echo "<div id='schedule-container' style='margin-top:20px; display:none;'>";
-                        echo "<div style='text-align:right; margin-bottom:10px;>
-           <div> <label for='year-select'>Godina:</label>
-            <select id='year-select'>
-                <option value='1'>1. godina</option>
-                <option value='2'>2. godina</option>
-                <option value='3'>3. godina</option>
-                <option value='4'>4. godina</option>
-            </select></div>
-            <button id='save-pdf'>Save as PDF</button>
-          </div>";
-
-                        echo "<table id='schedule-table' border='1' cellpadding='5' style='width:100%; border-collapse: collapse; text-align:center;'>
-            <thead>
-                <tr>
-                    <th>Vreme</th>
-                    <th>Ponedjeljak</th>
-                    <th>Utorak</th>
-                    <th>Sreda</th>
-                    <th>Četvrtak</th>
-                    <th>Petak</th>
-                </tr>
-            </thead>
-            <tbody>
-            </tbody>
-          </table>";
-    echo "</div>";
+                   echo "<button id='generate-schedule' class='option-button'>Generiši raspored časova</button>";
+                    echo "<div id='schedule-container' style='margin-top:20px; display:none'></div>";
+         
     ?>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
