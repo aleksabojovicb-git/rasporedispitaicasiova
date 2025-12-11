@@ -713,7 +713,9 @@ public class EventValidationService {
             double score = 1.0;
 
             try {
-                String queryPref = "SELECT COUNT(DISTINCT day) as broj_dana FROM professor_preference " +
+                // String queryPref = "SELECT COUNT(DISTINCT day) as broj_dana FROM professor_availability " +
+                //         "WHERE id = ?"; greska: nije day vec weekday
+                String queryPref = "SELECT COUNT(DISTINCT weekday) as broj_dana FROM professor_availability " +
                         "WHERE id = ?";
                 try (PreparedStatement ps = conn.prepareStatement(queryPref)) {
                     ps.setInt(1, prof.idProfessor);
@@ -858,12 +860,13 @@ public class EventValidationService {
             List<String> preferredDays = new ArrayList<>();
             Map<String, String> preferredTimes = new HashMap<>();
 
-            String queryPref = "SELECT day, starts_at FROM professor_preference WHERE id = ?";
+            //String queryPref = "SELECT day, starts_at FROM professor_availability WHERE id = ?";
+            String queryPref = "SELECT weekday, starts_at FROM professor_availability WHERE id = ?";
             try (PreparedStatement ps = conn.prepareStatement(queryPref)) {
                 ps.setInt(1, professorId);
                 try (ResultSet rs = ps.executeQuery()) {
                     while (rs.next()) {
-                        String day = rs.getString("day");
+                        String day = rs.getString("weekday");
                         Time time = rs.getTime("starts_at");
                         preferredDays.add(day);
                         preferredTimes.put(day, time != null ? time.toString() : "09:00:00");
@@ -941,6 +944,7 @@ public class EventValidationService {
                 ps.setInt(1, courseId);
                 try (ResultSet rs = ps.executeQuery()) {
                     if (rs.next()) {
+                        // professorId = (int) rs.getLong("created_by_professor"); greska velika:  created by professor to je u academic event a cita ga sa courseprofessor
                         professorId = (int) rs.getLong("created_by_professor");
                     } else {
                         return "ERROR: No professor assigned for exercises";
@@ -956,13 +960,14 @@ public class EventValidationService {
             List<String> preferredDays = new ArrayList<>();
             Map<String, String> preferredTimes = new HashMap<>();
 
-            String queryPref = "SELECT day, starts_at FROM professor_preference WHERE id = ?";
+            //String queryPref = "SELECT weekday, starts_at FROM professor_availability WHERE id = ?"; greska nije starts_at vec start_time 
+            String queryPref = "SELECT weekday, start_time FROM professor_availability WHERE id = ?";
             try (PreparedStatement ps = conn.prepareStatement(queryPref)) {
                 ps.setInt(1, professorId);
                 try (ResultSet rs = ps.executeQuery()) {
                     while (rs.next()) {
-                        String day = rs.getString("day");
-                        Time time = rs.getTime("starts_at");
+                        String day = rs.getString("weekday");
+                        Time time = rs.getTime("start_time");
                         preferredDays.add(day);
                         preferredTimes.put(day, time != null ? time.toString() : "10:00:00");
                     }
@@ -1126,3 +1131,5 @@ class CoursePriority {
     public double secondaryFlexibility = 0.5;
     public double priority = 0.5;
 }
+
+// Popravljene greske: day >> weekday
