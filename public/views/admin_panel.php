@@ -1351,6 +1351,15 @@ document.getElementById('generate-schedule').addEventListener('click', async () 
             const tbody = document.createElement('tbody');
 
             timeSlots.forEach(slot => {
+                // prvo proveri da li uopšte postoji neki čas u ovom slotu za bilo koji dan
+                const hasAnyEvent = events.some(ev =>
+                    (ev.start + '-' + ev.end) === slot
+                );
+                if (!hasAnyEvent) {
+                    // nema nijednog časa u tom terminu -> preskačemo red
+                    return;
+                }
+
                 const tr = document.createElement('tr');
                 const tdTime = document.createElement('td');
                 tdTime.textContent = slot;
@@ -1371,6 +1380,7 @@ document.getElementById('generate-schedule').addEventListener('click', async () 
 
                 tbody.appendChild(tr);
             });
+
 
             table.appendChild(tbody);
             wrapper.appendChild(table);
