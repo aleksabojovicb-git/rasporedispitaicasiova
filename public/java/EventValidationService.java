@@ -59,7 +59,7 @@ public class EventValidationService {
             while (rs.next()) {
                 Room room = new Room();
                 room.idRoom = rs.getInt("id");
-                room.name = rs.getString("code");
+                room.code = rs.getString("code");
                 room.capacity = rs.getInt("capacity");
                 room.equipmentType = rs.getString("is_computer_lab");
                 room.roomType = rs.getString("is_active");
@@ -1092,7 +1092,7 @@ class Professor {
 
 class Room {
     public int idRoom;
-    public String name;
+    public String code;
     public int capacity;
     public String equipmentType;
     public String roomType;
