@@ -641,33 +641,23 @@ public class EventValidationService {
                 details.append("\n--- ").append(course.name).append(" (ID: ").append(course.idCourse)
                         .append(") ---\n");
 
-                if (cp.primaryProfessor != null) {
-                    String lectureResult = generateLectureSchedule(course.idCourse, scheduleId);
-                    details.append(" [LECTURES] ").append(lectureResult).append("\n");
-                    if (lectureResult.startsWith("OK")) {
-                        successfulLectures++;
-                    } else if (lectureResult.startsWith("WARNING")) {
-                        partialLectures++;
-                    } else {
-                        failedLectures++;
-                    }
+                String lectureResult = generateLectureSchedule(course.idCourse, scheduleId);
+                details.append(" [LECTURES] ").append(lectureResult).append("\n");
+                if (lectureResult.startsWith("OK")) {
+                    successfulLectures++;
+                } else if (lectureResult.startsWith("WARNING")) {
+                    partialLectures++;
                 } else {
-                    details.append(" [LECTURES] ERROR: No professor assigned\n");
                     failedLectures++;
                 }
 
-                if (cp.secondaryProfessor != null) {
-                    String exerciseResult = generateExerciseSchedule(course.idCourse, scheduleId);
-                    details.append(" [EXERCISES] ").append(exerciseResult).append("\n");
-                    if (exerciseResult.startsWith("OK")) {
-                        successfulExercises++;
-                    } else if (exerciseResult.startsWith("WARNING")) {
-                        partialExercises++;
-                    } else {
-                        failedExercises++;
-                    }
+                String exerciseResult = generateExerciseSchedule(course.idCourse, scheduleId);
+                details.append(" [EXERCISES] ").append(exerciseResult).append("\n");
+                if (exerciseResult.startsWith("OK")) {
+                    successfulExercises++;
+                } else if (exerciseResult.startsWith("WARNING")) {
+                    partialExercises++;
                 } else {
-                    details.append(" [EXERCISES] ERROR: No assistant assigned\n");
                     failedExercises++;
                 }
             }
@@ -713,8 +703,9 @@ public class EventValidationService {
             double score = 1.0;
 
             try {
-                // String queryPref = "SELECT COUNT(DISTINCT day) as broj_dana FROM professor_availability " +
-                //         "WHERE id = ?"; greska: nije day vec weekday
+                // String queryPref = "SELECT COUNT(DISTINCT day) as broj_dana FROM
+                // professor_availability " +
+                // "WHERE id = ?"; greska: nije day vec weekday
                 String queryPref = "SELECT COUNT(DISTINCT weekday) as broj_dana FROM professor_availability " +
                         "WHERE id = ?";
                 try (PreparedStatement ps = conn.prepareStatement(queryPref)) {
@@ -814,7 +805,10 @@ public class EventValidationService {
                     cp.priority += 0.5;
                 }
 
-                priorities.add(cp);
+                // Dodaj samo predmete koji imaju bar jednog profesora ili asistenta
+                if (cp.primaryProfessor != null || cp.secondaryProfessor != null) {
+                    priorities.add(cp);
+                }
             } catch (SQLException e) {
                 System.err.println("Error determining priority for course " + course.idCourse + ": " +
                         e.getMessage());
@@ -845,7 +839,7 @@ public class EventValidationService {
                 ps.setInt(1, courseId);
                 try (ResultSet rs = ps.executeQuery()) {
                     if (rs.next()) {
-                        professorId = (int) rs.getLong("created_by_professor");
+                        professorId = (int) rs.getLong("professor_id");
                     } else {
                         return "ERROR: No professor assigned for lectures";
                     }
@@ -860,7 +854,8 @@ public class EventValidationService {
             List<String> preferredDays = new ArrayList<>();
             Map<String, String> preferredTimes = new HashMap<>();
 
-            //String queryPref = "SELECT day, starts_at FROM professor_availability WHERE id = ?";
+            // String queryPref = "SELECT day, starts_at FROM professor_availability WHERE
+            // id = ?";
             String queryPref = "SELECT weekday, starts_at FROM professor_availability WHERE id = ?";
             try (PreparedStatement ps = conn.prepareStatement(queryPref)) {
                 ps.setInt(1, professorId);
@@ -944,8 +939,7 @@ public class EventValidationService {
                 ps.setInt(1, courseId);
                 try (ResultSet rs = ps.executeQuery()) {
                     if (rs.next()) {
-                        // professorId = (int) rs.getLong("created_by_professor"); greska velika:  created by professor to je u academic event a cita ga sa courseprofessor
-                        professorId = (int) rs.getLong("created_by_professor");
+                        professorId = (int) rs.getLong("professor_id");
                     } else {
                         return "ERROR: No professor assigned for exercises";
                     }
@@ -960,7 +954,8 @@ public class EventValidationService {
             List<String> preferredDays = new ArrayList<>();
             Map<String, String> preferredTimes = new HashMap<>();
 
-            //String queryPref = "SELECT weekday, starts_at FROM professor_availability WHERE id = ?"; greska nije starts_at vec start_time 
+            // String queryPref = "SELECT weekday, starts_at FROM professor_availability
+            // WHERE id = ?"; greska nije starts_at vec start_time
             String queryPref = "SELECT weekday, start_time FROM professor_availability WHERE id = ?";
             try (PreparedStatement ps = conn.prepareStatement(queryPref)) {
                 ps.setInt(1, professorId);
