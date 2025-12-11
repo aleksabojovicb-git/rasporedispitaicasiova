@@ -5,6 +5,7 @@ Raspored isipita i casova za FIT, Univerzitet Mediteran.
 - config/ – konfiguracije i konekcija na bazu
 - public/ – frontend fajlovi
   - assets/ – CSS, JS, slike
+  - java/ - JAVA, algoritam
   - views/ – HTML/PHP stranice (index, login, register)
 - src/ – backend logika
   - api/ – PHP endpointi koje poziva frontend
