@@ -61,8 +61,8 @@ public class EventValidationService {
                 room.idRoom = rs.getInt("id");
                 room.code = rs.getString("code");
                 room.capacity = rs.getInt("capacity");
-                room.equipmentType = rs.getString("is_computer_lab");
-                room.roomType = rs.getString("is_active");
+                room.isComputerLab = rs.getBoolean("is_computer_lab");
+                room.isActive = rs.getBoolean("is_active");
                 rooms.put(room.idRoom, room);
                 count++;
             }
@@ -145,13 +145,27 @@ public class EventValidationService {
     }
 
     private int generateNewScheduleId() throws SQLException {
-        String query = "SELECT COALESCE(MAX(schedule_id), 0) + 1 as novi_id FROM academic_event";
-        try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery(query)) {
+        // Prvo generišemo novi ID
+        String queryMaxId = "SELECT COALESCE(MAX(id), 0) + 1 as novi_id FROM schedule";
+        int newId = 1;
+
+        try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery(queryMaxId)) {
             if (rs.next()) {
-                return rs.getInt("novi_id");
+                newId = rs.getInt("novi_id");
             }
-            return 1;
         }
+
+        // Kreiramo zapis u schedule tabeli
+        String insertSchedule = "INSERT INTO schedule (id, name) VALUES (?, ?)";
+        try (PreparedStatement pstmt = conn.prepareStatement(insertSchedule)) {
+            pstmt.setInt(1, newId);
+            pstmt.setString(2, "Auto-generated schedule " + newId + " - " +
+                    java.time.LocalDateTime.now()
+                            .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+            pstmt.executeUpdate();
+        }
+
+        return newId;
     }
 
     private void saveToAcademicEvent(int scheduleId, int courseId, int professorId, String day,
@@ -266,10 +280,9 @@ public class EventValidationService {
                 return "ERROR: Room capacity is invalid";
             }
 
-            if (room.equipmentType != null && !room.equipmentType.isEmpty()) {
-                if (!requiredRoomType.equalsIgnoreCase(room.roomType)) {
-                    return "ERROR: Room type does not match required type: " + requiredRoomType;
-                }
+            // Proveravamo samo da li je sala aktivna
+            if (!room.isActive) {
+                return "ERROR: Room is not active";
             }
 
             if (hasConflict(day, null, roomId, professorId, startTime, endTime)) {
@@ -856,13 +869,13 @@ public class EventValidationService {
 
             // String queryPref = "SELECT day, starts_at FROM professor_availability WHERE
             // id = ?";
-            String queryPref = "SELECT weekday, starts_at FROM professor_availability WHERE id = ?";
+            String queryPref = "SELECT weekday, start_time FROM professor_availability WHERE id = ?";
             try (PreparedStatement ps = conn.prepareStatement(queryPref)) {
                 ps.setInt(1, professorId);
                 try (ResultSet rs = ps.executeQuery()) {
                     while (rs.next()) {
                         String day = rs.getString("weekday");
-                        Time time = rs.getTime("starts_at");
+                        Time time = rs.getTime("start_time");
                         preferredDays.add(day);
                         preferredTimes.put(day, time != null ? time.toString() : "09:00:00");
                     }
@@ -875,7 +888,8 @@ public class EventValidationService {
 
             List<Room> suitableRooms = new ArrayList<>();
             for (Room room : rooms.values()) {
-                if ("predavaliste".equals(room.roomType) || "sve".equals(room.roomType)) {
+                // Proveravamo da li je sala aktivna i da li ima dovoljno kapaciteta
+                if (room.isActive && room.capacity >= 30) {
                     suitableRooms.add(room);
                 }
             }
@@ -932,16 +946,34 @@ public class EventValidationService {
 
             int scheduleId = (scheduleIdParam != null) ? scheduleIdParam : generateNewScheduleId();
 
-            String queryProf = "SELECT professor_id FROM course_professor WHERE course_id = ? " +
+            // Prvo pokušavamo da pronađemo asistenta
+            String queryAssistant = "SELECT professor_id FROM course_professor WHERE course_id = ? " +
                     "AND is_assistant = true";
             int professorId = 0;
-            try (PreparedStatement ps = conn.prepareStatement(queryProf)) {
+            boolean hasAssistant = false;
+
+            try (PreparedStatement ps = conn.prepareStatement(queryAssistant)) {
                 ps.setInt(1, courseId);
                 try (ResultSet rs = ps.executeQuery()) {
                     if (rs.next()) {
-                        professorId = (int) rs.getLong("professor_id");
-                    } else {
-                        return "ERROR: No professor assigned for exercises";
+                        professorId = rs.getInt("professor_id");
+                        hasAssistant = true;
+                    }
+                }
+            }
+
+            // Ako nema asistenta, koristimo profesora
+            if (!hasAssistant) {
+                String queryProfessor = "SELECT professor_id FROM course_professor WHERE course_id = ? " +
+                        "AND is_assistant = false";
+                try (PreparedStatement ps = conn.prepareStatement(queryProfessor)) {
+                    ps.setInt(1, courseId);
+                    try (ResultSet rs = ps.executeQuery()) {
+                        if (rs.next()) {
+                            professorId = rs.getInt("professor_id");
+                        } else {
+                            return "ERROR: No professor assigned for exercises";
+                        }
                     }
                 }
             }
@@ -954,8 +986,6 @@ public class EventValidationService {
             List<String> preferredDays = new ArrayList<>();
             Map<String, String> preferredTimes = new HashMap<>();
 
-            // String queryPref = "SELECT weekday, starts_at FROM professor_availability
-            // WHERE id = ?"; greska nije starts_at vec start_time
             String queryPref = "SELECT weekday, start_time FROM professor_availability WHERE id = ?";
             try (PreparedStatement ps = conn.prepareStatement(queryPref)) {
                 ps.setInt(1, professorId);
@@ -975,7 +1005,9 @@ public class EventValidationService {
 
             List<Room> suitableRooms = new ArrayList<>();
             for (Room room : rooms.values()) {
-                if ("vjezbe".equals(room.roomType) || "sve".equals(room.roomType)) {
+                // Proveravamo da li je sala aktivna (za vežbe mogu i kompjuterske i obične
+                // sale)
+                if (room.isActive && room.capacity >= 20) {
                     suitableRooms.add(room);
                 }
             }
@@ -1089,8 +1121,8 @@ class Room {
     public int idRoom;
     public String code;
     public int capacity;
-    public String equipmentType;
-    public String roomType;
+    public boolean isComputerLab;
+    public boolean isActive;
 }
 
 class AcademicEvent {
