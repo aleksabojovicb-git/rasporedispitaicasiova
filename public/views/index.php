@@ -1,5 +1,7 @@
 <?php
 session_start();
+// require_once './src/includes/cache_handler.php';
+// aktivirajJavaCheSaProverom(10);
 $professorPanelHref = './authorization.php';
 if (isset($_SESSION['user_id'])) {
     $professorPanelHref = './profesor_profile.php';
@@ -10,8 +12,7 @@ if(isset($_SESSION['role'])){
     }
 }
 
-?>
-<!DOCTYPE html>
+?><!DOCTYPE html>
 <html lang="sr">
 <head>
     <meta charset="UTF-8" />
@@ -20,6 +21,8 @@ if(isset($_SESSION['role'])){
     <link rel="stylesheet" href="../assets/css/index.css">
 </head>
 <body>
+
+<?php require __DIR__ . '/partials/header.php'; ?>
 
 <!-- HERO SECTION -->
 <section class="hero">

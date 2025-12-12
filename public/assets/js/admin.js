@@ -24,17 +24,9 @@ function confirmDelete(formId, entityName) {
         const form = document.getElementById(formId);
         if (form) {
             console.log('Submitting form:', formId);
-
-            // Debug form properties
-            console.log('Form action:', form.action);
-            console.log('Form method:', form.method);
-            console.log('Form elements:', form.elements.length);
-
-            // Force the form to submit directly to the current page
             if (!form.action) {
                 form.action = window.location.href;
             }
-
             form.submit();
         } else {
             console.error('Form not found:', formId);
@@ -51,17 +43,9 @@ function confirmDeleteEvent(formId) {
         const form = document.getElementById(formId);
         if (form) {
             console.log('Submitting event delete form:', formId);
-
-            // Debug form properties
-            console.log('Form action:', form.action);
-            console.log('Form method:', form.method);
-            console.log('Form elements:', form.elements.length);
-
-            // Force the form to submit directly to the current page
             if (!form.action) {
                 form.action = window.location.href;
             }
-
             form.submit();
         } else {
             console.error('Form not found:', formId);
@@ -100,25 +84,76 @@ function submitDeleteForm(id, action, entityType) {
     document.body.removeChild(form);
 }
 
+// Helper: normalize various server datetime strings into a value
+// accepted by <input type="datetime-local"> ("YYYY-MM-DDTHH:MM").
+// Accepts examples: "2025-11-29 14:30:00", "2025-11-29T14:30:00", timestamp strings.
+function toDatetimeLocal(raw) {
+    if (!raw) return '';
+    try {
+        // If it's a pure number (timestamp seconds or ms)
+        if (/^\d+$/.test(String(raw).trim())) {
+            let n = Number(raw);
+            // Heuristic: if seconds (10 digits) convert to ms
+            if (n < 1e12) n = n * 1000;
+            const d = new Date(n);
+            if (!isNaN(d.getTime())) {
+                const yyyy = d.getFullYear();
+                const mm = String(d.getMonth() + 1).padStart(2, '0');
+                const dd = String(d.getDate()).padStart(2, '0');
+                const hh = String(d.getHours()).padStart(2, '0');
+                const min = String(d.getMinutes()).padStart(2, '0');
+                return `${yyyy}-${mm}-${dd}T${hh}:${min}`;
+            }
+        }
+
+        // Normalize space to 'T' for MySQL-like strings
+        let s = String(raw).trim().replace(/^\s+|\s+$/g, '');
+        s = s.replace(' ', 'T');
+
+        // Try to parse common pattern YYYY-MM-DDTHH:MM(:SS)?
+        const m = s.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?/);
+        if (m) {
+            // Return without seconds (datetime-local usually prefers minute precision)
+            return `${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}`;
+        }
+
+        // Fallback: let Date parse it, then format components in local timezone
+        const d = new Date(s);
+        if (!isNaN(d.getTime())) {
+            const yyyy = d.getFullYear();
+            const mm = String(d.getMonth() + 1).padStart(2, '0');
+            const dd = String(d.getDate()).padStart(2, '0');
+            const hh = String(d.getHours()).padStart(2, '0');
+            const min = String(d.getMinutes()).padStart(2, '0');
+            return `${yyyy}-${mm}-${dd}T${hh}:${min}`;
+        }
+    } catch (e) {
+        // ignore and fall through
+    }
+    return '';
+}
+
 // Handle online event toggle
 document.addEventListener('DOMContentLoaded', function() {
     console.log('Admin JS loaded');
 
     // Check forms on page load
     const deleteForms = document.querySelectorAll('form[id^="delete-"]');
-    console.log('Found', deleteForms.length, 'delete forms');
+    console.debug('Found', deleteForms.length, 'delete forms');
 
     // Add direct submit handler for all delete forms
     deleteForms.forEach(form => {
-        console.log('Found delete form:', form.id);
-
-        // Debug each form
-        const actionInput = form.querySelector('input[name="action"]');
-        const idInput = form.querySelector('input[name="id"]');
-
-        if (actionInput && idInput) {
-            console.log('Form action value:', actionInput.value, 'ID:', idInput.value);
+        // Try to log a concise identifier: prefer form.id, fallback to hidden input[name="id"] value
+        let fid = form.id || '';
+        try {
+            if (!fid) {
+                const idInput = form.querySelector('input[name="id"]');
+                if (idInput && idInput.value) fid = idInput.value;
+            }
+        } catch (e) {
+            // ignore
         }
+        console.debug('Found delete form id:', fid || '[no id]');
 
         // Ensure the form has the proper action
         if (!form.action) {
@@ -138,334 +173,327 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
+    // Create edit modal container once
+    if (!document.getElementById('admin-edit-modal')) {
+        const modal = document.createElement('div');
+        modal.id = 'admin-edit-modal';
+        modal.style.display = 'none';
+        modal.innerHTML = '<div class="aem-overlay" style="position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:9999;">' +
+            '<div class="aem-dialog" style="background:#0b1220;padding:20px;border-radius:8px;max-width:600px;width:90%;color:#fff;">' +
+            '<button id="aem-close" style="float:right;background:transparent;border:none;color:#fff;font-size:18px;cursor:pointer;">&times;</button>' +
+            '<div id="aem-content"></div>' +
+            '</div></div>';
+        document.body.appendChild(modal);
 
-    let editModal = document.getElementById('admin-edit-modal');
-    if (!editModal) {
-        editModal = document.createElement('div');
-        editModal.id = 'admin-edit-modal';
-        editModal.style.position = 'fixed';
-        editModal.style.left = '0';
-        editModal.style.top = '0';
-        editModal.style.width = '100%';
-        editModal.style.height = '100%';
-        editModal.style.display = 'none';
-        editModal.style.background = 'rgba(0,0,0,0.5)';
-        editModal.style.alignItems = 'center';
-        editModal.style.justifyContent = 'center';
-
-        editModal.innerHTML = `
-            <div id="admin-edit-modal-inner" style="background:#fff;padding:18px;border-radius:8px;max-width:720px;width:min(720px,90%);margin:auto;color:#000;box-shadow:0 10px 30px rgba(0,0,0,0.6);max-height:84vh;overflow:auto;">
-                <style>
-                    #admin-edit-modal-inner { font-family: Arial, Helvetica, sans-serif; font-size:14px; }
-                    #admin-edit-modal-inner label { display:block; margin:8px 0 6px; color:#071422; font-weight:700; font-size:13px; }
-                    #admin-edit-modal-inner input, #admin-edit-modal-inner select, #admin-edit-modal-inner textarea {
-                        background: #ffffff !important;
-                        color: #071422 !important;
-                        border: 1px solid #c8d0d8 !important;
-                        padding: 8px 10px !important;
-                        border-radius: 6px !important;
-                        box-sizing: border-box !important;
-                        box-shadow: none !important;
-                    }
-                    #admin-edit-modal-inner textarea { min-height:100px !important; }
-                    #admin-edit-modal-inner .modal-actions { margin-top:14px; text-align:right; }
-                    #admin-edit-modal-inner .action-button { margin-left:8px; }
-                        #admin-edit-modal-inner, #admin-edit-modal-inner * {
-                            color: #071422 !important;
-                        }
-
-                        #admin-edit-modal-inner input[type="checkbox"] {
-                            width: 18px; height: 18px; vertical-align: middle; appearance: auto; accent-color: #0b2130 !important; background: #fff !important;
-                        }
-
-                        #admin-edit-modal-inner input, #admin-edit-modal-inner select, #admin-edit-modal-inner textarea {
-                            background: #ffffff !important;
-                            color: #071422 !important;
-                            border: 1px solid #c8d0d8 !important;
-                            padding: 8px 10px !important;
-                            border-radius: 6px !important;
-                            box-sizing: border-box !important;
-                            box-shadow: none !important;
-                        }
-                    #admin-edit-modal-inner input[type="text"], #admin-edit-modal-inner input[type="email"], #admin-edit-modal-inner input[type="number"], #admin-edit-modal-inner input[type="datetime-local"], #admin-edit-modal-inner select, #admin-edit-modal-inner textarea { width:100% !important; }
-                    @media (max-width:420px) { #admin-edit-modal-inner { padding:12px; } }
-                </style>
-                <h3 id="admin-edit-title" style="margin:0 0 8px;">Uredi</h3>
-                <div id="admin-edit-body"></div>
-                <div class="modal-actions">
-                    <button id="admin-edit-cancel" type="button" class="action-button">Otkaži</button>
-                    <button id="admin-edit-save" type="button" class="action-button">Sačuvaj</button>
-                </div>
-            </div>
-        `;
-        document.body.appendChild(editModal);
-
-        document.getElementById('admin-edit-cancel').addEventListener('click', () => {
-            editModal.style.display = 'none';
+        // Close handler
+        modal.querySelector('#aem-close').addEventListener('click', () => {
+            modal.style.display = 'none';
         });
-        // close when clicking outside inner modal
-        editModal.addEventListener('click', (ev) => {
-            if (ev.target === editModal) editModal.style.display = 'none';
+        // close when clicking overlay outside dialog
+        modal.querySelector('.aem-overlay').addEventListener('click', (ev) => {
+            if (ev.target.classList.contains('aem-overlay')) modal.style.display = 'none';
         });
-        // ensure modal overlay is on top
-        editModal.style.zIndex = '9999';
     }
 
-    // Helper to build and submit a POST form
-    function submitUpdateForm(payload) {
-        const form = document.createElement('form');
-        form.method = 'post';
-        form.action = window.location.href;
-        for (const key in payload) {
-            const input = document.createElement('input');
-            input.type = 'hidden';
-            input.name = key;
-            input.value = payload[key];
-            form.appendChild(input);
+    // Edit button click delegation
+    document.body.addEventListener('click', function(e) {
+        // Only handle elements that have data-entity attribute
+        const btn = e.target.closest('.edit-button[data-entity]');
+        if (!btn) return; // ignore other buttons that share the class but aren't editor triggers
+        e.preventDefault();
+
+        const entity = btn.dataset.entity;
+        // get raw dataset attributes
+        const attrs = {};
+        for (let i = 0; i < btn.attributes.length; i++) {
+            const at = btn.attributes[i];
+            if (at.name.startsWith('data-')) {
+                const key = at.name.slice(5); // remove data-
+                attrs[key] = at.value;
+            }
         }
-        document.body.appendChild(form);
-        form.submit();
-    }
 
-    // Auto-hide success/error flash messages after a delay
-    setTimeout(() => {
-        const flashes = document.querySelectorAll('.success, .error');
-        flashes.forEach(el => {
-            // add a helper class so CSS transitions apply
-            el.classList.add('flash');
-            // trigger hide
-            setTimeout(() => el.classList.add('hide'), 50);
-            // remove from DOM after transition
-            setTimeout(() => { if (el && el.parentNode) el.parentNode.removeChild(el); }, 500);
-        });
-    }, 4000);
-
-    // Click handler for edit buttons
-    document.querySelectorAll('.edit-button').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            const b = e.currentTarget;
-            const entity = b.getAttribute('data-entity');
-            const id = b.getAttribute('data-id');
-            const body = document.getElementById('admin-edit-body');
-            const title = document.getElementById('admin-edit-title');
-            body.innerHTML = '';
-
-            if (!entity || !id) {
-                alert('Nedostaju podaci za uređivanje.');
-                return;
-            }
-
-            if (entity === 'profesor') {
-                title.textContent = 'Uredi profesora';
-                const full_name = b.getAttribute('data-full_name') || '';
-                const email = b.getAttribute('data-email') || '';
-                body.innerHTML = `
-                    <label>Ime i prezime:</label>
-                    <input type="text" id="edit-full_name" value="${full_name}" style="width:100%;" />
-                    <label style="margin-top:8px;display:block;">Email:</label>
-                    <input type="email" id="edit-email" value="${email}" style="width:100%;" />
-                `;
-                editModal.style.display = 'flex';
-                document.getElementById('admin-edit-save').onclick = function() {
-                    submitUpdateForm({ action: 'update_profesor', profesor_id: id, full_name: document.getElementById('edit-full_name').value, email: document.getElementById('edit-email').value });
-                };
-            } else if (entity === 'predmet') {
-                title.textContent = 'Uredi predmet';
-                const name = b.getAttribute('data-name') || '';
-                const code = b.getAttribute('data-code') || '';
-                const semester = b.getAttribute('data-semester') || '';
-                const is_optional = b.getAttribute('data-is_optional') === '1';
-                // Build basic fields
-                body.innerHTML = `
-                    <label>Naziv:</label>
-                    <input type="text" id="edit-name" value="${name}" style="width:100%;" />
-                    <label style="margin-top:8px;display:block;">Šifra:</label>
-                    <input type="text" id="edit-code" value="${code}" style="width:100%;" />
-                    <label style="margin-top:8px;display:block;">Semestar:</label>
-                    <input type="number" id="edit-semester" value="${semester}" min="1" max="6" style="width:100%;" />
-                    <label style="margin-top:8px;display:block;"><input type="checkbox" id="edit-is_optional" ${is_optional ? 'checked' : ''} /> Izborni predmet</label>
-                    <div id="edit-professors-container" style="margin-top:10px;"></div>
-                `;
-
-                // Populate professor change controls based on data-professors payload
-                try {
-                    const profsPayloadRaw = b.getAttribute('data-professors') || '[]';
-                    const assigned = JSON.parse(profsPayloadRaw);
-                    const allProfessors = (window.adminData && window.adminData.professors) ? window.adminData.professors : [];
-
-                    function buildOptions(selectedId) {
-                        return allProfessors.map(p => `<option value="${p.id}" ${p.id == selectedId ? 'selected' : ''}>${p.full_name} (${p.email})</option>`).join('');
-                    }
-
-                    const container = document.getElementById('edit-professors-container');
-
-                    if (assigned.length === 0) {
-                        // No professor assigned -> show nothing (as requested)
-                        container.innerHTML = '';
-                    } else if (assigned.length === 1) {
-                        const a = assigned[0];
-                        const label = a.is_assistant ? 'Promijeni asistenta:' : 'Promijeni profesora:';
-                        container.innerHTML = `
-                            <label style="display:block; margin-top:8px;">${label}</label>
-                            <select id="edit-prof-1" style="width:100%;">${buildOptions(a.id)}</select>
-                        `;
-                    } else {
-                        // two assigned: find professor (is_assistant=0) and assistant (is_assistant=1)
-                        let prof = assigned.find(x => x.is_assistant == 0) || assigned[0];
-                        let asst = assigned.find(x => x.is_assistant == 1) || assigned[1] || assigned[0];
-                        container.innerHTML = `
-                            <label style="display:block; margin-top:8px;">Promijeni profesora:</label>
-                            <select id="edit-prof-1" style="width:100%;">${buildOptions(prof.id)}</select>
-                            <label style="display:block; margin-top:8px;">Promijeni asistenta:</label>
-                            <select id="edit-prof-2" style="width:100%;">${buildOptions(asst.id)}</select>
-                        `;
-
-                        // Prevent selecting same person in both selects (basic client-side guard)
-                        setTimeout(() => {
-                            const s1 = document.getElementById('edit-prof-1');
-                            const s2 = document.getElementById('edit-prof-2');
-                            if (s1 && s2) {
-                                function syncDisable() {
-                                    const v1 = s1.value;
-                                    const v2 = s2.value;
-                                    // no disabling needed; we'll validate on save
-                                }
-                                s1.addEventListener('change', syncDisable);
-                                s2.addEventListener('change', syncDisable);
-                            }
-                        }, 0);
-                    }
-                } catch (err) {
-                    console.error('Ne mogu parsirati podatke o profesorima za predmet', err);
-                }
-
-                editModal.style.display = 'flex';
-                document.getElementById('admin-edit-save').onclick = function() {
-                    // Collect basic fields
-                    const payload = {
-                        action: 'update_predmet',
-                        course_id: id,
-                        name: document.getElementById('edit-name').value,
-                        code: document.getElementById('edit-code').value,
-                        semester: document.getElementById('edit-semester').value,
-                        is_optional: document.getElementById('edit-is_optional').checked ? '1' : '0'
-                    };
-
-                    // Collect professor assignments if present in modal
-                    const profContainer = document.getElementById('edit-professors-container');
-                    if (profContainer) {
-                        const sel1 = document.getElementById('edit-prof-1');
-                        const sel2 = document.getElementById('edit-prof-2');
-                        const assignments = [];
-                        if (sel1 && !sel2) {
-                            // single assignment - keep original role if possible; determine role by label
-                            const label = profContainer.querySelector('label');
-                            const isAssistant = (label && label.textContent && label.textContent.toLowerCase().includes('asistent')) ? 1 : 0;
-                            if (!sel1.value) { alert('Izaberite profesora'); return; }
-                            assignments.push({ professor_id: sel1.value, is_assistant: isAssistant });
-                        } else if (sel1 && sel2) {
-                            if (!sel1.value || !sel2.value) { alert('Oba polja za profesora i asistenta moraju biti popunjena'); return; }
-                            if (sel1.value === sel2.value) { alert('Profesor i asistent ne mogu biti ista osoba'); return; }
-                            assignments.push({ professor_id: sel1.value, is_assistant: 0 });
-                            assignments.push({ professor_id: sel2.value, is_assistant: 1 });
-                        }
-
-                        if (assignments.length > 0) {
-                            payload.prof_assignments = JSON.stringify(assignments);
-                        }
-                    }
-
-                    submitUpdateForm(payload);
-                };
-            } else if (entity === 'sala') {
-                title.textContent = 'Uredi salu';
-                const code = b.getAttribute('data-code') || '';
-                const capacity = b.getAttribute('data-capacity') || '';
-                const is_computer_lab = b.getAttribute('data-is_computer_lab') === '1';
-                body.innerHTML = `
-                    <label>Oznaka:</label>
-                    <input type="text" id="edit-code" value="${code}" style="width:100%;" />
-                    <label style="margin-top:8px;display:block;">Kapacitet:</label>
-                    <input type="number" id="edit-capacity" value="${capacity}" min="1" style="width:100%;" />
-                    <label style="margin-top:8px;display:block;"><input type="checkbox" id="edit-is_computer_lab" ${is_computer_lab ? 'checked' : ''} /> Računarska sala</label>
-                `;
-                editModal.style.display = 'flex';
-                document.getElementById('admin-edit-save').onclick = function() {
-                    submitUpdateForm({ action: 'update_sala', sala_id: id, code: document.getElementById('edit-code').value, capacity: document.getElementById('edit-capacity').value, is_computer_lab: document.getElementById('edit-is_computer_lab').checked ? '1' : '0' });
-                };
-            } else {
-                
-                if (entity === 'dogadjaj') {
-                    title.textContent = 'Uredi događaj';
-                    const payloadRaw = b.getAttribute('data-payload') || '{}';
-                    let payload = {};
-                    try { payload = JSON.parse(payloadRaw); } catch (err) { console.error('Invalid payload', err); }
-
-                    const courses = window.adminData ? window.adminData.courses : [];
-                    const professors = window.adminData ? window.adminData.professors : [];
-                    const rooms = window.adminData ? window.adminData.rooms : [];
-
-                    const isOnline = payload.is_online == 1 || payload.is_online === '1' || payload.is_online === true;
-
-                    const courseOptions = courses.map(c => `<option value="${c.id}" ${c.id == payload.course_id ? 'selected' : ''}>${c.name} (${c.code})</option>`).join('');
-                    const profOptions = professors.map(p => `<option value="${p.id}" ${p.id == payload.professor_id ? 'selected' : ''}>${p.full_name} (${p.email})</option>`).join('');
-                    const roomOptions = rooms.map(r => `<option value="${r.id}" ${r.id == payload.room_id ? 'selected' : ''}>${r.code} (kap: ${r.capacity})</option>`).join('');
-
-                    body.innerHTML = `
-                        <label>Predmet:</label>
-                        <select id="edit-course_id" style="width:100%;">${courseOptions}</select>
-                        <label style="margin-top:8px;display:block;">Profesor:</label>
-                        <select id="edit-professor_id" style="width:100%;">${profOptions}</select>
-                        <label style="margin-top:8px;display:block;">Tip:</label>
-                        <select id="edit-type" style="width:100%;">
-                            <option value="EXAM" ${payload.type === 'EXAM' ? 'selected' : ''}>Ispit</option>
-                            <option value="COLLOQUIUM" ${payload.type === 'COLLOQUIUM' ? 'selected' : ''}>Kolokvijum</option>
-                        </select>
-                        <label style="margin-top:8px;display:block;">Početak:</label>
-                        <input type="datetime-local" id="edit-starts_at" value="${payload.starts_at ? payload.starts_at.replace(' ', 'T') : ''}" style="width:100%;" />
-                        <label style="margin-top:8px;display:block;">Kraj:</label>
-                        <input type="datetime-local" id="edit-ends_at" value="${payload.ends_at ? payload.ends_at.replace(' ', 'T') : ''}" style="width:100%;" />
-                        <label style="margin-top:8px;display:block;"><input type="checkbox" id="edit-is_online" ${isOnline ? 'checked' : ''} /> Online događaj</label>
-                        <div id="edit-room-selection" style="display:${isOnline ? 'none' : 'block'}; margin-top:8px;">
-                            <label>Sala:</label>
-                            <select id="edit-room_id" style="width:100%;">${roomOptions}</select>
-                        </div>
-                        <label style="margin-top:8px;display:block;">Napomene:</label>
-                        <textarea id="edit-notes" rows="3" style="width:100%;">${payload.notes || ''}</textarea>
-                        <label style="margin-top:8px;display:block;"><input type="checkbox" id="edit-is_published" ${payload.is_published ? 'checked' : ''} /> Objavljeno</label>
-                    `;
-
-                    // toggle room selection on change
-                    setTimeout(() => {
-                        const onlineChk = document.getElementById('edit-is_online');
-                        const roomSel = document.getElementById('edit-room-selection');
-                        if (onlineChk && roomSel) {
-                            onlineChk.addEventListener('change', () => { roomSel.style.display = onlineChk.checked ? 'none' : 'block'; });
-                        }
-                    }, 0);
-
-                    editModal.style.display = 'flex';
-                    document.getElementById('admin-edit-save').onclick = function() {
-                        const d = {
-                            action: 'update_dogadjaj',
-                            dogadjaj_id: payload.id,
-                            event_professor_id: payload.event_professor_id || '',
-                            course_id: document.getElementById('edit-course_id').value,
-                            professor_id: document.getElementById('edit-professor_id').value,
-                            type: document.getElementById('edit-type').value,
-                            starts_at: document.getElementById('edit-starts_at').value,
-                            ends_at: document.getElementById('edit-ends_at').value,
-                            is_online: document.getElementById('edit-is_online').checked ? '1' : '0',
-                            room_id: document.getElementById('edit-room_id') ? document.getElementById('edit-room_id').value : '',
-                            notes: document.getElementById('edit-notes').value,
-                            is_published: document.getElementById('edit-is_published').checked ? '1' : '0'
-                        };
-                        submitUpdateForm(d);
-                    };
-                    return;
-                }
-                alert('Nepodržan entitet za uređivanje: ' + entity);
-            }
-        });
+        openEditModal(entity, attrs);
     });
 });
+
+/**
+ * Build and open edit modal for supported entities
+ * Supported: profesor, predmet, sala
+ */
+function openEditModal(entity, data) {
+    const modal = document.getElementById('admin-edit-modal');
+    const content = modal.querySelector('#aem-content');
+    // map entity to server action and id field
+    const map = {
+        'profesor': { action: 'update_profesor', idField: 'profesor_id', title: 'Uredi profesora' },
+        'predmet': { action: 'update_predmet', idField: 'course_id', title: 'Uredi predmet' },
+        'sala': { action: 'update_sala', idField: 'sala_id', title: 'Uredi salu' },
+        'dogadjaj': { action: 'update_dogadjaj', idField: 'dogadjaj_id', title: 'Uredi događaj' }
+    };
+
+    // If button provided a JSON payload in data-payload, parse it into data object
+    if (data.payload) {
+        try {
+            const parsed = JSON.parse(data.payload);
+            // merge parsed fields into data (do not overwrite existing simple attrs)
+            for (const k in parsed) {
+                if (!(k in data)) data[k] = parsed[k];
+                else data[k] = parsed[k]; // prefer parsed value
+            }
+        } catch (e) {
+            console.warn('Failed to parse data-payload JSON', e);
+        }
+    }
+
+    // allow editing user accounts
+    map['account'] = { action: 'update_account', idField: 'account_id', title: 'Uredi nalog' };
+
+    if (!map[entity]) {
+        alert('Editing for "' + entity + '" is not implemented in this editor.');
+        return;
+    }
+
+    const cfg = map[entity];
+
+    // build form element
+    const form = document.createElement('form');
+    form.method = 'post';
+    form.action = window.location.href;
+
+    // action hidden
+    const actionInput = document.createElement('input');
+    actionInput.type = 'hidden';
+    actionInput.name = 'action';
+    actionInput.value = cfg.action;
+    form.appendChild(actionInput);
+
+    // id hidden
+    const idInput = document.createElement('input');
+    idInput.type = 'hidden';
+    idInput.name = cfg.idField;
+    // robust id lookup: allow id, snake_case, camelCase and common variants
+    let idVal = '';
+    if (data.id) idVal = data.id;
+    else if (data[cfg.idField]) idVal = data[cfg.idField];
+    else {
+        // try camelCase variant of cfg.idField
+        const camel = cfg.idField.replace(/_([a-z])/g, (m,p)=>p.toUpperCase());
+        if (data[camel]) idVal = data[camel];
+        // common fallbacks
+        else if (data.course_id) idVal = data.course_id;
+        else if (data.courseId) idVal = data.courseId;
+    }
+    idInput.value = idVal || '';
+    form.appendChild(idInput);
+
+    // title
+    const h = document.createElement('h3');
+    h.textContent = cfg.title;
+    form.appendChild(h);
+
+    // build fields per entity
+    if (entity === 'profesor') {
+        // full_name
+        const lblName = document.createElement('label'); lblName.textContent = 'Ime i prezime:';
+        const inpName = document.createElement('input'); inpName.type = 'text'; inpName.name = 'full_name'; inpName.required = true; inpName.value = data.full_name || '';
+        form.appendChild(lblName); form.appendChild(inpName);
+
+        // email
+        const lblEmail = document.createElement('label'); lblEmail.textContent = 'Email:';
+        const inpEmail = document.createElement('input'); inpEmail.type = 'email'; inpEmail.name = 'email'; inpEmail.required = true; inpEmail.value = data.email || '';
+        form.appendChild(lblEmail); form.appendChild(inpEmail);
+    }
+
+    if (entity === 'predmet') {
+        const lblName = document.createElement('label'); lblName.textContent = 'Naziv predmeta:';
+        const inpName = document.createElement('input'); inpName.type = 'text'; inpName.name = 'name'; inpName.required = true; inpName.value = data.name || '';
+        form.appendChild(lblName); form.appendChild(inpName);
+
+        const lblCode = document.createElement('label'); lblCode.textContent = 'Šifra predmeta:';
+        const inpCode = document.createElement('input'); inpCode.type = 'text'; inpCode.name = 'code'; inpCode.required = true; inpCode.value = data.code || '';
+        form.appendChild(lblCode); form.appendChild(inpCode);
+
+        const lblSemester = document.createElement('label'); lblSemester.textContent = 'Semestar:';
+        const inpSem = document.createElement('input'); inpSem.type = 'number'; inpSem.name = 'semester'; inpSem.min = 1; inpSem.max = 12; inpSem.required = true; inpSem.value = data.semester || '';
+        form.appendChild(lblSemester); form.appendChild(inpSem);
+
+        // checkbox row for proper alignment
+        const cbRow = document.createElement('div'); cbRow.className = 'checkbox-row';
+        const inpOptional = document.createElement('input'); inpOptional.type = 'checkbox'; inpOptional.name = 'is_optional'; inpOptional.checked = (data.is_optional === '1' || data.is_optional === 'true' || data.is_optional === 'on');
+        const txt = document.createTextNode(' Izborni predmet');
+        cbRow.appendChild(inpOptional); cbRow.appendChild(txt);
+        form.appendChild(cbRow);
+
+        // prof_assignments hidden (JSON)
+        const pa = document.createElement('input'); pa.type = 'hidden'; pa.name = 'prof_assignments';
+        // raw data-professors attribute may contain JSON string
+        pa.value = (data.professors !== undefined) ? data.professors : (data.professors_list || '[]');
+        form.appendChild(pa);
+
+        // Try to provide server-required professor_id (single) — extract from data or prof_assignments
+        const profIdInput = document.createElement('input');
+        profIdInput.name = 'professor_id';
+        let profId = data.professor_id || data.professorId || data.professor || '';
+        try {
+            const paVal = pa.value;
+            if (!profId && paVal) {
+                const parsed = JSON.parse(paVal);
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                    const first = parsed[0];
+                    if (typeof first === 'object') {
+                        // common shapes: {id:123} or {professor_id:123}
+                        profId = first.id || first.professor_id || first.professorId || '';
+                    } else {
+                        profId = first; // assume it's an id
+                    }
+                }
+            }
+        } catch (e) {
+            // ignore JSON parse errors
+        }
+        // If we have a professor id, keep field hidden; otherwise make it visible and required
+        if (profId) {
+            profIdInput.type = 'hidden';
+            profIdInput.value = profId;
+            form.appendChild(profIdInput);
+        } else {
+            // visible numeric input to avoid server fatal error when missing
+            const lblProfManual = document.createElement('label'); lblProfManual.textContent = 'Profesor (ID) (required):';
+            profIdInput.type = 'number';
+            profIdInput.required = true;
+            profIdInput.placeholder = 'Enter professor id';
+            profIdInput.style.marginBottom = '8px';
+            form.appendChild(lblProfManual);
+            form.appendChild(profIdInput);
+        }
+
+        // helper note
+        const note = document.createElement('p'); note.style.fontSize = '12px'; note.style.opacity = '0.8'; note.textContent = 'If needed, adjust professors using assign dialog after saving.';
+        form.appendChild(note);
+    }
+
+    if (entity === 'dogadjaj') {
+        // course_id
+        const lblCourse = document.createElement('label'); lblCourse.textContent = 'Predmet (ID):';
+        const inpCourse = document.createElement('input'); inpCourse.type = 'number'; inpCourse.name = 'course_id'; inpCourse.required = true; inpCourse.value = data.course_id || data.courseId || '';
+        form.appendChild(lblCourse); form.appendChild(inpCourse);
+
+        // professor id
+        const lblProf = document.createElement('label'); lblProf.textContent = 'Profesor (ID):';
+        const inpProf = document.createElement('input'); inpProf.type = 'number'; inpProf.name = 'professor_id'; inpProf.required = true; inpProf.value = data.professor_id || data.professorId || '';
+        form.appendChild(lblProf); form.appendChild(inpProf);
+
+        // type select
+        const lblType = document.createElement('label'); lblType.textContent = 'Tip događaja:';
+        const selType = document.createElement('select'); selType.name = 'type';
+        const optExam = document.createElement('option'); optExam.value = 'EXAM'; optExam.textContent = 'Ispit';
+        const optCol = document.createElement('option'); optCol.value = 'COLLOQUIUM'; optCol.textContent = 'Kolokvijum';
+        selType.appendChild(optExam); selType.appendChild(optCol);
+        if ((data.type || data.type_enum) === 'COLLOQUIUM') selType.value = 'COLLOQUIUM'; else selType.value = 'EXAM';
+        form.appendChild(lblType); form.appendChild(selType);
+
+        // starts_at / ends_at
+        const lblStart = document.createElement('label'); lblStart.textContent = 'Početak:';
+        const inpStart = document.createElement('input'); inpStart.type = 'datetime-local'; inpStart.name = 'starts_at'; inpStart.value = toDatetimeLocal(data.starts_at || data.startsAt || '');
+        form.appendChild(lblStart); form.appendChild(inpStart);
+
+        const lblEnd = document.createElement('label'); lblEnd.textContent = 'Kraj:';
+        const inpEnd = document.createElement('input'); inpEnd.type = 'datetime-local'; inpEnd.name = 'ends_at'; inpEnd.value = toDatetimeLocal(data.ends_at || data.endsAt || '');
+        form.appendChild(lblEnd); form.appendChild(inpEnd);
+
+        // is_online
+        const cbOnline = document.createElement('div'); cbOnline.className = 'checkbox-row';
+        const inpOnline = document.createElement('input'); inpOnline.type = 'checkbox'; inpOnline.name = 'is_online'; inpOnline.checked = (data.is_online === '1' || data.is_online === 'true' || data.is_online === 'on');
+        cbOnline.appendChild(inpOnline); cbOnline.appendChild(document.createTextNode(' Online događaj'));
+        form.appendChild(cbOnline);
+
+        // room_id
+        const lblRoom = document.createElement('label'); lblRoom.textContent = 'Sala (ID):';
+        const inpRoom = document.createElement('input'); inpRoom.type = 'number'; inpRoom.name = 'room_id'; inpRoom.value = data.room_id || data.roomId || '';
+        form.appendChild(lblRoom); form.appendChild(inpRoom);
+
+        // notes
+        const lblNotes = document.createElement('label'); lblNotes.textContent = 'Napomene:';
+        const taNotes = document.createElement('textarea'); taNotes.name = 'notes'; taNotes.rows = 3; taNotes.value = data.notes || '';
+        form.appendChild(lblNotes); form.appendChild(taNotes);
+
+        // is_published
+        const cbPub = document.createElement('div'); cbPub.className = 'checkbox-row';
+        const inpPub = document.createElement('input'); inpPub.type = 'checkbox'; inpPub.name = 'is_published'; inpPub.checked = (data.is_published === '1' || data.is_published === 'true' || data.is_published === 'on');
+        cbPub.appendChild(inpPub); cbPub.appendChild(document.createTextNode(' Objavljeno'));
+        form.appendChild(cbPub);
+
+        // include event_professor_id if provided by data
+        if (data.event_professor_id) {
+            const ep = document.createElement('input'); ep.type = 'hidden'; ep.name = 'event_professor_id'; ep.value = data.event_professor_id; form.appendChild(ep);
+        }
+    }
+
+    if (entity === 'sala') {
+        const lblCode = document.createElement('label'); lblCode.textContent = 'Oznaka sale:';
+        const inpCode = document.createElement('input'); inpCode.type = 'text'; inpCode.name = 'code'; inpCode.required = true; inpCode.value = data.code || '';
+        form.appendChild(lblCode); form.appendChild(inpCode);
+
+        const lblCap = document.createElement('label'); lblCap.textContent = 'Kapacitet:';
+        const inpCap = document.createElement('input'); inpCap.type = 'number'; inpCap.name = 'capacity'; inpCap.min = 1; inpCap.required = true; inpCap.value = data.capacity || '';
+        form.appendChild(lblCap); form.appendChild(inpCap);
+
+        const cbLab = document.createElement('div'); cbLab.className = 'checkbox-row';
+        const inpLab = document.createElement('input'); inpLab.type = 'checkbox'; inpLab.name = 'is_computer_lab'; inpLab.checked = (data.is_computer_lab === '1' || data.is_computer_lab === 'true' || data.is_computer_lab === 'on');
+        cbLab.appendChild(inpLab); cbLab.appendChild(document.createTextNode(' Računarska sala'));
+        form.appendChild(cbLab);
+    }
+
+    // account editing form
+    if (entity === 'account') {
+        // username
+        const lblUser = document.createElement('label'); lblUser.textContent = 'Korisničko ime:';
+        const inpUser = document.createElement('input'); inpUser.type = 'text'; inpUser.name = 'username'; inpUser.required = true; inpUser.value = data.username || '';
+        form.appendChild(lblUser); form.appendChild(inpUser);
+
+        // password (optional)
+        const lblPass = document.createElement('label'); lblPass.textContent = 'Lozinka (ostavite prazno da ne mijenjate):';
+        const inpPass = document.createElement('input'); inpPass.type = 'password'; inpPass.name = 'password'; inpPass.value = '';
+        form.appendChild(lblPass); form.appendChild(inpPass);
+
+        // role
+        const lblRole = document.createElement('label'); lblRole.textContent = 'Uloga:';
+        const selRole = document.createElement('select'); selRole.name = 'role';
+        ['ADMIN','PROFESSOR'].forEach(r => { const o = document.createElement('option'); o.value = r; o.textContent = r; if ((data.role || data.role_enum) === r) o.selected = true; selRole.appendChild(o); });
+        form.appendChild(lblRole); form.appendChild(selRole);
+
+        // professor link
+        const lblProf = document.createElement('label'); lblProf.textContent = 'Povezan profesor (opcionalno):';
+        const selProf = document.createElement('select'); selProf.name = 'professor_id';
+        const optNone = document.createElement('option'); optNone.value = ''; optNone.textContent = '-- Nema --'; selProf.appendChild(optNone);
+        try {
+            const profs = window.adminData && window.adminData.professors ? window.adminData.professors : [];
+            profs.forEach(p => {
+                const o = document.createElement('option'); o.value = p.id; o.textContent = p.full_name + ' (' + p.email + ')';
+                if (String(data.professor_id) === String(p.id)) o.selected = true;
+                selProf.appendChild(o);
+            });
+        } catch (e) {
+            console.warn('Could not populate professors select', e);
+        }
+        form.appendChild(lblProf); form.appendChild(selProf);
+
+        // is_active checkbox
+        const cbAct = document.createElement('div'); cbAct.className = 'checkbox-row';
+        const inpAct = document.createElement('input'); inpAct.type = 'checkbox'; inpAct.name = 'is_active'; inpAct.checked = (data.is_active === '1' || data.is_active === 'true' || data.is_active === 1 || data.is_active === true);
+        cbAct.appendChild(inpAct); cbAct.appendChild(document.createTextNode(' Aktivan'));
+        form.appendChild(cbAct);
+    }
+
+    // submit
+    const submit = document.createElement('button'); submit.type = 'submit'; submit.textContent = 'Sačuvaj izmjene'; submit.className = 'action-button save-button';
+    form.appendChild(submit);
+
+    // attach form submit: let normal POST happen
+
+    // render
+    content.innerHTML = '';
+    content.appendChild(form);
+    modal.style.display = 'block';
+}

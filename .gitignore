@@ -1,5 +1,5 @@
 /.env
 .idea
 .vscode
-vendor
+/vendor/
 composer.phar
