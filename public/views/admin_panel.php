@@ -1384,6 +1384,18 @@ document.getElementById('generate-schedule').addEventListener('click', async () 
 
             table.appendChild(tbody);
             wrapper.appendChild(table);
+            // Dugme za PDF
+            const pdfBtn = document.createElement('button');
+            pdfBtn.textContent = 'Sačuvaj raspored kao PDF';
+            pdfBtn.className = 'action-button add-button';
+            pdfBtn.style.marginTop = '10px';
+
+            pdfBtn.addEventListener('click', () => {
+                saveTableAsPDF(table, sem);
+            });
+
+            wrapper.appendChild(pdfBtn);
+
             container.appendChild(wrapper);
         }
 
@@ -1393,15 +1405,126 @@ document.getElementById('generate-schedule').addEventListener('click', async () 
                 buildTableForSemester(parseInt(sem, 10), data[sem]);
             }
         });
+        const pdfAllBtn = document.createElement('button');
+        pdfAllBtn.textContent = 'Sačuvaj kompletan raspored kao PDF';
+        pdfAllBtn.className = 'action-button add-button';
+        pdfAllBtn.style.marginTop = '20px';
+
+        pdfAllBtn.addEventListener('click', saveFullScheduleAsPDF);
+
+        container.appendChild(pdfAllBtn);
 
     } catch (e) {
         alert('Greška pri generisanju rasporeda.');
     }
 });
 </script>
+                        <script>
+                            function saveFullScheduleAsPDF() {
+                                const { jsPDF } = window.jspdf;
+                                const doc = new jsPDF('landscape', 'pt', 'a4');
+
+                                let y = 40;
+
+                                doc.setFontSize(18);
+                                doc.text('Kompletan raspored časova', 40, y);
+                                y += 30;
+
+                                const tables = document.querySelectorAll('.schedule-table');
+
+                                tables.forEach((table, index) => {
+                                    if (index > 0) {
+                                        doc.addPage();
+                                        y = 40;
+                                    }
+
+                                    // Naslov semestra (uzimamo h3 iznad tabele)
+                                    const title = table.previousSibling?.textContent || `Semestar ${index + 1}`;
+                                    doc.setFontSize(14);
+                                    doc.text(title, 40, y);
+                                    y += 20;
+
+                                    const headers = [];
+                                    const rows = [];
+
+                                    table.querySelectorAll('thead th').forEach(th => {
+                                        headers.push(th.innerText);
+                                    });
+
+                                    table.querySelectorAll('tbody tr').forEach(tr => {
+                                        const row = [];
+                                        tr.querySelectorAll('td').forEach(td => {
+                                            row.push(td.innerText);
+                                        });
+                                        rows.push(row);
+                                    });
+
+                                    doc.autoTable({
+                                        head: [headers],
+                                        body: rows,
+                                        startY: y,
+                                        styles: {
+                                            fontSize: 9,
+                                            cellPadding: 4
+                                        },
+                                        headStyles: {
+                                            fillColor: [15, 23, 42] // tamna (kao tvoj UI)
+                                        }
+                                    });
+                                });
+
+                                doc.save('kompletan_raspored_casova.pdf');
+                            }
+                        </script>
+                        <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
 
 
- <?php
+                        <script>
+                        function saveTableAsPDF(table, semester) {
+                            const { jsPDF } = window.jspdf;
+                            const doc = new jsPDF('landscape', 'pt', 'a4');
+
+                            doc.setFontSize(16);
+                            doc.text(`Raspored časova – ${semester}. semestar`, 40, 40);
+                            let startY = 70;
+
+                            const rows = [];
+                            const headers = [];
+
+                            // headeri
+                            table.querySelectorAll('thead th').forEach(th => {
+                                headers.push(th.innerText);
+                            });
+
+                            // redovi
+                            table.querySelectorAll('tbody tr').forEach(tr => {
+                                const row = [];
+                                tr.querySelectorAll('td').forEach(td => {
+                                    row.push(td.innerText);
+                                });
+                                rows.push(row);
+                            });
+
+                            doc.autoTable({
+                                head: [headers],
+                                body: rows,
+                                startY: startY,
+                                styles: {
+                                    fontSize: 9,
+                                    cellPadding: 4
+                                },
+                                headStyles: {
+                                    fillColor: [22, 101, 52] // tamno zelena
+                                }
+                            });
+
+                            doc.save(`raspored_semestar_${semester}.pdf`);
+                        }
+                    </script>
+
+
+
+                        <?php
     break;
 
       }
