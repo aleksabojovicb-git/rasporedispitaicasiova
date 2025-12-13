@@ -911,6 +911,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <label for="is_optional">Izborni predmet:</label>
                 <input type="checkbox" id="is_optional" name="is_optional">
 
+                <label for="lecture_hours">Broj časova predavanja (nedjeljno):</label>
+                <input type="number" id="lecture_hours" name="lecture_hours" min="0" max="10" value="0">
+
+                <label for="exercise_hours">Broj časova vježbi (nedjeljno):</label>
+                <input type="number" id="exercise_hours" name="exercise_hours" min="0" max="10" value="0">
+
+                // za ovu funkciju fali backend
                 <button type="submit">Sačuvaj</button>
             </form>
         </div>
@@ -923,8 +930,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <th>Semestar</th>
                 <th>Obavezni</th>
                 <th>Profesori</th>
+                <th>Predavanja / sedmično</th>
+                <th>Vježbe / sedmično</th>
                 <th>Status</th>
                 <th>Akcije</th>
+
+
             </tr>
             <?php
 
@@ -936,6 +947,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     echo "<td>" . htmlspecialchars($row['name']) . "</td>";
                     echo "<td>" . htmlspecialchars($row['code']) . "</td>";
                     echo "<td>" . htmlspecialchars($row['semester']) . "</td>";
+
+
                     // Obavezni (is_optional == 0 -> Obavezni = Da)
                     $is_mandatory = $row['is_optional'] ? 'Ne' : 'Da';
                     echo "<td>" . $is_mandatory . "</td>";
@@ -955,7 +968,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $profPayload[] = ['id' => (int)$a['professor_id'], 'full_name' => $a['full_name'], 'email' => $a['email'], 'is_assistant' => (int)$a['is_assistant']];
                     }
                     echo "<td>" . implode(', ', $profDisplay) . "</td>";
-
+                    echo "<td>fali backend</td>";
+                    echo "<td>fali backend</td>";
                     echo "<td>" . ($row['is_active'] ? 'Aktivan' : 'Neaktivan') . "</td>";
                     echo "<td>";
                     // Attach professors payload as JSON on the edit button
