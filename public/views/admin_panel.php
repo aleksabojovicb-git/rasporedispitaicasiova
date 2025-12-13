@@ -25,7 +25,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'getschedule') {
         $stmt->execute();
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-       
+
         $data = [];
         foreach ($rows as $row) {
             $sem = (int)$row['semester'];
@@ -35,8 +35,8 @@ if (isset($_GET['action']) && $_GET['action'] === 'getschedule') {
             }
 
             $data[$sem][] = [
-                'day'    => (int)$row['day'],                    
-                'start'  => substr($row['starts_at'], 11, 5),     
+                'day'    => (int)$row['day'],
+                'start'  => substr($row['starts_at'], 11, 5),
                 'end'    => substr($row['ends_at'],   11, 5),
                 'course' => $row['coursename'],
                 'room'   => $row['roomcode']
@@ -63,7 +63,7 @@ if (!isset($_SESSION['role']) || !isset($_SESSION['user_id'])) {
 
 if ($_SESSION['role'] !== 'ADMIN') {
     // LoggedIn but not admin -> go to professor profile
-    header('Location: ./profesor_profile.php');
+    header('Location: ./professor_panel.php');
     exit;
 }
 
@@ -1281,7 +1281,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                    echo "<button id='generate-schedule' class='option-button'>Generiši raspored časova</button>";
                     echo "<div id='schedule-container' style='margin-top:20px; display:none'></div>";
-         
+
     ?>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -1399,8 +1399,8 @@ document.getElementById('generate-schedule').addEventListener('click', async () 
     }
 });
 </script>
-                    
-            
+
+
  <?php
     break;
 

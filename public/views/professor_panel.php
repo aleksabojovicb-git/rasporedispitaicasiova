@@ -136,6 +136,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <link rel="stylesheet" href="../assets/css/tabs.css" />
     <link rel="stylesheet" href="../assets/css/table.css" />
     <link rel="stylesheet" href="../assets/css/profesor_profile.css">
+    <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.js"></script>
+
 </head>
 <body>
 <?php require __DIR__ . '/partials/header.php'; ?>
@@ -281,7 +284,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <!-- AVAILABILITY -->
         <div class="tab-pane fade" id="availabilityTab">
             <h3>Raspoloživost</h3>
-            <!-- Tvoj JS grid kod ide ovdje -->
+            <div id="availability-calendar" style="margin-top:20px;"></div>
+
+            <h5 class="mt-4">Označeni termini</h5>
+            <ul id="availability-output"></ul>
+
+            <button id="save-availability" class="btn btn-success mt-2">
+                Sačuvaj raspoloživost
+            </button>
         </div>
     </div>
 </div>
@@ -339,5 +349,106 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         modalBtn.addEventListener('click', ()=> new bootstrap.Modal(document.getElementById('passwordModal')).show());
     }
 </script>
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+
+        const calendarEl = document.getElementById('availability-calendar');
+        if (!calendarEl) return; // sigurnost ako tab nije učitan
+
+        const calendar = new FullCalendar.Calendar(calendarEl, {
+            initialDate: '2024-01-08', // fiksni ponedjeljak
+            initialView: 'timeGridWeek',
+            firstDay: 1,                // Ponedjeljak
+            allDaySlot: false,
+            hiddenDays: [0],            // Sakrij nedjelju
+            slotDuration: '00:15:00',
+            slotMinTime: '08:00:00',
+            slotMaxTime: '21:00:00',
+            selectable: true,
+            editable: true,
+            height: 'auto',
+
+            headerToolbar: {
+                left: '',
+                center: 'title',
+                right: ''
+            },
+
+            select: function (info) {
+                calendar.addEvent({
+                    start: info.start,
+                    end: info.end,
+                    title: 'Slobodno',
+                    color: '#22c55e'
+                });
+
+                updateAvailabilityOutput(calendar);
+            },
+
+            eventClick: function (info) {
+                info.event.remove();
+                updateAvailabilityOutput(calendar);
+            }
+        });
+
+        // Bootstrap TAB fix – render kad se tab otvori
+        document.getElementById('tab-avail')
+            .addEventListener('shown.bs.tab', () => calendar.render());
+
+        calendar.render();
+
+        // expose globalno (trebaće za save)
+        window.availabilityCalendar = calendar;
+    });
+</script>
+<script>
+    function updateAvailabilityOutput(calendar) {
+        const output = document.getElementById('availability-output');
+        output.innerHTML = '';
+
+        const events = calendar.getEvents();
+        window.currentAvailability = [];
+
+        if (events.length === 0) {
+            output.innerHTML = '<li>Nema označenih termina</li>';
+            return;
+        }
+
+        events.forEach(ev => {
+            const start = ev.start;
+            const end = ev.end;
+
+            const day = start.getDay(); // 1=pon
+            const from = start.toTimeString().slice(0,5);
+            const to = end.toTimeString().slice(0,5);
+
+            window.currentAvailability.push({ day, from, to });
+
+            const li = document.createElement('li');
+            li.textContent = `${dayName(day)} ${from} – ${to}`;
+            output.appendChild(li);
+        });
+
+        console.log('Raspoloživost:', window.currentAvailability);
+    }
+
+    function dayName(d) {
+        return ['Ned','Pon','Uto','Sri','Čet','Pet','Sub'][d];
+    }
+</script>
+<script>
+    document.getElementById('save-availability')
+        ?.addEventListener('click', () => {
+
+            fetch('save_availability.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(window.currentAvailability || [])
+            })
+                .then(r => r.json())
+                .then(() => alert('Raspoloživost sačuvana'));
+        });
+</script>
+
 </body>
 </html>

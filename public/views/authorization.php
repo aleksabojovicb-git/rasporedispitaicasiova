@@ -15,7 +15,7 @@ if (isset($_SESSION['user_id'])) {
         header('Location: ./admin_panel.php');
         exit;
     }
-    header('Location: ./profesor_profile.php');
+    header('Location: ./professor_panel.php');
     exit;
 }
 
@@ -199,7 +199,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['professor_name'] = $user['full_name'] ?? ($user['username'] ?? 'User');
             $_SESSION['role'] = $user['role_enum'] ?? null;
 
-            header("Location: ./profesor_profile.php");
+            header("Location: ./professor_panel.php");
             exit;
         }
     } elseif ($formType === 'signup') {

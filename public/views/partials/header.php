@@ -34,13 +34,79 @@ if ($loggedIn) {
 </header>
 
 <style>
-    /* Minimal header styles to keep layout consistent */
-    .site-header{background:#fff;border-bottom:1px solid #eee;padding:10px 16px}
-    .header-inner{max-width:1100px;margin:0 auto;display:flex;align-items:center;justify-content:space-between}
-    .logo{display:flex;align-items:center;text-decoration:none;color:inherit}
-    #top-logo{height:48px;margin-right:10px}
-    .site-title{font-size:18px;font-weight:600}
-    .site-header nav ul{list-style:none;margin:0;padding:0;display:flex;gap:12px}
-    .site-header nav a{color:#111;text-decoration:none;padding:6px 8px}
-    @media (max-width:600px){#top-logo{height:36px}.site-title{display:none}}
+    /* ===== Shared Header Style (matches admin panel) ===== */
+
+    .site-header {
+        background: rgba(17, 24, 39, 0.7);
+        backdrop-filter: blur(10px);
+        box-shadow: var(--shadow);
+        position: sticky;
+        top: 0;
+        z-index: 50;
+    }
+
+    /* inner wrapper */
+    .header-inner {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 20px 40px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    /* logo */
+    .logo {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        text-decoration: none;
+        color: var(--text);
+    }
+
+    #top-logo {
+        height: 42px;
+    }
+
+    .site-title {
+        font-size: 22px;
+        font-weight: 700;
+        color: var(--text);
+        letter-spacing: 0.3px;
+    }
+
+    /* navigation */
+    .site-header nav ul {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        gap: 25px;
+    }
+
+    .site-header nav a {
+        color: var(--muted);
+        text-decoration: none;
+        font-size: 16px;
+        transition: color 0.2s ease;
+    }
+
+    .site-header nav a:hover {
+        color: var(--accent);
+    }
+
+    /* responsive */
+    @media (max-width: 768px) {
+        .header-inner {
+            padding: 14px 20px;
+        }
+
+        .site-title {
+            display: none;
+        }
+
+        #top-logo {
+            height: 36px;
+        }
+    }
 </style>
