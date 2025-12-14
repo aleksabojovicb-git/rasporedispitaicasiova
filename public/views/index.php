@@ -4,7 +4,7 @@ session_start();
 // aktivirajJavaCheSaProverom(10);
 $professorPanelHref = './authorization.php';
 if (isset($_SESSION['user_id'])) {
-    $professorPanelHref = './profesor_profile.php';
+    $professorPanelHref = './professor_panel.php';
 }
 if(isset($_SESSION['role'])){
     if($_SESSION['role']==='ADMIN'){

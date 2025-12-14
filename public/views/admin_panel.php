@@ -25,7 +25,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'getschedule') {
         $stmt->execute();
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-       
+
         $data = [];
         foreach ($rows as $row) {
             $sem = (int)$row['semester'];
@@ -35,8 +35,8 @@ if (isset($_GET['action']) && $_GET['action'] === 'getschedule') {
             }
 
             $data[$sem][] = [
-                'day'    => (int)$row['day'],                    
-                'start'  => substr($row['starts_at'], 11, 5),     
+                'day'    => (int)$row['day'],
+                'start'  => substr($row['starts_at'], 11, 5),
                 'end'    => substr($row['ends_at'],   11, 5),
                 'course' => $row['coursename'],
                 'room'   => $row['roomcode']
@@ -63,7 +63,7 @@ if (!isset($_SESSION['role']) || !isset($_SESSION['user_id'])) {
 
 if ($_SESSION['role'] !== 'ADMIN') {
     // LoggedIn but not admin -> go to professor profile
-    header('Location: ./profesor_profile.php');
+    header('Location: ./professor_panel.php');
     exit;
 }
 
@@ -911,6 +911,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <label for="is_optional">Izborni predmet:</label>
                 <input type="checkbox" id="is_optional" name="is_optional">
 
+                <label for="lecture_hours">Broj časova predavanja (nedjeljno):</label>
+                <input type="number" id="lecture_hours" name="lecture_hours" min="0" max="10" value="0">
+
+                <label for="exercise_hours">Broj časova vježbi (nedjeljno):</label>
+                <input type="number" id="exercise_hours" name="exercise_hours" min="0" max="10" value="0">
+
+                // za ovu funkciju fali backend
                 <button type="submit">Sačuvaj</button>
             </form>
         </div>
@@ -923,8 +930,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <th>Semestar</th>
                 <th>Obavezni</th>
                 <th>Profesori</th>
+                <th>Predavanja / sedmično</th>
+                <th>Vježbe / sedmično</th>
                 <th>Status</th>
                 <th>Akcije</th>
+
+
             </tr>
             <?php
 
@@ -936,6 +947,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     echo "<td>" . htmlspecialchars($row['name']) . "</td>";
                     echo "<td>" . htmlspecialchars($row['code']) . "</td>";
                     echo "<td>" . htmlspecialchars($row['semester']) . "</td>";
+
+
                     // Obavezni (is_optional == 0 -> Obavezni = Da)
                     $is_mandatory = $row['is_optional'] ? 'Ne' : 'Da';
                     echo "<td>" . $is_mandatory . "</td>";
@@ -955,7 +968,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $profPayload[] = ['id' => (int)$a['professor_id'], 'full_name' => $a['full_name'], 'email' => $a['email'], 'is_assistant' => (int)$a['is_assistant']];
                     }
                     echo "<td>" . implode(', ', $profDisplay) . "</td>";
-
+                    echo "<td>fali backend</td>";
+                    echo "<td>fali backend</td>";
                     echo "<td>" . ($row['is_active'] ? 'Aktivan' : 'Neaktivan') . "</td>";
                     echo "<td>";
                     // Attach professors payload as JSON on the edit button
@@ -1281,7 +1295,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                    echo "<button id='generate-schedule' class='option-button'>Generiši raspored časova</button>";
                     echo "<div id='schedule-container' style='margin-top:20px; display:none'></div>";
-         
+
     ?>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -1384,6 +1398,18 @@ document.getElementById('generate-schedule').addEventListener('click', async () 
 
             table.appendChild(tbody);
             wrapper.appendChild(table);
+            // Dugme za PDF
+            const pdfBtn = document.createElement('button');
+            pdfBtn.textContent = 'Sačuvaj raspored kao PDF';
+            pdfBtn.className = 'action-button add-button';
+            pdfBtn.style.marginTop = '10px';
+
+            pdfBtn.addEventListener('click', () => {
+                saveTableAsPDF(table, sem);
+            });
+
+            wrapper.appendChild(pdfBtn);
+
             container.appendChild(wrapper);
         }
 
@@ -1393,15 +1419,126 @@ document.getElementById('generate-schedule').addEventListener('click', async () 
                 buildTableForSemester(parseInt(sem, 10), data[sem]);
             }
         });
+        const pdfAllBtn = document.createElement('button');
+        pdfAllBtn.textContent = 'Sačuvaj kompletan raspored kao PDF';
+        pdfAllBtn.className = 'action-button add-button';
+        pdfAllBtn.style.marginTop = '20px';
+
+        pdfAllBtn.addEventListener('click', saveFullScheduleAsPDF);
+
+        container.appendChild(pdfAllBtn);
 
     } catch (e) {
         alert('Greška pri generisanju rasporeda.');
     }
 });
 </script>
-                    
-            
- <?php
+                        <script>
+                            function saveFullScheduleAsPDF() {
+                                const { jsPDF } = window.jspdf;
+                                const doc = new jsPDF('landscape', 'pt', 'a4');
+
+                                let y = 40;
+
+                                doc.setFontSize(18);
+                                doc.text('Kompletan raspored časova', 40, y);
+                                y += 30;
+
+                                const tables = document.querySelectorAll('.schedule-table');
+
+                                tables.forEach((table, index) => {
+                                    if (index > 0) {
+                                        doc.addPage();
+                                        y = 40;
+                                    }
+
+                                    // Naslov semestra (uzimamo h3 iznad tabele)
+                                    const title = table.previousSibling?.textContent || `Semestar ${index + 1}`;
+                                    doc.setFontSize(14);
+                                    doc.text(title, 40, y);
+                                    y += 20;
+
+                                    const headers = [];
+                                    const rows = [];
+
+                                    table.querySelectorAll('thead th').forEach(th => {
+                                        headers.push(th.innerText);
+                                    });
+
+                                    table.querySelectorAll('tbody tr').forEach(tr => {
+                                        const row = [];
+                                        tr.querySelectorAll('td').forEach(td => {
+                                            row.push(td.innerText);
+                                        });
+                                        rows.push(row);
+                                    });
+
+                                    doc.autoTable({
+                                        head: [headers],
+                                        body: rows,
+                                        startY: y,
+                                        styles: {
+                                            fontSize: 9,
+                                            cellPadding: 4
+                                        },
+                                        headStyles: {
+                                            fillColor: [15, 23, 42] // tamna (kao tvoj UI)
+                                        }
+                                    });
+                                });
+
+                                doc.save('kompletan_raspored_casova.pdf');
+                            }
+                        </script>
+                        <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
+
+
+                        <script>
+                        function saveTableAsPDF(table, semester) {
+                            const { jsPDF } = window.jspdf;
+                            const doc = new jsPDF('landscape', 'pt', 'a4');
+
+                            doc.setFontSize(16);
+                            doc.text(`Raspored časova – ${semester}. semestar`, 40, 40);
+                            let startY = 70;
+
+                            const rows = [];
+                            const headers = [];
+
+                            // headeri
+                            table.querySelectorAll('thead th').forEach(th => {
+                                headers.push(th.innerText);
+                            });
+
+                            // redovi
+                            table.querySelectorAll('tbody tr').forEach(tr => {
+                                const row = [];
+                                tr.querySelectorAll('td').forEach(td => {
+                                    row.push(td.innerText);
+                                });
+                                rows.push(row);
+                            });
+
+                            doc.autoTable({
+                                head: [headers],
+                                body: rows,
+                                startY: startY,
+                                styles: {
+                                    fontSize: 9,
+                                    cellPadding: 4
+                                },
+                                headStyles: {
+                                    fillColor: [22, 101, 52] // tamno zelena
+                                }
+                            });
+
+                            doc.save(`raspored_semestar_${semester}.pdf`);
+                        }
+                    </script>
+
+
+
+                        <?php
     break;
 
       }
