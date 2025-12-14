@@ -80,7 +80,7 @@ document.addEventListener('DOMContentLoaded', function () {
     initialDate: '2024-01-08',
     initialView: 'timeGridWeek',
     firstDay: 1,
-    hiddenDays: [0],
+    hiddenDays: [0, 6],
     allDaySlot: false,
     slotDuration: '00:15:00',
     slotMinTime: '08:00:00',
