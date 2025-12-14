@@ -1,59 +1,272 @@
 document.addEventListener('DOMContentLoaded', function () {
-    // TABOVI
-    const tabs = document.querySelectorAll('.tabs .tab');
-    const tabContents = document.querySelectorAll('.tab-content');
+  // =========================================================
+  // EXISTING LOGIC (Tabs, Profile, Password)
+  // =========================================================
 
-    function showTab(tab) {
-        // Ukloni active sa svih tabova i sadržaja
-        tabs.forEach(t => t.classList.remove('active'));
-        tabContents.forEach(c => c.classList.remove('active'));
+  const tabs = document.querySelectorAll('.tabs .tab');
+  const tabContents = document.querySelectorAll('.tab-content');
 
-        // Aktiviraj kliknuti tab i njegov content
-        tab.classList.add('active');
-        const targetId = tab.getAttribute('data-tab');
-        const content = document.getElementById(targetId);
-        if (content) content.classList.add('active');
-    }
+  function showTab(tab) {
+    tabs.forEach(t => t.classList.remove('active'));
+    tabContents.forEach(c => c.classList.remove('active'));
+    tab.classList.add('active');
+    const targetId = tab.getAttribute('data-tab');
+    const content = document.getElementById(targetId);
+    if (content) content.classList.add('active');
+  }
 
-    // Prikaži prvi tab ako nijedan nije aktivan
-    if (!document.querySelector('.tab.active') && tabs.length > 0) {
-        showTab(tabs[0]);
-    }
+  if (tabs.length > 0) {
+    if (!document.querySelector('.tab.active')) showTab(tabs[0]);
+    tabs.forEach(tab => tab.addEventListener('click', () => showTab(tab)));
+  }
 
-    // Klik na tab
-    tabs.forEach(tab => {
-        tab.addEventListener('click', () => showTab(tab));
+  const toggleEditBtn = document.getElementById('toggleEditBtn');
+  const profileEdit = document.getElementById('profileEdit');
+  const profileView = document.getElementById('profileView');
+
+  if (toggleEditBtn && profileEdit && profileView) {
+    toggleEditBtn.addEventListener('click', () => {
+      const isHidden = profileEdit.classList.contains('d-none');
+      if (isHidden) {
+        profileEdit.classList.remove('d-none');
+        profileView.classList.add('d-none');
+        toggleEditBtn.textContent = 'Zatvori edit';
+      } else {
+        profileEdit.classList.add('d-none');
+        profileView.classList.remove('d-none');
+        toggleEditBtn.textContent = 'Edit profil';
+      }
+    });
+  }
+
+  const modalBtn = document.getElementById('openModalBtn');
+  if (modalBtn) {
+    modalBtn.addEventListener('click', () => {
+      const modalEl = document.getElementById('passwordModal');
+      if (modalEl) new bootstrap.Modal(modalEl).show();
+    });
+  }
+
+  // =========================================================
+  // AVAILABILITY (kalendar)
+  // =========================================================
+
+  let availabilityCalendar = null;
+  const existingAvailability = window.SERVER_EXISTING_AVAILABILITY || [];
+
+  const viewModeEl = document.getElementById('availability-view-mode');
+  const editModeEl = document.getElementById('availability-edit-mode');
+  const btnEnableEdit = document.getElementById('btn-enable-edit');
+  const btnCancelEdit = document.getElementById('cancel-edit');
+  const btnSave = document.getElementById('save-availability');
+  const outputList = document.getElementById('availability-output');
+
+  const BASE_DATE = '2024-01-08T00:00:00'; // ponedjeljak
+  const DAY_SHORT = ['Ned', 'Pon', 'Uto', 'Sri', 'Čet', 'Pet', 'Sub'];
+  const dayShort = (d) => DAY_SHORT[d] || '';
+  const formatTime = (d) => d.toTimeString().slice(0, 5);
+
+  const jsDayToDbWeekdayMonFri = (jsDay) => {
+    // JS: 0=Ned,1=Pon,... -> DB: 1=Pon..5=Pet
+    if (jsDay >= 1 && jsDay <= 5) return jsDay;
+    return null;
+  };
+
+  function initCalendar() {
+    const calendarEl = document.getElementById('availability-calendar');
+    if (!calendarEl) return;
+
+    availabilityCalendar = new FullCalendar.Calendar(calendarEl, {
+    initialDate: '2024-01-08',
+    initialView: 'timeGridWeek',
+    firstDay: 1,
+    hiddenDays: [0],
+    allDaySlot: false,
+    slotDuration: '00:15:00',
+    slotMinTime: '08:00:00',
+    slotMaxTime: '21:00:00',
+    selectable: true,
+    editable: true,
+    height: 'auto',
+    locale: 'en',
+
+    slotLabelFormat: {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    },
+
+    headerToolbar: { left: '', center: '', right: '' },
+
+    dayHeaderContent: function (arg) {
+        const days = [
+            'Nedjelja',
+            'Ponedjeljak',
+            'Utorak',
+            'Srijeda',
+            'Četvrtak',
+            'Petak',
+            'Subota'
+        ];
+        return { html: days[arg.date.getDay()] };
+    },
+
+      select(info) {
+        const events = availabilityCalendar.getEvents();
+        const overlaps = events.some(ev => info.start < ev.end && info.end > ev.start);
+        if (overlaps) {
+          availabilityCalendar.unselect();
+          return;
+        }
+
+        availabilityCalendar.addEvent({
+          start: info.start,
+          end: info.end,
+          title: 'Dostupan'
+        });
+
+        updateOutput();
+      },
+
+      eventClick(info) {
+        info.event.remove();
+        updateOutput();
+      },
+
+      eventDrop: updateOutput,
+      eventResize: updateOutput
     });
 
-    // EDIT PROFIL TOGGLE
-    const toggleEditBtn = document.getElementById('toggleEditBtn');
-    const profileEdit = document.getElementById('profileEdit');
-    const profileView = document.getElementById('profileView');
+    availabilityCalendar.render();
+  }
 
-    if (toggleEditBtn) {
-        toggleEditBtn.addEventListener('click', () => {
-            const isHidden = profileEdit.classList.contains('hidden');
-            if (isHidden) {
-                profileEdit.classList.remove('hidden');
-                profileView.classList.add('hidden');
-                toggleEditBtn.textContent = 'Zatvori edit';
-            } else {
-                profileEdit.classList.add('hidden');
-                profileView.classList.remove('hidden');
-                toggleEditBtn.textContent = 'Edit profil';
-            }
-        });
+  function loadEventsToCalendar() {
+    if (!availabilityCalendar) return;
+    availabilityCalendar.removeAllEvents();
+
+    const baseDate = new Date(BASE_DATE);
+
+    existingAvailability.forEach(slot => {
+      const dayIndex = parseInt(slot.weekday, 10); // 1..5
+      const offset = dayIndex - 1;
+      if (offset < 0 || offset > 6) return;
+
+      const startD = new Date(baseDate);
+      startD.setDate(baseDate.getDate() + offset);
+      const [sH, sM] = slot.start_time.split(':');
+      startD.setHours(+sH, +sM, 0, 0);
+
+      const endD = new Date(baseDate);
+      endD.setDate(baseDate.getDate() + offset);
+      const [eH, eM] = slot.end_time.split(':');
+      endD.setHours(+eH, +eM, 0, 0);
+
+      availabilityCalendar.addEvent({
+        start: startD,
+        end: endD,
+        title: 'Dostupan'
+      });
+    });
+
+    updateOutput();
+  }
+
+  function updateOutput() {
+    if (!outputList || !availabilityCalendar) return;
+    outputList.innerHTML = '';
+
+    const events = availabilityCalendar.getEvents().sort((a, b) => a.start - b.start);
+
+    if (events.length === 0) {
+      outputList.innerHTML = '<li class="text-muted">Nema označenih termina.</li>';
+      return;
     }
 
-    // PASSWORD MODAL
-    const modal = document.getElementById('passwordModal');
-    const openBtn = document.getElementById('openModalBtn');
-    const closeBtn = document.getElementById('closeModal');
+    events.forEach(ev => {
+      const li = document.createElement('li');
+      li.textContent = `${dayShort(ev.start.getDay())}: ${formatTime(ev.start)} – ${formatTime(ev.end)}`;
+      outputList.appendChild(li);
+    });
+  }
 
-    if (openBtn) openBtn.onclick = () => modal.style.display = 'block';
-    if (closeBtn) closeBtn.onclick = () => modal.style.display = 'none';
+  if (btnEnableEdit) {
+    btnEnableEdit.addEventListener('click', () => {
+      viewModeEl?.classList.add('d-none');
+      editModeEl?.classList.remove('d-none');
 
-    window.onclick = function(event) {
-        if (event.target === modal) modal.style.display = 'none';
-    };
+      if (!availabilityCalendar) initCalendar();
+      loadEventsToCalendar();
+
+      setTimeout(() => availabilityCalendar?.render(), 50);
+    });
+  }
+
+  if (btnCancelEdit) {
+    btnCancelEdit.addEventListener('click', () => {
+      if (confirm('Sve ne-sačuvane izmjene će biti izgubljene. Nastavi?')) {
+        editModeEl?.classList.add('d-none');
+        viewModeEl?.classList.remove('d-none');
+      }
+    });
+  }
+
+  if (btnSave) {
+    btnSave.addEventListener('click', () => {
+      if (!availabilityCalendar) return;
+
+      const events = availabilityCalendar.getEvents();
+      if (events.length === 0) {
+        alert('Niste unijeli nijedan termin! Molimo unesite bar jedan termin.');
+        return;
+      }
+
+      const dataToSend = events
+        .map(ev => {
+          const weekday = jsDayToDbWeekdayMonFri(ev.start.getDay());
+          if (!weekday) return null;
+
+          return {
+            day: weekday,
+            from: formatTime(ev.start),
+            to: formatTime(ev.end)
+          };
+        })
+        .filter(Boolean);
+
+      btnSave.disabled = true;
+      btnSave.textContent = 'Čuvanje...';
+
+      fetch('professor_panel.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'save_availability', data: dataToSend })
+      })
+        .then(r => r.json())
+        .then(res => {
+          if (res.success) {
+            alert('Uspješno sačuvani termini!');
+            window.location.reload();
+          } else {
+            alert('Greška pri čuvanju: ' + (res.error || 'Nepoznata greška'));
+            btnSave.disabled = false;
+            btnSave.textContent = 'Sačuvaj raspoloživost';
+          }
+        })
+        .catch(err => {
+          console.error(err);
+          alert('Došlo je do greške prilikom komunikacije sa serverom.');
+          btnSave.disabled = false;
+          btnSave.textContent = 'Sačuvaj raspoloživost';
+        });
+    });
+  }
+
+  const tabAvail = document.getElementById('tab-avail');
+  if (tabAvail) {
+    tabAvail.addEventListener('shown.bs.tab', () => {
+      if (availabilityCalendar && editModeEl && !editModeEl.classList.contains('d-none')) {
+        availabilityCalendar.render();
+      }
+    });
+  }
 });
