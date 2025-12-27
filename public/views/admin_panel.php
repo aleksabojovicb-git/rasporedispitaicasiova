@@ -50,6 +50,171 @@ if (isset($_GET['action']) && $_GET['action'] === 'getschedule') {
     exit;
 }
 
+if (isset($_GET['action']) && $_GET['action'] === 'generateschedule') {
+    // Očisti sve output buffere da osiguramo čist JSON
+    while (ob_get_level()) {
+        ob_end_clean();
+    }
+    
+    header('Content-Type: application/json; charset=utf-8');
+    
+    // Provera da li je korisnik ADMIN
+    if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'ADMIN') {
+        echo json_encode(['status' => 'error', 'message' => 'Nemate dozvolu za ovu akciju.']);
+        exit;
+    }
+
+    try {
+        // Postavi working directory na root projekta (gde se nalazi .env fajl)
+        $projectRoot = dirname(__DIR__, 2); // dva nivoa iznad public/views
+        if (!is_dir($projectRoot)) {
+            echo json_encode(['status' => 'error', 'message' => 'Root direktorijum projekta nije pronađen.']);
+            exit;
+        }
+        chdir($projectRoot);
+        
+        // Putanja do Java fajlova
+        $javaDir = $projectRoot . DIRECTORY_SEPARATOR . 'public' . DIRECTORY_SEPARATOR . 'java';
+        $jarFile = $javaDir . DIRECTORY_SEPARATOR . 'postgresql-42.7.8.jar';
+        
+        // Provera da li Java fajlovi postoje
+        if (!file_exists($javaDir . DIRECTORY_SEPARATOR . 'ValidacijaTermina.class')) {
+            echo json_encode(['status' => 'error', 'message' => 'Java klasa ValidacijaTermina nije pronađena u: ' . $javaDir]);
+            exit;
+        }
+        
+        if (!file_exists($jarFile)) {
+            echo json_encode(['status' => 'error', 'message' => 'PostgreSQL JDBC driver nije pronađen: ' . $jarFile]);
+            exit;
+        }
+        
+        // Formiranje Java komande
+        // Na Windows-u koristimo ; kao separator, na Linux/Mac koristimo :
+        $separator = (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') ? ';' : ':';
+        $classpath = $javaDir . $separator . $jarFile;
+        
+        // Komanda za pokretanje Java programa
+        // Koristimo shell_exec za bolje hvatanje output-a
+        $command = sprintf(
+            'java -cp "%s" ValidacijaTermina generisiKompletan 2>&1',
+            $classpath
+        );
+        
+        // Izvršavanje komande i hvatanje output-a
+        $outputString = shell_exec($command);
+        
+        // Ako shell_exec vrati null, pokušaj sa exec
+        if ($outputString === null) {
+            $output = [];
+            $returnCode = 0;
+            exec($command, $output, $returnCode);
+            $outputString = implode("\n", $output);
+            
+            if ($returnCode !== 0 && empty($outputString)) {
+                echo json_encode(['status' => 'error', 'message' => 'Java program nije mogao biti pokrenut. Proverite da li je Java instaliran i u PATH-u.']);
+                exit;
+            }
+        }
+        
+        // Provera da li imamo output
+        if (empty($outputString) || trim($outputString) === '') {
+            echo json_encode(['status' => 'error', 'message' => 'Java program nije vratio nikakav output.']);
+            exit;
+        }
+        
+        // Funkcija za očišćavanje UTF-8 stringa
+        function cleanUtf8($string) {
+            // Prvo pokušaj da konvertuješ u UTF-8
+            if (!mb_check_encoding($string, 'UTF-8')) {
+                // Ako nije validan UTF-8, pokušaj da konvertuješ
+                $string = mb_convert_encoding($string, 'UTF-8', mb_detect_encoding($string, 'UTF-8, ISO-8859-1, Windows-1252', true));
+            }
+            
+            // Ukloni nevalidne UTF-8 karaktere
+            $string = mb_convert_encoding($string, 'UTF-8', 'UTF-8');
+            
+            // Ukloni kontrolne karaktere osim novih linija i tabova
+            $string = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/u', '', $string);
+            
+            return $string;
+        }
+        
+        // Očisti output od nevalidnih UTF-8 karaktera
+        $outputString = cleanUtf8($outputString);
+        
+        // Parsiranje output-a da vidimo da li je uspešno
+        $isSuccess = false;
+        $message = '';
+        
+        if (stripos($outputString, 'OK:') !== false) {
+            $isSuccess = true;
+            // Izvuci poruku nakon "OK:"
+            $okPos = stripos($outputString, 'OK:');
+            $message = trim(substr($outputString, $okPos + 3));
+            // Uzmi samo prvu liniju poruke
+            $lines = explode("\n", $message);
+            $message = trim($lines[0]);
+        } elseif (stripos($outputString, 'WARNING:') !== false) {
+            $isSuccess = true; // Warning se smatra delimičnim uspehom
+            $warningPos = stripos($outputString, 'WARNING:');
+            $message = trim(substr($outputString, $warningPos + 8));
+            $lines = explode("\n", $message);
+            $message = trim($lines[0]);
+        } elseif (stripos($outputString, 'ERROR:') !== false) {
+            $errorPos = stripos($outputString, 'ERROR:');
+            $message = trim(substr($outputString, $errorPos + 6));
+            $lines = explode("\n", $message);
+            $message = trim($lines[0]);
+        } else {
+            // Ako nema eksplicitne poruke, koristimo ceo output (ali ograničimo dužinu)
+            $message = !empty($outputString) ? trim(substr($outputString, 0, 500)) : 'Raspored je generisan.';
+            $isSuccess = true; // Pretpostavljamo uspeh ako nema eksplicitne greške
+        }
+        
+        // Očisti message od potencijalnih JSON problematičnih karaktera
+        $message = cleanUtf8($message);
+        $message = str_replace(["\r", "\n"], " ", $message);
+        $message = preg_replace('/\s+/', ' ', $message);
+        $message = trim($message);
+        
+        $response = [
+            'status' => $isSuccess ? 'success' : 'error',
+            'message' => $message
+        ];
+        
+        // Dodaj output samo ako nije previše dug (da ne pravi probleme sa JSON-om)
+        if (strlen($outputString) < 10000) {
+            $cleanOutput = cleanUtf8($outputString);
+            $response['output'] = $cleanOutput;
+        }
+        
+        // Koristi JSON_INVALID_UTF8_IGNORE flag ako je dostupan (PHP 7.2+)
+        $jsonFlags = JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES;
+        if (defined('JSON_INVALID_UTF8_IGNORE')) {
+            $jsonFlags |= JSON_INVALID_UTF8_IGNORE;
+        }
+        
+        $jsonResponse = json_encode($response, $jsonFlags);
+        
+        if ($jsonResponse === false) {
+            // Ako i dalje ima problema, pokušaj da očistiš sve ne-ASCII karaktere iz poruke
+            $safeMessage = preg_replace('/[^\x20-\x7E]/u', '', $message);
+            if (empty($safeMessage)) {
+                $safeMessage = 'Raspored je generisan (neki karakteri su uklonjeni zbog enkodiranja).';
+            }
+            echo json_encode(['status' => $isSuccess ? 'success' : 'error', 'message' => $safeMessage], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        } else {
+            echo $jsonResponse;
+        }
+        
+    } catch (Exception $e) {
+        echo json_encode(['status' => 'error', 'message' => 'Greška: ' . $e->getMessage()]);
+    } catch (Error $e) {
+        echo json_encode(['status' => 'error', 'message' => 'Fatalna greška: ' . $e->getMessage()]);
+    }
+    exit;
+}
+
 
 
 
@@ -1243,6 +1408,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         echo "<p>Odaberite opciju ispod da generišete raspored časova:</p>";
 
                    echo "<button id='generate-schedule' class='option-button'>Generiši raspored časova</button>";
+                    echo "<div id='schedule-status' style='margin-top:20px; display:none'></div>";
                     echo "<div id='schedule-container' style='margin-top:20px; display:none'></div>";
 
     ?>
@@ -1252,16 +1418,70 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <script>
 const days = ['Ponedjeljak', 'Utorak', 'Srijeda', 'Četvrtak', 'Petak'];
 
+// Event listener za generisanje rasporeda (Java program)
 document.getElementById('generate-schedule').addEventListener('click', async () => {
+    const button = document.getElementById('generate-schedule');
+    const statusDiv = document.getElementById('schedule-status');
     const container = document.getElementById('schedule-container');
-    container.innerHTML = '';           // očisti sve
-    container.style.display = 'block';
+    
+    // Disable dugme i prikaži loading stanje
+    button.disabled = true;
+    button.textContent = 'Generiše se...';
+    button.classList.add('loading');
+    
+    statusDiv.style.display = 'block';
+    statusDiv.innerHTML = '<p style="color: #3b82f6;">Generisanje rasporeda u toku, molimo sačekajte...</p>';
+    container.style.display = 'none';
+    container.innerHTML = '';
 
     try {
+        // Pozovi Java program za generisanje rasporeda
+        const generateRes = await fetch('admin_panel.php?action=generateschedule');
+        
+        // Provera da li je odgovor validan
+        if (!generateRes.ok) {
+            throw new Error('HTTP greška: ' + generateRes.status + ' ' + generateRes.statusText);
+        }
+        
+        // Provera da li je odgovor JSON
+        const contentType = generateRes.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+            const text = await generateRes.text();
+            throw new Error('Server nije vratio JSON. Odgovor: ' + text.substring(0, 200));
+        }
+        
+        let generateData;
+        try {
+            const responseText = await generateRes.text();
+            if (!responseText || responseText.trim() === '') {
+                throw new Error('Server je vratio prazan odgovor');
+            }
+            generateData = JSON.parse(responseText);
+        } catch (jsonError) {
+            throw new Error('Greška pri parsiranju JSON odgovora: ' + jsonError.message);
+        }
+        
+        if (generateData.status === 'error') {
+            statusDiv.innerHTML = '<p style="color: #ef4444; padding: 12px; background: rgba(239, 68, 68, 0.1); border-radius: 8px; border: 1px solid #ef4444;">Greška: ' + generateData.message + '</p>';
+            button.disabled = false;
+            button.textContent = 'Generiši raspored časova';
+            button.classList.remove('loading');
+            return;
+        }
+        
+        // Ako je uspešno generisano, prikaži poruku o uspehu
+        statusDiv.innerHTML = '<p style="color: #22c55e; padding: 12px; background: rgba(34, 197, 94, 0.1); border-radius: 8px; border: 1px solid #22c55e;">✓ ' + generateData.message + '</p>';
+        
+        // Sada učitaj i prikaži generisani raspored
+        container.style.display = 'block';
+        
         const res = await fetch('admin_panel.php?action=getschedule');
         const data = await res.json();
         if (data.error) {
-            alert(data.error);
+            statusDiv.innerHTML += '<p style="color: #ef4444; margin-top: 10px;">Greška pri učitavanju rasporeda: ' + data.error + '</p>';
+            button.disabled = false;
+            button.textContent = 'Generiši raspored časova';
+            button.classList.remove('loading');
             return;
         }
 
@@ -1376,9 +1596,17 @@ document.getElementById('generate-schedule').addEventListener('click', async () 
         pdfAllBtn.addEventListener('click', saveFullScheduleAsPDF);
 
         container.appendChild(pdfAllBtn);
+        
+        // Vrati dugme u normalno stanje
+        button.disabled = false;
+        button.textContent = 'Generiši raspored časova';
+        button.classList.remove('loading');
 
     } catch (e) {
-        alert('Greška pri generisanju rasporeda.');
+        statusDiv.innerHTML = '<p style="color: #ef4444; padding: 12px; background: rgba(239, 68, 68, 0.1); border-radius: 8px; border: 1px solid #ef4444;">Greška pri generisanju rasporeda: ' + e.message + '</p>';
+        button.disabled = false;
+        button.textContent = 'Generiši raspored časova';
+        button.classList.remove('loading');
     }
 });
 </script>
