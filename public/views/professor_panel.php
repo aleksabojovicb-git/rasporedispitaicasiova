@@ -252,6 +252,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <button type="submit" class="btn btn-primary">Sačuvaj izmjene</button>
                 </form>
                 <button id="openModalBtn" class="btn btn-warning mt-2">Promijeni password</button>
+                <a href="forgot_password.php" class="btn btn-link mt-2">Zaboravili ste password?</a>
             </div>
         </div>
 
