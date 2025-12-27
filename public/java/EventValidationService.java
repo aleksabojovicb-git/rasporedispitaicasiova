@@ -1,5 +1,4 @@
 import java.sql.*;
-import java.sql.Date;
 import java.time.*;
 import java.time.format.DateTimeParseException;
 import java.time.temporal.TemporalAdjusters;
@@ -36,7 +35,11 @@ public class EventValidationService {
     }
 
     private void loadCourses() throws SQLException {
-        String query = "SELECT id, name, semester, code FROM course";
+        String query = "SELECT id, name, semester, code, " +
+                "COALESCE(lectures_per_week, 2) as lectures_per_week, " +
+                "COALESCE(exercises_per_week, 2) as exercises_per_week, " +
+                "COALESCE(labs_per_week, 0) as labs_per_week " +
+                "FROM course";
         try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery(query)) {
             int count = 0;
             while (rs.next()) {
@@ -45,10 +48,13 @@ public class EventValidationService {
                 course.name = rs.getString("name");
                 course.semester = rs.getInt("semester");
                 course.code = rs.getString("code");
+                course.lecturesPerWeek = rs.getInt("lectures_per_week");
+                course.exercisesPerWeek = rs.getInt("exercises_per_week");
+                course.labsPerWeek = rs.getInt("labs_per_week");
                 courses.put(course.idCourse, course);
                 count++;
             }
-            System.out.println("Loaded courses: " + count);
+            System.out.println("Loaded courses: " + count + " (with P+V+L workload)");
         }
     }
 
@@ -169,7 +175,7 @@ public class EventValidationService {
     }
 
     private void saveToAcademicEvent(int scheduleId, int courseId, int professorId, String day,
-            LocalDateTime startsAt, LocalDateTime endsAt, int roomId) throws SQLException {
+            LocalDateTime startsAt, LocalDateTime endsAt, int roomId, String typeEnum) throws SQLException {
         String insert = "INSERT INTO academic_event " +
                 "(course_id, created_by_professor, type_enum, starts_at, ends_at, " +
                 "is_online, room_id, notes, is_published, locked_by_admin, schedule_id, day) " +
@@ -177,7 +183,7 @@ public class EventValidationService {
         try (PreparedStatement pstmt = conn.prepareStatement(insert)) {
             pstmt.setInt(1, courseId);
             pstmt.setLong(2, professorId);
-            pstmt.setString(3, "LECTURE");
+            pstmt.setString(3, typeEnum);
             pstmt.setTimestamp(4, Timestamp.valueOf(startsAt));
             pstmt.setTimestamp(5, Timestamp.valueOf(endsAt));
             pstmt.setBoolean(6, false);
@@ -626,6 +632,7 @@ public class EventValidationService {
     public String generateCompleteSchedule() {
         try {
             System.out.println("=== STARTING AUTOMATIC COMPLETE SCHEDULE GENERATION ===\n");
+            System.out.println("Using workload-based scheduling (P+V+L hours)\n");
 
             int scheduleId = generateNewScheduleId();
             System.out.println("Generated schedule_id: " + scheduleId + "\n");
@@ -633,45 +640,39 @@ public class EventValidationService {
             Map<Integer, Double> professorFlexibility = analyzeProfessorFlexibility();
             List<CoursePriority> priorities = determinePriorities(professorFlexibility);
 
-            System.out.println("--- COURSE PRIORITIES ---");
+            System.out.println("--- COURSE PRIORITIES (with workload) ---");
             for (CoursePriority cp : priorities) {
-                System.out.printf("Course: %-30s | Priority: %.2f\n",
-                        cp.course.name, cp.priority);
+                Course c = cp.course;
+                System.out.printf("Course: %-25s | P=%d V=%d L=%d (total=%d hrs) | Priority: %.2f\n",
+                        c.name, c.lecturesPerWeek, c.exercisesPerWeek, c.labsPerWeek,
+                        c.getTotalHoursPerWeek(), cp.priority);
             }
 
-            int successfulLectures = 0;
-            int partialLectures = 0;
-            int failedLectures = 0;
-            int successfulExercises = 0;
-            int partialExercises = 0;
-            int failedExercises = 0;
+            int successfulCourses = 0;
+            int partialCourses = 0;
+            int failedCourses = 0;
 
             StringBuilder details = new StringBuilder();
             details.append("\n\n=== GENERATION DETAILS ===\n");
 
             for (CoursePriority cp : priorities) {
                 Course course = cp.course;
-                details.append("\n--- ").append(course.name).append(" (ID: ").append(course.idCourse)
-                        .append(") ---\n");
+                details.append("\n--- ").append(course.name)
+                        .append(" (ID: ").append(course.idCourse)
+                        .append(") P=").append(course.lecturesPerWeek)
+                        .append(" V=").append(course.exercisesPerWeek)
+                        .append(" L=").append(course.labsPerWeek)
+                        .append(" ---\n");
 
-                String lectureResult = generateLectureSchedule(course.idCourse, scheduleId);
-                details.append(" [LECTURES] ").append(lectureResult).append("\n");
-                if (lectureResult.startsWith("OK")) {
-                    successfulLectures++;
-                } else if (lectureResult.startsWith("WARNING")) {
-                    partialLectures++;
-                } else {
-                    failedLectures++;
-                }
+                String result = generateCourseSchedule(course.idCourse, scheduleId);
+                details.append(" [SCHEDULE] ").append(result).append("\n");
 
-                String exerciseResult = generateExerciseSchedule(course.idCourse, scheduleId);
-                details.append(" [EXERCISES] ").append(exerciseResult).append("\n");
-                if (exerciseResult.startsWith("OK")) {
-                    successfulExercises++;
-                } else if (exerciseResult.startsWith("WARNING")) {
-                    partialExercises++;
+                if (result.startsWith("OK")) {
+                    successfulCourses++;
+                } else if (result.startsWith("WARNING")) {
+                    partialCourses++;
                 } else {
-                    failedExercises++;
+                    failedCourses++;
                 }
             }
 
@@ -680,24 +681,19 @@ public class EventValidationService {
             String summary = String.format(
                     "\n=== SCHEDULE GENERATION COMPLETED ===\n" +
                             "SCHEDULE_ID: %d\n" +
-                            "\nLECTURES:\n" +
-                            " ✓ Successful: %d\n" +
-                            " ⚠ Partial: %d\n" +
-                            " ✗ Failed: %d\n" +
-                            "\nEXERCISES:\n" +
+                            "\nCOURSES:\n" +
                             " ✓ Successful: %d\n" +
                             " ⚠ Partial: %d\n" +
                             " ✗ Failed: %d\n" +
                             "\nTOTAL COURSES PROCESSED: %d\n" +
                             "================================================",
-                    scheduleId, successfulLectures, partialLectures, failedLectures,
-                    successfulExercises, partialExercises, failedExercises, priorities.size());
+                    scheduleId, successfulCourses, partialCourses, failedCourses, priorities.size());
 
             System.out.println(summary);
 
             loadAcademicEvents();
 
-            if (failedLectures > 0 || failedExercises > 0) {
+            if (failedCourses > 0) {
                 return "WARNING: Schedule partially generated (schedule_id: " + scheduleId +
                         "). Check details above.";
             }
@@ -707,6 +703,362 @@ public class EventValidationService {
             e.printStackTrace();
             return "ERROR: " + e.getMessage();
         }
+    }
+
+    /**
+     * Generiše raspored za jedan predmet poštujući pravila:
+     * - Ukupno P+V+L mora biti 4-6 sati
+     * - 4 sata: preferira dijeljenje na 2 dana (P dan1, V+L dan2), ali može i u 1
+     * bloku
+     * - 5-6 sati: MORA podijeljeno na 2 dana (P dan1, V+L dan2)
+     * - Maximum 4 sata u jednom bloku
+     * - Predmet se pojavljuje max 2 puta sedmično
+     */
+    private String generateCourseSchedule(int courseId, int scheduleId) {
+        try {
+            Course course = courses.get(courseId);
+            if (course == null)
+                return "ERROR: Course does not exist";
+
+            int totalHours = course.getTotalHoursPerWeek();
+            if (totalHours < 4 || totalHours > 6) {
+                return "WARNING: Course total hours should be 4-6, got " + totalHours + ". Skipping.";
+            }
+
+            // Pronađi profesora za predavanja
+            int lectureProfessorId = findLectureProfessor(courseId);
+            if (lectureProfessorId == 0) {
+                return "ERROR: No professor assigned for lectures";
+            }
+
+            // Pronađi asistenta za vježbe/lab (ili koristi profesora)
+            int exerciseProfessorId = findExerciseProfessor(courseId);
+            if (exerciseProfessorId == 0) {
+                exerciseProfessorId = lectureProfessorId;
+            }
+
+            // Pronađi dostupne dane za profesora
+            List<String> availableDays = getPreferredDays(lectureProfessorId);
+            if (availableDays.size() < 2) {
+                // Dodaj defaultne dane ako profesor nema dovoljno preferenci
+                List<String> defaultDays = Arrays.asList("ponedeljak", "utorak", "srijeda", "cetvrtak", "petak");
+                for (String d : defaultDays) {
+                    if (!availableDays.contains(d))
+                        availableDays.add(d);
+                }
+            }
+
+            // Pronađi odgovarajuće sale
+            List<Room> lectureRooms = getSuitableRooms(false, 30);
+            List<Room> labRooms = getSuitableRooms(true, 20);
+
+            if (lectureRooms.isEmpty()) {
+                return "ERROR: No suitable rooms for lectures (need capacity >= 30)";
+            }
+
+            // Ako ima lab sate ali nema kompjuterskih sala, koristi obične
+            if (course.labsPerWeek > 0 && labRooms.isEmpty()) {
+                labRooms = lectureRooms;
+            }
+
+            int addedTerms = 0;
+
+            // Preferira dijeljenje na 2 dana (uvijek za 5-6 sati, preferirano za 4)
+            addedTerms = scheduleAsTwoDays(scheduleId, course,
+                    lectureProfessorId, exerciseProfessorId,
+                    availableDays, lectureRooms, labRooms);
+
+            // Ako nije uspjelo i ima tačno 4 sata, pokušaj kao jedan blok
+            if (addedTerms == 0 && totalHours == 4) {
+                addedTerms = scheduleAsOneBlock(scheduleId, course, lectureProfessorId,
+                        availableDays, lectureRooms);
+            }
+
+            if (addedTerms > 0) {
+                return "OK: Course '" + course.name + "' scheduled (" + totalHours +
+                        " hours in " + (addedTerms == 1 ? "1 block" : "2 days") + ")";
+            }
+
+            return "ERROR: Could not find suitable time slots for " + course.name;
+
+        } catch (Exception e) {
+            return "ERROR: " + e.getMessage();
+        }
+    }
+
+    /**
+     * Raspoređuje predmet na 2 dana: Predavanja dan1, Vježbe+Lab dan2
+     */
+    private int scheduleAsTwoDays(int scheduleId, Course course,
+            int lectureProfId, int exerciseProfId,
+            List<String> days, List<Room> lectureRooms, List<Room> labRooms) throws SQLException {
+
+        String lectureDay = null;
+        String exerciseDay = null;
+        Room lectureRoom = null;
+        Room exerciseRoom = null;
+        LocalTime lectureStart = null;
+        LocalTime exerciseStart = null;
+
+        // Dan 1: Pronađi slobodan blok za predavanja
+        for (String day : days) {
+            for (Room room : lectureRooms) {
+                for (int hour = 8; hour <= 17 - course.lecturesPerWeek; hour++) {
+                    LocalTime start = LocalTime.of(hour, 0);
+                    LocalTime end = start.plusHours(course.lecturesPerWeek);
+
+                    if (!hasConflictForBlock(day, room.idRoom, lectureProfId, start, end)) {
+                        lectureDay = day;
+                        lectureRoom = room;
+                        lectureStart = start;
+                        break;
+                    }
+                }
+                if (lectureDay != null)
+                    break;
+            }
+            if (lectureDay != null)
+                break;
+        }
+
+        if (lectureDay == null)
+            return 0;
+
+        // Dan 2: Pronađi slobodan blok za Vježbe + Lab (mora biti drugi dan)
+        int exerciseHours = course.exercisesPerWeek + course.labsPerWeek;
+        List<Room> exerciseRoomList = course.labsPerWeek > 0 ? labRooms : lectureRooms;
+
+        for (String day : days) {
+            if (day.equals(lectureDay))
+                continue; // Mora biti drugi dan
+
+            for (Room room : exerciseRoomList) {
+                for (int hour = 8; hour <= 17 - exerciseHours; hour++) {
+                    LocalTime start = LocalTime.of(hour, 0);
+                    LocalTime end = start.plusHours(exerciseHours);
+
+                    if (!hasConflictForBlock(day, room.idRoom, exerciseProfId, start, end)) {
+                        exerciseDay = day;
+                        exerciseRoom = room;
+                        exerciseStart = start;
+                        break;
+                    }
+                }
+                if (exerciseDay != null)
+                    break;
+            }
+            if (exerciseDay != null)
+                break;
+        }
+
+        if (exerciseDay == null)
+            return 0;
+
+        // Sačuvaj termine za predavanja (svaki sat posebno)
+        LocalTime currentTime = lectureStart;
+        for (int i = 0; i < course.lecturesPerWeek; i++) {
+            LocalDateTime startsAt = convertDayToDate(lectureDay, currentTime);
+            LocalDateTime endsAt = startsAt.plusHours(1);
+            saveToAcademicEvent(scheduleId, course.idCourse, lectureProfId,
+                    lectureDay, startsAt, endsAt, lectureRoom.idRoom, "LECTURE");
+            addEventToCache(course.idCourse, lectureRoom.idRoom, lectureProfId,
+                    lectureDay, currentTime, currentTime.plusHours(1), "LECTURE", scheduleId);
+            currentTime = currentTime.plusHours(1);
+        }
+
+        // Sačuvaj termine za vježbe
+        currentTime = exerciseStart;
+        for (int i = 0; i < course.exercisesPerWeek; i++) {
+            LocalDateTime startsAt = convertDayToDate(exerciseDay, currentTime);
+            LocalDateTime endsAt = startsAt.plusHours(1);
+            saveToAcademicEvent(scheduleId, course.idCourse, exerciseProfId,
+                    exerciseDay, startsAt, endsAt, exerciseRoom.idRoom, "EXERCISE");
+            addEventToCache(course.idCourse, exerciseRoom.idRoom, exerciseProfId,
+                    exerciseDay, currentTime, currentTime.plusHours(1), "EXERCISE", scheduleId);
+            currentTime = currentTime.plusHours(1);
+        }
+
+        // Sačuvaj termine za lab
+        for (int i = 0; i < course.labsPerWeek; i++) {
+            LocalDateTime startsAt = convertDayToDate(exerciseDay, currentTime);
+            LocalDateTime endsAt = startsAt.plusHours(1);
+            saveToAcademicEvent(scheduleId, course.idCourse, exerciseProfId,
+                    exerciseDay, startsAt, endsAt, exerciseRoom.idRoom, "LAB");
+            addEventToCache(course.idCourse, exerciseRoom.idRoom, exerciseProfId,
+                    exerciseDay, currentTime, currentTime.plusHours(1), "LAB", scheduleId);
+            currentTime = currentTime.plusHours(1);
+        }
+
+        System.out.println("  -> Scheduled: " + course.name + " - " +
+                course.lecturesPerWeek + "P on " + lectureDay + " @ " + lectureStart +
+                ", " + (course.exercisesPerWeek + course.labsPerWeek) + "(V+L) on " +
+                exerciseDay + " @ " + exerciseStart);
+
+        return 2; // Uspješno na 2 dana
+    }
+
+    /**
+     * Raspoređuje predmet kao jedan blok (samo za 4 sata ako 2-dnevni raspored nije
+     * uspio)
+     */
+    private int scheduleAsOneBlock(int scheduleId, Course course, int professorId,
+            List<String> days, List<Room> rooms) throws SQLException {
+
+        int totalHours = course.getTotalHoursPerWeek();
+
+        for (String day : days) {
+            for (Room room : rooms) {
+                for (int hour = 8; hour <= 17 - totalHours; hour++) {
+                    LocalTime startTime = LocalTime.of(hour, 0);
+                    LocalTime endTime = startTime.plusHours(totalHours);
+
+                    if (!hasConflictForBlock(day, room.idRoom, professorId, startTime, endTime)) {
+                        // Kreiraj termine za svaki sat pojedinačno
+                        LocalTime currentTime = startTime;
+
+                        // Predavanja
+                        for (int i = 0; i < course.lecturesPerWeek; i++) {
+                            LocalDateTime startsAt = convertDayToDate(day, currentTime);
+                            LocalDateTime endsAt = startsAt.plusHours(1);
+                            saveToAcademicEvent(scheduleId, course.idCourse, professorId,
+                                    day, startsAt, endsAt, room.idRoom, "LECTURE");
+                            addEventToCache(course.idCourse, room.idRoom, professorId,
+                                    day, currentTime, currentTime.plusHours(1), "LECTURE", scheduleId);
+                            currentTime = currentTime.plusHours(1);
+                        }
+
+                        // Vježbe
+                        for (int i = 0; i < course.exercisesPerWeek; i++) {
+                            LocalDateTime startsAt = convertDayToDate(day, currentTime);
+                            LocalDateTime endsAt = startsAt.plusHours(1);
+                            saveToAcademicEvent(scheduleId, course.idCourse, professorId,
+                                    day, startsAt, endsAt, room.idRoom, "EXERCISE");
+                            addEventToCache(course.idCourse, room.idRoom, professorId,
+                                    day, currentTime, currentTime.plusHours(1), "EXERCISE", scheduleId);
+                            currentTime = currentTime.plusHours(1);
+                        }
+
+                        // Lab
+                        for (int i = 0; i < course.labsPerWeek; i++) {
+                            LocalDateTime startsAt = convertDayToDate(day, currentTime);
+                            LocalDateTime endsAt = startsAt.plusHours(1);
+                            saveToAcademicEvent(scheduleId, course.idCourse, professorId,
+                                    day, startsAt, endsAt, room.idRoom, "LAB");
+                            addEventToCache(course.idCourse, room.idRoom, professorId,
+                                    day, currentTime, currentTime.plusHours(1), "LAB", scheduleId);
+                            currentTime = currentTime.plusHours(1);
+                        }
+
+                        System.out.println("  -> Scheduled: " + course.name + " - " +
+                                totalHours + " hours in 1 block on " + day + " @ " + startTime);
+                        return 1; // Uspješno kao 1 blok
+                    }
+                }
+            }
+        }
+        return 0;
+    }
+
+    /**
+     * Provjerava konflikt za cijeli blok termina (od start do end)
+     */
+    private boolean hasConflictForBlock(String day, int roomId, int professorId,
+            LocalTime startTime, LocalTime endTime) {
+        // Provjeri svaki sat u bloku
+        LocalTime current = startTime;
+        while (current.isBefore(endTime)) {
+            if (hasConflict(day, null, roomId, professorId, current, current.plusHours(1))) {
+                return true;
+            }
+            current = current.plusHours(1);
+        }
+        return false;
+    }
+
+    /**
+     * Helper za dodavanje eventa u memorijski keš
+     */
+    private void addEventToCache(int courseId, int roomId, int profId,
+            String day, LocalTime start, LocalTime end, String type, int scheduleId) {
+        AcademicEvent newEvent = new AcademicEvent();
+        newEvent.idCourse = courseId;
+        newEvent.idRoom = roomId;
+        newEvent.idProfessor = profId;
+        newEvent.day = day;
+        newEvent.startTime = start;
+        newEvent.endTime = end;
+        newEvent.typeEnum = type;
+        newEvent.scheduleId = scheduleId;
+        newEvent.date = convertDayToDate(day, start).toLocalDate();
+        academicEvents.put(newEvent.hashCode(), newEvent);
+    }
+
+    /**
+     * Vraća listu preferiranih dana za profesora
+     */
+    private List<String> getPreferredDays(int professorId) {
+        List<String> days = new ArrayList<>();
+        try {
+            String query = "SELECT DISTINCT weekday FROM professor_availability WHERE professor_id = ?";
+            try (PreparedStatement ps = conn.prepareStatement(query)) {
+                ps.setInt(1, professorId);
+                try (ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) {
+                        String weekday = rs.getString("weekday");
+                        if (weekday != null)
+                            days.add(weekday);
+                    }
+                }
+            }
+        } catch (SQLException e) {
+            System.err.println("Error getting preferred days: " + e.getMessage());
+        }
+        return days;
+    }
+
+    /**
+     * Vraća listu odgovarajućih sala
+     */
+    private List<Room> getSuitableRooms(boolean needsComputerLab, int minCapacity) {
+        List<Room> result = new ArrayList<>();
+        for (Room room : rooms.values()) {
+            if (room.isActive && room.capacity >= minCapacity) {
+                if (!needsComputerLab || room.isComputerLab) {
+                    result.add(room);
+                }
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Pronalazi profesora za predavanja
+     */
+    private int findLectureProfessor(int courseId) throws SQLException {
+        String query = "SELECT professor_id FROM course_professor WHERE course_id = ? AND is_assistant = false";
+        try (PreparedStatement ps = conn.prepareStatement(query)) {
+            ps.setInt(1, courseId);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next())
+                    return rs.getInt("professor_id");
+            }
+        }
+        return 0;
+    }
+
+    /**
+     * Pronalazi asistenta za vježbe
+     */
+    private int findExerciseProfessor(int courseId) throws SQLException {
+        String query = "SELECT professor_id FROM course_professor WHERE course_id = ? AND is_assistant = true";
+        try (PreparedStatement ps = conn.prepareStatement(query)) {
+            ps.setInt(1, courseId);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next())
+                    return rs.getInt("professor_id");
+            }
+        }
+        return 0;
     }
 
     private Map<Integer, Double> analyzeProfessorFlexibility() {
@@ -909,7 +1261,8 @@ public class EventValidationService {
                         LocalDateTime startsAt = convertDayToDate(day, startTime);
                         LocalDateTime endsAt = convertDayToDate(day, endTime);
 
-                        saveToAcademicEvent(scheduleId, courseId, professorId, day, startsAt, endsAt, room.idRoom);
+                        saveToAcademicEvent(scheduleId, courseId, professorId, day, startsAt, endsAt, room.idRoom,
+                                "LECTURE");
 
                         AcademicEvent newEvent = new AcademicEvent();
                         newEvent.idCourse = courseId;
@@ -1027,7 +1380,8 @@ public class EventValidationService {
                         LocalDateTime startsAt = convertDayToDate(day, startTime);
                         LocalDateTime endsAt = convertDayToDate(day, endTime);
 
-                        saveToAcademicEvent(scheduleId, courseId, professorId, day, startsAt, endsAt, room.idRoom);
+                        saveToAcademicEvent(scheduleId, courseId, professorId, day, startsAt, endsAt, room.idRoom,
+                                "EXERCISE");
 
                         AcademicEvent newEvent = new AcademicEvent();
                         newEvent.idCourse = courseId;
@@ -1108,6 +1462,19 @@ class Course {
     public String name;
     public int semester;
     public String code;
+    public int lecturesPerWeek; // broj sati predavanja (P)
+    public int exercisesPerWeek; // broj sati vježbi (V)
+    public int labsPerWeek; // broj sati laboratorijskih vježbi (L)
+
+    // Vraća ukupan broj sati sedmično (P+V+L)
+    public int getTotalHoursPerWeek() {
+        return lecturesPerWeek + exercisesPerWeek + labsPerWeek;
+    }
+
+    // Da li zahtijeva dijeljenje na 2 dana (> 4 sata)
+    public boolean requiresSplit() {
+        return getTotalHoursPerWeek() > 4;
+    }
 }
 
 class Professor {
