@@ -103,6 +103,52 @@ if ($inputData && isset($inputData['action']) && $inputData['action'] === 'save_
     exit; // Prekida dalje izvršavanje jer je ovo AJAX response
 }
 
+// 2) Obrada JSON POST zahtjeva za čuvanje sedmica kolokvijuma
+if ($inputData && isset($inputData['action']) && $inputData['action'] === 'save_colloquium_weeks') {
+    header('Content-Type: application/json');
+    
+    $colloquiumData = $inputData['data'] ?? [];
+    
+    if (!is_array($colloquiumData) || count($colloquiumData) === 0) {
+        echo json_encode(['success' => false, 'error' => 'Nema podataka za čuvanje']);
+        exit;
+    }
+
+    try {
+        $pdo->beginTransaction();
+
+        $stmt = $pdo->prepare("
+            UPDATE course 
+            SET colloquium_1_week = ?, colloquium_2_week = ? 
+            WHERE id = ?
+        ");
+
+        $updated = 0;
+
+        foreach ($colloquiumData as $item) {
+            $courseId = (int)($item['course_id'] ?? 0);
+            $col1Week = $item['colloquium_1_week'];
+            $col2Week = $item['colloquium_2_week'];
+            
+            if ($courseId === 0) continue;
+            
+            // Convert to null or int (1 means "ne odrzava se")
+            $col1Value = ($col1Week === '' || $col1Week === null) ? null : (int)$col1Week;
+            $col2Value = ($col2Week === '' || $col2Week === null) ? null : (int)$col2Week;
+            
+            $stmt->execute([$col1Value, $col2Value, $courseId]);
+            $updated++;
+        }
+
+        $pdo->commit();
+        echo json_encode(['success' => true, 'count' => $updated]);
+    } catch (PDOException $e) {
+        $pdo->rollBack();
+        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    }
+    exit;
+}
+
 // 2) Učitavanje postojećih termina za prikaz
 $stmt = $pdo->prepare("
     SELECT weekday, start_time, end_time
@@ -299,44 +345,79 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <!-- COURSES -->
         <div class="tab-pane fade" id="coursesTab">
             <h3>Moji predmeti i izbor nedjelje kolokvijuma</h3>
-            <form id="examWeekForm" method="post">
-                <input type="hidden" name="action" value="save_exam_weeks">
-                <table class="table table-bordered">
-                    <thead><tr><th>Predmet</th><th>Semestar</th><th>Uloga</th><th>Nedjelja kolokvijuma</th></tr></thead>
-                    <tbody>
+            <div id="colloquiumMessage" class="alert d-none mb-3"></div>
+            <div class="table-responsive">
+                <table class="table table-bordered table-hover">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Predmet</th>
+                            <th>Semestar</th>
+                            <th>Uloga</th>
+                            <th>Kolokvijum 1 (sedmica)</th>
+                            <th>Kolokvijum 2 (sedmica)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="coursesTableBody">
                     <?php
                     try {
                         $stmt = $pdo->prepare("
-                SELECT c.id, c.name, c.semester, cp.is_assistant
-                FROM course_professor cp
-                JOIN course c ON c.id = cp.course_id
-                WHERE cp.professor_id = ?
-                ORDER BY c.name
-            ");
+                            SELECT c.id, c.name, c.semester, cp.is_assistant, 
+                                   c.colloquium_1_week, c.colloquium_2_week
+                            FROM course_professor cp
+                            JOIN course c ON c.id = cp.course_id
+                            WHERE cp.professor_id = ?
+                            ORDER BY c.name
+                        ");
                         $stmt->execute([$professorId]);
                         $courses = $stmt->fetchAll(PDO::FETCH_ASSOC);
-                        if (!$courses) echo "<tr><td colspan='4'>Nema pridruženih predmeta.</td></tr>";
-                        else {
-                            foreach($courses as $c){
+                        
+                        if (!$courses) {
+                            echo "<tr><td colspan='5'>Nema pridruženih predmeta.</td></tr>";
+                        } else {
+                            foreach($courses as $c) {
                                 $role = $c['is_assistant'] ? 'Asistent' : 'Profesor';
-                                echo "<tr>";
-                                echo "<td>".htmlspecialchars($c['name'])."</td>";
-                                echo "<td>".htmlspecialchars($c['semester'])."</td>";
-                                echo "<td>".$role."</td>";
-                                echo "<td><select name='exam_week[".(int)$c['id']."]'>";
-                                echo "<option value=''>-- Izaberi --</option>";
-                                for($w=5;$w<=13;$w++) echo "<option value='$w'>$w</option>";
-                                echo "</select></td>";
-                                echo "</tr>";
+                                $col1Val = $c['colloquium_1_week'];
+                                $col2Val = $c['colloquium_2_week'];
+                                ?>
+                                <tr data-course-id="<?php echo (int)$c['id']; ?>">
+                                    <td><?php echo htmlspecialchars($c['name']); ?></td>
+                                    <td><?php echo htmlspecialchars($c['semester']); ?></td>
+                                    <td><?php echo $role; ?></td>
+                                    <td>
+                                        <select class="form-select form-select-sm colloquium-1-select" data-course-id="<?php echo (int)$c['id']; ?>">
+                                            <option value="">-- Izaberi --</option>
+                                            <option value="1" <?php echo ($col1Val == 1) ? 'selected' : ''; ?>>Ne održava se</option>
+                                            <?php for($w=5; $w<=13; $w++): ?>
+                                                <option value="<?php echo $w; ?>" <?php echo ($col1Val == $w) ? 'selected' : ''; ?>><?php echo $w; ?>. sedmica</option>
+                                            <?php endfor; ?>
+                                        </select>
+                                    </td>
+                                    <td>
+                                        <select class="form-select form-select-sm colloquium-2-select" data-course-id="<?php echo (int)$c['id']; ?>">
+                                            <option value="">-- Izaberi --</option>
+                                            <option value="1" <?php echo ($col2Val == 1) ? 'selected' : ''; ?>>Ne održava se</option>
+                                            <?php for($w=5; $w<=13; $w++): ?>
+                                                <option value="<?php echo $w; ?>" <?php echo ($col2Val == $w) ? 'selected' : ''; ?>><?php echo $w; ?>. sedmica</option>
+                                            <?php endfor; ?>
+                                        </select>
+                                    </td>
+                                </tr>
+                                <?php
                             }
                         }
                     } catch(PDOException $e) {
-                        echo "<tr><td colspan='4'>Greška: ".htmlspecialchars($e->getMessage())."</td></tr>";
+                        echo "<tr><td colspan='5'>Greška: ".htmlspecialchars($e->getMessage())."</td></tr>";
                     }
                     ?>
                     </tbody>
                 </table>
-            </form>
+            </div>
+            <?php if (!empty($courses)): ?>
+            <button type="button" id="saveColloquiumWeeksBtn" class="btn btn-primary">
+                <span class="btn-text">Sačuvaj sedmice kolokvijuma</span>
+                <span class="spinner-border spinner-border-sm d-none" role="status"></span>
+            </button>
+            <?php endif; ?>
         </div>
 
         <!-- AVAILABILITY -->
@@ -431,6 +512,99 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <!-- Učitavamo postojeće podatke u GLOBALNU JS varijablu kako bi ih skripta mogla koristiti -->
 <script>
     window.SERVER_EXISTING_AVAILABILITY = <?php echo json_encode($existingAvailability); ?>;
+</script>
+<script>
+// Colloquium weeks save functionality
+document.addEventListener('DOMContentLoaded', function() {
+    const saveBtn = document.getElementById('saveColloquiumWeeksBtn');
+    if (!saveBtn) return;
+    
+    const messageDiv = document.getElementById('colloquiumMessage');
+    
+    function showMessage(type, text) {
+        messageDiv.className = 'alert alert-' + type + ' mb-3';
+        messageDiv.textContent = text;
+        messageDiv.classList.remove('d-none');
+        setTimeout(() => messageDiv.classList.add('d-none'), 5000);
+    }
+    
+    function showLoading(show) {
+        const textSpan = saveBtn.querySelector('.btn-text');
+        const spinner = saveBtn.querySelector('.spinner-border');
+        if (show) {
+            textSpan.classList.add('d-none');
+            spinner.classList.remove('d-none');
+            saveBtn.disabled = true;
+        } else {
+            textSpan.classList.remove('d-none');
+            spinner.classList.add('d-none');
+            saveBtn.disabled = false;
+        }
+    }
+    
+    saveBtn.addEventListener('click', function() {
+        const rows = document.querySelectorAll('#coursesTableBody tr[data-course-id]');
+        const data = [];
+        let hasValidationError = false;
+        
+        rows.forEach(row => {
+            const courseId = row.getAttribute('data-course-id');
+            const col1Select = row.querySelector('.colloquium-1-select');
+            const col2Select = row.querySelector('.colloquium-2-select');
+            
+            const col1Value = col1Select.value;
+            const col2Value = col2Select.value;
+            
+            // Validacija: ako su oba odabrana i nisu "ne odrzava se", col2 > col1
+            if (col1Value && col2Value && col1Value !== '1' && col2Value !== '1') {
+                if (parseInt(col2Value) <= parseInt(col1Value)) {
+                    hasValidationError = true;
+                    row.classList.add('table-danger');
+                    showMessage('danger', 'Greška: Kolokvijum 2 mora biti nakon Kolokvijuma 1');
+                } else {
+                    row.classList.remove('table-danger');
+                }
+            } else {
+                row.classList.remove('table-danger');
+            }
+            
+            data.push({
+                course_id: courseId,
+                colloquium_1_week: col1Value || null,
+                colloquium_2_week: col2Value || null
+            });
+        });
+        
+        if (hasValidationError) return;
+        
+        showLoading(true);
+        
+        fetch(window.location.href, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                action: 'save_colloquium_weeks',
+                data: data
+            })
+        })
+        .then(response => response.json())
+        .then(result => {
+            showLoading(false);
+            if (result.success) {
+                showMessage('success', 'Sedmice kolokvijuma su uspješno sačuvane!');
+            } else {
+                showMessage('danger', 'Greška: ' + (result.error || 'Nepoznata greška'));
+            }
+        })
+        .catch(error => {
+            showLoading(false);
+            showMessage('danger', 'Greška pri slanju zahtjeva');
+            console.error(error);
+        });
+    });
+});
 </script>
 <script src="../assets/js/professor_tabs.js"></script>
 </body>
