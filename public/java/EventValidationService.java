@@ -35,33 +35,30 @@ public class EventValidationService {
     }
 
     private void loadCourses() throws SQLException {
-    String query = "SELECT id, name, semester, code, " +
-        "COALESCE(lectures_per_week, 2) as lectures_per_week, " +
-        "COALESCE(exercises_per_week, 2) as exercises_per_week, " +
-        "COALESCE(labs_per_week, 0) as labs_per_week, " +
-        "COALESCE(is_online, FALSE) as is_online " +
-        "FROM course";
-    try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery(query)) {
-        int count = 0;
-        while (rs.next()) {
-            Course course = new Course();
-            course.idCourse = rs.getInt("id");
-            course.name = rs.getString("name");
-            course.semester = rs.getInt("semester");
-            course.code = rs.getString("code");
-            course.lecturesPerWeek = rs.getInt("lectures_per_week");
-            course.exercisesPerWeek = rs.getInt("exercises_per_week");
-            course.labsPerWeek = rs.getInt("labs_per_week");
-            course.isOnline = rs.getBoolean("is_online");
-            courses.put(course.idCourse, course);
-            count++;
+        String query = "SELECT id, name, semester, code, " +
+                "COALESCE(lectures_per_week, 2) as lectures_per_week, " +
+                "COALESCE(exercises_per_week, 2) as exercises_per_week, " +
+                "COALESCE(labs_per_week, 0) as labs_per_week, " +
+                "COALESCE(is_online, FALSE) as is_online " +
+                "FROM course";
+        try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery(query)) {
+            int count = 0;
+            while (rs.next()) {
+                Course course = new Course();
+                course.idCourse = rs.getInt("id");
+                course.name = rs.getString("name");
+                course.semester = rs.getInt("semester");
+                course.code = rs.getString("code");
+                course.lecturesPerWeek = rs.getInt("lectures_per_week");
+                course.exercisesPerWeek = rs.getInt("exercises_per_week");
+                course.labsPerWeek = rs.getInt("labs_per_week");
+                course.isOnline = rs.getBoolean("is_online");
+                courses.put(course.idCourse, course);
+                count++;
+            }
+            System.out.println("Loaded courses: " + count + " (with P+V+L workload)");
         }
-        System.out.println("Loaded courses: " + count + " (with P+V+L workload)");
     }
-}
-
-
-    
 
     private void loadRooms() throws SQLException {
         String query = "SELECT id, code, capacity, is_computer_lab, is_active FROM room";
@@ -98,32 +95,31 @@ public class EventValidationService {
         }
     }
 
-     public static void main(String[] args) {
+    public static void main(String[] args) {
         Connection conn = null;
         try {
             // Load PostgreSQL driver (since you're using postgresql-42.7.8.jar)
             Class.forName("org.postgresql.Driver");
-            
+
             // Connect to your database
             conn = DriverManager.getConnection(
-                "jdbc:postgresql://localhost:5432/your_database_name",
-                "your_username",
-                "your_password"
-            );
-            
+                    "jdbc:postgresql://localhost:5432/your_database_name",
+                    "your_username",
+                    "your_password");
+
             System.out.println("✓ Connected to database");
-            
+
             // Create the service
             EventValidationService service = new EventValidationService(conn);
-            
+
             System.out.println("\nStarting schedule generation...\n");
-            
+
             // Generate the 6 schedules
             String result = service.generateSixSchedulesWithDifferentPriorities();
-            
+
             // Print result
             System.out.println("\n✓ FINAL RESULT: " + result);
-            
+
         } catch (Exception e) {
             System.err.println("✗ Error: " + e.getMessage());
             e.printStackTrace();
@@ -139,9 +135,10 @@ public class EventValidationService {
             }
         }
     }
+
     private void loadAcademicEvents() throws SQLException {
         String query = "SELECT id, course_id, created_by_professor, type_enum, starts_at, ends_at, " +
-                "is_online, room_id, notes, is_published, locked_by_admin, schedule_id, day FROM academic_event";
+                "room_id, notes, is_published, locked_by_admin, schedule_id, day FROM academic_event";
         try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery(query)) {
             int count = 0;
             while (rs.next()) {
@@ -152,7 +149,6 @@ public class EventValidationService {
                 event.typeEnum = rs.getString("type_enum");
                 event.day = rs.getString("day");
                 event.notes = rs.getString("notes");
-                event.isOnline = rs.getBoolean("is_online");
                 event.isPublished = rs.getBoolean("is_published");
                 event.lockedByAdmin = rs.getBoolean("locked_by_admin");
                 event.scheduleId = rs.getInt("schedule_id");
@@ -224,21 +220,20 @@ public class EventValidationService {
             LocalDateTime startsAt, LocalDateTime endsAt, int roomId, String typeEnum) throws SQLException {
         String insert = "INSERT INTO academic_event " +
                 "(course_id, created_by_professor, type_enum, starts_at, ends_at, " +
-                "is_online, room_id, notes, is_published, locked_by_admin, schedule_id, day) " +
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                "room_id, notes, is_published, locked_by_admin, schedule_id, day) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         try (PreparedStatement pstmt = conn.prepareStatement(insert)) {
             pstmt.setInt(1, courseId);
             pstmt.setLong(2, professorId);
             pstmt.setString(3, typeEnum);
             pstmt.setTimestamp(4, Timestamp.valueOf(startsAt));
             pstmt.setTimestamp(5, Timestamp.valueOf(endsAt));
-            pstmt.setBoolean(6, false);
-            pstmt.setInt(7, roomId);
-            pstmt.setNull(8, java.sql.Types.VARCHAR);
-            pstmt.setBoolean(9, true);
-            pstmt.setBoolean(10, false);
-            pstmt.setInt(11, scheduleId);
-            pstmt.setString(12, day);
+            pstmt.setInt(6, roomId);
+            pstmt.setNull(7, java.sql.Types.VARCHAR);
+            pstmt.setBoolean(8, true);
+            pstmt.setBoolean(9, false);
+            pstmt.setInt(10, scheduleId);
+            pstmt.setString(11, day);
             pstmt.executeUpdate();
         }
     }
@@ -353,8 +348,8 @@ public class EventValidationService {
             }
 
             String insert = "INSERT INTO academic_event (course_id, created_by_professor, type_enum, " +
-                    "starts_at, ends_at, is_online, room_id, is_published, locked_by_admin, day) " +
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                    "starts_at, ends_at, room_id, is_published, locked_by_admin, day) " +
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
             try (PreparedStatement pstmt = conn.prepareStatement(insert)) {
                 LocalDateTime startsAt = convertDayToDate(day, startTime);
                 LocalDateTime endsAt = convertDayToDate(day, endTime);
@@ -364,11 +359,10 @@ public class EventValidationService {
                 pstmt.setString(3, typeEnum);
                 pstmt.setTimestamp(4, Timestamp.valueOf(startsAt));
                 pstmt.setTimestamp(5, Timestamp.valueOf(endsAt));
-                pstmt.setBoolean(6, false);
-                pstmt.setInt(7, roomId);
-                pstmt.setBoolean(8, true);
-                pstmt.setBoolean(9, false);
-                pstmt.setString(10, day);
+                pstmt.setInt(6, roomId);
+                pstmt.setBoolean(7, true);
+                pstmt.setBoolean(8, false);
+                pstmt.setString(9, day);
                 pstmt.executeUpdate();
 
                 AcademicEvent newEvent = new AcademicEvent();
@@ -487,8 +481,8 @@ public class EventValidationService {
             }
 
             String insert = "INSERT INTO academic_event (course_id, created_by_professor, type_enum, " +
-                    "starts_at, ends_at, is_online, room_id, is_published, locked_by_admin) " +
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                    "starts_at, ends_at, room_id, is_published, locked_by_admin) " +
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
             try (PreparedStatement pstmt = conn.prepareStatement(insert)) {
                 LocalDateTime startsAt = LocalDateTime.of(colloquiumDate, startTime);
                 LocalDateTime endsAt = LocalDateTime.of(colloquiumDate, endTime);
@@ -498,10 +492,9 @@ public class EventValidationService {
                 pstmt.setString(3, "COLLOQUIUM");
                 pstmt.setTimestamp(4, Timestamp.valueOf(startsAt));
                 pstmt.setTimestamp(5, Timestamp.valueOf(endsAt));
-                pstmt.setBoolean(6, false);
-                pstmt.setInt(7, roomId);
-                pstmt.setBoolean(8, true);
-                pstmt.setBoolean(9, false);
+                pstmt.setInt(6, roomId);
+                pstmt.setBoolean(7, true);
+                pstmt.setBoolean(8, false);
                 pstmt.executeUpdate();
 
                 AcademicEvent newEvent = new AcademicEvent();
@@ -607,8 +600,8 @@ public class EventValidationService {
             }
 
             String insert = "INSERT INTO academic_event (course_id, created_by_professor, type_enum, " +
-                    "starts_at, ends_at, is_online, room_id, is_published, locked_by_admin) " +
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                    "starts_at, ends_at, room_id, is_published, locked_by_admin) " +
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
             try (PreparedStatement pstmt = conn.prepareStatement(insert)) {
                 LocalDateTime startsAt = LocalDateTime.of(examDate, startTime);
                 LocalDateTime endsAt = LocalDateTime.of(examDate, endTime);
@@ -618,10 +611,9 @@ public class EventValidationService {
                 pstmt.setString(3, examType);
                 pstmt.setTimestamp(4, Timestamp.valueOf(startsAt));
                 pstmt.setTimestamp(5, Timestamp.valueOf(endsAt));
-                pstmt.setBoolean(6, false);
-                pstmt.setInt(7, roomId);
-                pstmt.setBoolean(8, true);
-                pstmt.setBoolean(9, false);
+                pstmt.setInt(6, roomId);
+                pstmt.setBoolean(7, true);
+                pstmt.setBoolean(8, false);
                 pstmt.executeUpdate();
 
                 AcademicEvent newEvent = new AcademicEvent();
@@ -1092,7 +1084,6 @@ public class EventValidationService {
         return 0;
     }
 
-
     /**
      * Pronalazi asistenta za vježbe
      */
@@ -1234,11 +1225,13 @@ public class EventValidationService {
     public String generateLectureSchedule(int courseId) {
         return generateLectureSchedule(courseId, null);
     }
+
     /**
      * Checks if a course is online (reads is_online boolean from course table)
      */
     private boolean isOnlineClass(Course course) {
-        if (course == null) return false;
+        if (course == null)
+            return false;
         return course.isOnline;
     }
 
@@ -1471,7 +1464,7 @@ public class EventValidationService {
     public List<AcademicEvent> getEventsBySchedule(int scheduleIdFilter) throws SQLException {
         List<AcademicEvent> result = new ArrayList<>();
         String sql = "SELECT id, course_id, created_by_professor, type_enum, " +
-                "starts_at, ends_at, is_online, room_id, notes, schedule_id " +
+                "starts_at, ends_at, room_id, notes, schedule_id " +
                 "FROM academic_event WHERE schedule_id = ? ORDER BY starts_at";
 
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
@@ -1485,7 +1478,6 @@ public class EventValidationService {
                     event.idProfessor = (int) rs.getLong("created_by_professor");
                     event.typeEnum = rs.getString("type_enum");
                     event.notes = rs.getString("notes");
-                    event.isOnline = rs.getBoolean("is_online");
                     event.scheduleId = rs.getInt("schedule_id");
 
                     Timestamp startTs = rs.getTimestamp("starts_at");
@@ -1511,490 +1503,502 @@ public class EventValidationService {
     }
 
     /**
- * Generates 6 different weekly schedules with different year/semester priorities
- * 
- * Priority Order for each schedule:
- * Schedule 1: Year 1 → Year 2 → Year 3
- * Schedule 2: Year 1 → Year 3 → Year 2
- * Schedule 3: Year 2 → Year 1 → Year 3
- * Schedule 4: Year 2 → Year 3 → Year 1
- * Schedule 5: Year 3 → Year 1 → Year 2
- * Schedule 6: Year 3 → Year 2 → Year 1
- * 
- * Within each schedule:
- * 1. Priority year LAB classes (lab classes have labs_per_week > 0)
- * 2. Other years LAB classes
- * 3. Priority year NON-LAB classes (labs_per_week == 0, not online)
- * 4. Other years NON-LAB classes
- * 5. Priority year ONLINE classes (course names: "SIZIS" or "IS")
- * 6. Other years ONLINE classes
- * 
- * Each schedule is independent - conflicts checked only within same schedule
- */
-public String generateSixSchedulesWithDifferentPriorities() {
-    try {
-        System.out.println("=== GENERATING 6 SCHEDULES WITH DIFFERENT YEAR PRIORITIES ===\n");
-        
-        // Define the 6 different priority orders
-        int[][] priorityOrders = {
-            {1, 2, 3},  // Schedule 1
-            {1, 3, 2},  // Schedule 2
-            {2, 1, 3},  // Schedule 3
-            {2, 3, 1},  // Schedule 4
-            {3, 1, 2},  // Schedule 5
-            {3, 2, 1}   // Schedule 6
-        };
-        
-        List<Integer> generatedScheduleIds = new ArrayList<>();
-        int successCount = 0;
-        int failCount = 0;
-        
-        // Generate each of the 6 schedules
-        for (int i = 0; i < 6; i++) {
-            int[] priorityOrder = priorityOrders[i];
-            System.out.println("\n>>> SCHEDULE " + (i + 1) + " <<<");
-            System.out.println("Priority Order: Year " + priorityOrder[0] + " → Year " + 
-                             priorityOrder[1] + " → Year " + priorityOrder[2]);
-            System.out.println("─".repeat(50));
-            
-            int scheduleId = generateScheduleWithYearPriority(priorityOrder);
-            if (scheduleId > 0) {
-                generatedScheduleIds.add(scheduleId);
-                successCount++;
-                System.out.println("✓ Schedule " + (i + 1) + " completed with ID: " + scheduleId);
+     * Generates 6 different weekly schedules with different year/semester
+     * priorities
+     * 
+     * Priority Order for each schedule:
+     * Schedule 1: Year 1 → Year 2 → Year 3
+     * Schedule 2: Year 1 → Year 3 → Year 2
+     * Schedule 3: Year 2 → Year 1 → Year 3
+     * Schedule 4: Year 2 → Year 3 → Year 1
+     * Schedule 5: Year 3 → Year 1 → Year 2
+     * Schedule 6: Year 3 → Year 2 → Year 1
+     * 
+     * Within each schedule:
+     * 1. Priority year LAB classes (lab classes have labs_per_week > 0)
+     * 2. Other years LAB classes
+     * 3. Priority year NON-LAB classes (labs_per_week == 0, not online)
+     * 4. Other years NON-LAB classes
+     * 5. Priority year ONLINE classes (course names: "SIZIS" or "IS")
+     * 6. Other years ONLINE classes
+     * 
+     * Each schedule is independent - conflicts checked only within same schedule
+     */
+    public String generateSixSchedulesWithDifferentPriorities() {
+        try {
+            System.out.println("=== GENERATING 6 SCHEDULES WITH DIFFERENT YEAR PRIORITIES ===\n");
+
+            // Define the 6 different priority orders
+            int[][] priorityOrders = {
+                    { 1, 2, 3 }, // Schedule 1
+                    { 1, 3, 2 }, // Schedule 2
+                    { 2, 1, 3 }, // Schedule 3
+                    { 2, 3, 1 }, // Schedule 4
+                    { 3, 1, 2 }, // Schedule 5
+                    { 3, 2, 1 } // Schedule 6
+            };
+
+            List<Integer> generatedScheduleIds = new ArrayList<>();
+            int successCount = 0;
+            int failCount = 0;
+
+            // Generate each of the 6 schedules
+            for (int i = 0; i < 6; i++) {
+                int[] priorityOrder = priorityOrders[i];
+                System.out.println("\n>>> SCHEDULE " + (i + 1) + " <<<");
+                System.out.println("Priority Order: Year " + priorityOrder[0] + " → Year " +
+                        priorityOrder[1] + " → Year " + priorityOrder[2]);
+                System.out.println("─".repeat(50));
+
+                int scheduleId = generateScheduleWithYearPriority(priorityOrder);
+                if (scheduleId > 0) {
+                    generatedScheduleIds.add(scheduleId);
+                    successCount++;
+                    System.out.println("✓ Schedule " + (i + 1) + " completed with ID: " + scheduleId);
+                } else {
+                    failCount++;
+                    System.out.println("✗ Schedule " + (i + 1) + " failed to generate");
+                }
+            }
+
+            // Print summary
+            StringBuilder summary = new StringBuilder();
+            summary.append("\n").append("=".repeat(50)).append("\n");
+            summary.append("GENERATION COMPLETE\n");
+            summary.append("=".repeat(50)).append("\n");
+            summary.append("Successfully generated: ").append(successCount).append("/6 schedules\n\n");
+
+            for (int i = 0; i < generatedScheduleIds.size(); i++) {
+                summary.append("Schedule ").append(i + 1).append(": ID = ").append(generatedScheduleIds.get(i));
+                int[] order = priorityOrders[i];
+                summary.append(" | Priority: ").append(order[0]).append("→")
+                        .append(order[1]).append("→").append(order[2]).append("\n");
+            }
+            summary.append("=".repeat(50));
+
+            System.out.println(summary.toString());
+
+            loadAcademicEvents(); // Reload to reflect all new events
+
+            if (failCount == 0) {
+                return "OK: Successfully generated all 6 schedules with different year priorities. " +
+                        "Schedule IDs: " + generatedScheduleIds.toString();
             } else {
-                failCount++;
-                System.out.println("✗ Schedule " + (i + 1) + " failed to generate");
+                return "WARNING: Generated " + successCount + "/6 schedules. IDs: " +
+                        generatedScheduleIds.toString();
             }
-        }
-        
-        // Print summary
-        StringBuilder summary = new StringBuilder();
-        summary.append("\n").append("=".repeat(50)).append("\n");
-        summary.append("GENERATION COMPLETE\n");
-        summary.append("=".repeat(50)).append("\n");
-        summary.append("Successfully generated: ").append(successCount).append("/6 schedules\n\n");
-        
-        for (int i = 0; i < generatedScheduleIds.size(); i++) {
-            summary.append("Schedule ").append(i + 1).append(": ID = ").append(generatedScheduleIds.get(i));
-            int[] order = priorityOrders[i];
-            summary.append(" | Priority: ").append(order[0]).append("→")
-                   .append(order[1]).append("→").append(order[2]).append("\n");
-        }
-        summary.append("=".repeat(50));
-        
-        System.out.println(summary.toString());
-        
-        loadAcademicEvents(); // Reload to reflect all new events
-        
-        if (failCount == 0) {
-            return "OK: Successfully generated all 6 schedules with different year priorities. " +
-                   "Schedule IDs: " + generatedScheduleIds.toString();
-        } else {
-            return "WARNING: Generated " + successCount + "/6 schedules. IDs: " + 
-                   generatedScheduleIds.toString();
-        }
-        
-    } catch (Exception e) {
-        e.printStackTrace();
-        return "ERROR: " + e.getMessage();
-    }
-}
 
-/**
- * Generates a single schedule with specified year priority order
- */
-private int generateScheduleWithYearPriority(int[] yearPriorityOrder) throws SQLException {
-    int scheduleId = generateNewScheduleId();
-    
-    // Group courses by year/semester
-    Map<Integer, List<Course>> coursesByYear = new HashMap<>();
-    for (int year = 1; year <= 3; year++) {
-        coursesByYear.put(year, new ArrayList<>());
-    }
-    
-    // Load and categorize all courses
-    for (Course course : courses.values()) {
-        coursesByYear.get(course.semester).add(course);
-    }
-    
-    int totalScheduled = 0;
-    
-    // ===== PHASE 1: LAB CLASSES =====
-    System.out.println("Phase 1: Scheduling LAB classes...");
-    
-    // First: Priority year labs
-    for (int priorityYear : yearPriorityOrder) {
-        List<Course> yearCourses = coursesByYear.get(priorityYear);
-        for (Course course : yearCourses) {
-            if (course.labsPerWeek > 0) {
-                String result = scheduleCourseForSchedule(scheduleId, course);
-                if (result.equals("OK")) {
-                    totalScheduled++;
-                }
-            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            return "ERROR: " + e.getMessage();
         }
     }
-    
-    // Then: Non-priority year labs (fill gaps)
-    for (int year = 1; year <= 3; year++) {
-        List<Course> yearCourses = coursesByYear.get(year);
-        for (Course course : yearCourses) {
-            if (course.labsPerWeek > 0 && 
-                !isAlreadyScheduledInSchedule(scheduleId, course.idCourse)) {
-                String result = scheduleCourseForSchedule(scheduleId, course);
-                if (result.equals("OK")) {
-                    totalScheduled++;
-                }
-            }
-        }
-    }
-    
-    // ===== PHASE 2: NON-LAB CLASSES =====
-    System.out.println("Phase 2: Scheduling NON-LAB classes...");
-    
-    // First: Priority year non-labs
-    for (int priorityYear : yearPriorityOrder) {
-        List<Course> yearCourses = coursesByYear.get(priorityYear);
-        for (Course course : yearCourses) {
-            if (course.labsPerWeek == 0 && !isOnlineClass(course)) {
-                String result = scheduleCourseForSchedule(scheduleId, course);
-                if (result.equals("OK")) {
-                    totalScheduled++;
-                }
-            }
-        }
-    }
-    
-    // Then: Non-priority year non-labs (fill gaps)
-    for (int year = 1; year <= 3; year++) {
-        List<Course> yearCourses = coursesByYear.get(year);
-        for (Course course : yearCourses) {
-            if (course.labsPerWeek == 0 && !isOnlineClass(course) &&
-                !isAlreadyScheduledInSchedule(scheduleId, course.idCourse)) {
-                String result = scheduleCourseForSchedule(scheduleId, course);
-                if (result.equals("OK")) {
-                    totalScheduled++;
-                }
-            }
-        }
-    }
-    
-    // ===== PHASE 3: ONLINE CLASSES =====
-    System.out.println("Phase 3: Scheduling ONLINE classes...");
-    
-    // First: Priority year online
-    for (int priorityYear : yearPriorityOrder) {
-        List<Course> yearCourses = coursesByYear.get(priorityYear);
-        for (Course course : yearCourses) {
-            if (isOnlineClass(course)) {
-                String result = scheduleCourseForSchedule(scheduleId, course);
-                if (result.equals("OK")) {
-                    totalScheduled++;
-                }
-            }
-        }
-    }
-    
-    // Then: Non-priority year online (fill gaps)
-    for (int year = 1; year <= 3; year++) {
-        List<Course> yearCourses = coursesByYear.get(year);
-        for (Course course : yearCourses) {
-            if (isOnlineClass(course) && 
-                !isAlreadyScheduledInSchedule(scheduleId, course.idCourse)) {
-                String result = scheduleCourseForSchedule(scheduleId, course);
-                if (result.equals("OK")) {
-                    totalScheduled++;
-                }
-            }
-        }
-    }
-    
-    System.out.println("Total courses scheduled: " + totalScheduled);
-    return scheduleId;
-}
 
+    /**
+     * Generates a single schedule with specified year priority order
+     */
+    private int generateScheduleWithYearPriority(int[] yearPriorityOrder) throws SQLException {
+        int scheduleId = generateNewScheduleId();
 
-/**
- * Checks if a course is already scheduled in this schedule
- */
-private boolean isAlreadyScheduledInSchedule(int scheduleId, int courseId) {
-    for (AcademicEvent event : academicEvents.values()) {
-        if (event.scheduleId == scheduleId && event.idCourse == courseId) {
-            return true;
+        // Group courses by year/semester
+        Map<Integer, List<Course>> coursesByYear = new HashMap<>();
+        for (int year = 1; year <= 3; year++) {
+            coursesByYear.put(year, new ArrayList<>());
+        }
+
+        // Load and categorize all courses (convert semester 1-6 to year 1-3)
+        for (Course course : courses.values()) {
+            // Semester 1,2 -> Year 1; Semester 3,4 -> Year 2; Semester 5,6 -> Year 3
+            int year = (course.semester + 1) / 2;
+            // Ensure year is within valid range 1-3
+            if (year < 1)
+                year = 1;
+            if (year > 3)
+                year = 3;
+            coursesByYear.get(year).add(course);
+        }
+
+        int totalScheduled = 0;
+
+        // ===== PHASE 1: LAB CLASSES =====
+        System.out.println("Phase 1: Scheduling LAB classes...");
+
+        // First: Priority year labs
+        for (int priorityYear : yearPriorityOrder) {
+            List<Course> yearCourses = coursesByYear.get(priorityYear);
+            for (Course course : yearCourses) {
+                if (course.labsPerWeek > 0) {
+                    String result = scheduleCourseForSchedule(scheduleId, course);
+                    if (result.equals("OK")) {
+                        totalScheduled++;
+                    }
+                }
+            }
+        }
+
+        // Then: Non-priority year labs (fill gaps)
+        for (int year = 1; year <= 3; year++) {
+            List<Course> yearCourses = coursesByYear.get(year);
+            for (Course course : yearCourses) {
+                if (course.labsPerWeek > 0 &&
+                        !isAlreadyScheduledInSchedule(scheduleId, course.idCourse)) {
+                    String result = scheduleCourseForSchedule(scheduleId, course);
+                    if (result.equals("OK")) {
+                        totalScheduled++;
+                    }
+                }
+            }
+        }
+
+        // ===== PHASE 2: NON-LAB CLASSES =====
+        System.out.println("Phase 2: Scheduling NON-LAB classes...");
+
+        // First: Priority year non-labs
+        for (int priorityYear : yearPriorityOrder) {
+            List<Course> yearCourses = coursesByYear.get(priorityYear);
+            for (Course course : yearCourses) {
+                if (course.labsPerWeek == 0 && !isOnlineClass(course)) {
+                    String result = scheduleCourseForSchedule(scheduleId, course);
+                    if (result.equals("OK")) {
+                        totalScheduled++;
+                    }
+                }
+            }
+        }
+
+        // Then: Non-priority year non-labs (fill gaps)
+        for (int year = 1; year <= 3; year++) {
+            List<Course> yearCourses = coursesByYear.get(year);
+            for (Course course : yearCourses) {
+                if (course.labsPerWeek == 0 && !isOnlineClass(course) &&
+                        !isAlreadyScheduledInSchedule(scheduleId, course.idCourse)) {
+                    String result = scheduleCourseForSchedule(scheduleId, course);
+                    if (result.equals("OK")) {
+                        totalScheduled++;
+                    }
+                }
+            }
+        }
+
+        // ===== PHASE 3: ONLINE CLASSES =====
+        System.out.println("Phase 3: Scheduling ONLINE classes...");
+
+        // First: Priority year online
+        for (int priorityYear : yearPriorityOrder) {
+            List<Course> yearCourses = coursesByYear.get(priorityYear);
+            for (Course course : yearCourses) {
+                if (isOnlineClass(course)) {
+                    String result = scheduleCourseForSchedule(scheduleId, course);
+                    if (result.equals("OK")) {
+                        totalScheduled++;
+                    }
+                }
+            }
+        }
+
+        // Then: Non-priority year online (fill gaps)
+        for (int year = 1; year <= 3; year++) {
+            List<Course> yearCourses = coursesByYear.get(year);
+            for (Course course : yearCourses) {
+                if (isOnlineClass(course) &&
+                        !isAlreadyScheduledInSchedule(scheduleId, course.idCourse)) {
+                    String result = scheduleCourseForSchedule(scheduleId, course);
+                    if (result.equals("OK")) {
+                        totalScheduled++;
+                    }
+                }
+            }
+        }
+
+        System.out.println("Total courses scheduled: " + totalScheduled);
+        return scheduleId;
+    }
+
+    /**
+     * Checks if a course is already scheduled in this schedule
+     */
+    private boolean isAlreadyScheduledInSchedule(int scheduleId, int courseId) {
+        for (AcademicEvent event : academicEvents.values()) {
+            if (event.scheduleId == scheduleId && event.idCourse == courseId) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Schedules a single course for the given schedule
+     * Respects existing time slot constraints within the same schedule
+     * Returns "OK" on success, error message on failure
+     */
+    private String scheduleCourseForSchedule(int scheduleId, Course course) {
+        try {
+            if (course == null) {
+                return "SKIP: Course is null";
+            }
+
+            int totalHours = course.getTotalHoursPerWeek();
+            if (totalHours < 4 || totalHours > 6) {
+                return "SKIP: Invalid total hours (" + totalHours + ")";
+            }
+
+            // Find lecture professor
+            int lectureProfId = findLectureProfessor(course.idCourse);
+            if (lectureProfId == 0) {
+                return "SKIP: No lecture professor";
+            }
+
+            // Find exercise professor
+            int exerciseProfId = findExerciseProfessor(course.idCourse);
+            if (exerciseProfId == 0) {
+                exerciseProfId = lectureProfId;
+            }
+
+            // Get available days for lecture professor
+            List<String> availableDays = getPreferredDays(lectureProfId);
+            if (availableDays.isEmpty()) {
+                availableDays.addAll(Arrays.asList("ponedeljak", "utorak", "srijeda", "cetvrtak", "petak"));
+            }
+
+            // Get suitable rooms
+            List<Room> lectureRooms = getSuitableRooms(false, 30);
+            List<Room> labRooms = getSuitableRooms(true, 20);
+
+            if (lectureRooms.isEmpty()) {
+                return "SKIP: No lecture rooms available";
+            }
+
+            if (course.labsPerWeek > 0 && labRooms.isEmpty()) {
+                labRooms = lectureRooms;
+            }
+
+            // Try to schedule as two days (preferred for 5-6 hours, optimal for 4)
+            int addedTerms = scheduleAsTwoDaysWithinSchedule(scheduleId, course,
+                    lectureProfId, exerciseProfId,
+                    availableDays, lectureRooms, labRooms);
+
+            // If failed and total hours is 4, try as one block
+            if (addedTerms == 0 && totalHours == 4) {
+                addedTerms = scheduleAsOneBlockWithinSchedule(scheduleId, course, lectureProfId,
+                        availableDays, lectureRooms);
+            }
+
+            if (addedTerms > 0) {
+                return "OK";
+            }
+
+            return "FAILED: Could not find time slot";
+
+        } catch (SQLException e) {
+            return "ERROR: " + e.getMessage();
         }
     }
-    return false;
-}
 
-/**
- * Schedules a single course for the given schedule
- * Respects existing time slot constraints within the same schedule
- * Returns "OK" on success, error message on failure
- */
-private String scheduleCourseForSchedule(int scheduleId, Course course) {
-    try {
-        if (course == null) {
-            return "SKIP: Course is null";
+    /**
+     * Schedules course as two days (Lectures on day1, Exercises+Labs on day2)
+     * Only checks conflicts WITHIN the same schedule
+     */
+    private int scheduleAsTwoDaysWithinSchedule(int scheduleId, Course course,
+            int lectureProfId, int exerciseProfId,
+            List<String> days, List<Room> lectureRooms,
+            List<Room> labRooms) throws SQLException {
+        String lectureDay = null;
+        String exerciseDay = null;
+        Room lectureRoom = null;
+        Room exerciseRoom = null;
+        LocalTime lectureStart = null;
+        LocalTime exerciseStart = null;
+
+        // Day 1: Find free slot for lectures
+        for (String day : days) {
+            for (Room room : lectureRooms) {
+                for (int hour = 8; hour <= 17 - course.lecturesPerWeek; hour++) {
+                    LocalTime start = LocalTime.of(hour, 0);
+                    LocalTime end = start.plusHours(course.lecturesPerWeek);
+
+                    if (!hasConflictInSchedule(scheduleId, day, room.idRoom, lectureProfId, start, end)) {
+                        lectureDay = day;
+                        lectureRoom = room;
+                        lectureStart = start;
+                        break;
+                    }
+                }
+                if (lectureDay != null)
+                    break;
+            }
+            if (lectureDay != null)
+                break;
         }
-        
+
+        if (lectureDay == null) {
+            return 0;
+        }
+
+        // Day 2: Find free slot for exercises + labs (must be different day)
+        int exerciseHours = course.exercisesPerWeek + course.labsPerWeek;
+        List<Room> exerciseRoomList = course.labsPerWeek > 0 ? labRooms : lectureRooms;
+
+        for (String day : days) {
+            if (day.equals(lectureDay))
+                continue; // Must be different day
+
+            for (Room room : exerciseRoomList) {
+                for (int hour = 8; hour <= 17 - exerciseHours; hour++) {
+                    LocalTime start = LocalTime.of(hour, 0);
+                    LocalTime end = start.plusHours(exerciseHours);
+
+                    if (!hasConflictInSchedule(scheduleId, day, room.idRoom, exerciseProfId, start, end)) {
+                        exerciseDay = day;
+                        exerciseRoom = room;
+                        exerciseStart = start;
+                        break;
+                    }
+                }
+                if (exerciseDay != null)
+                    break;
+            }
+            if (exerciseDay != null)
+                break;
+        }
+
+        if (exerciseDay == null) {
+            return 0;
+        }
+
+        // Save lectures (each hour separately)
+        LocalTime currentTime = lectureStart;
+        for (int i = 0; i < course.lecturesPerWeek; i++) {
+            LocalDateTime startsAt = convertDayToDate(lectureDay, currentTime);
+            LocalDateTime endsAt = startsAt.plusHours(1);
+            saveToAcademicEvent(scheduleId, course.idCourse, lectureProfId,
+                    lectureDay, startsAt, endsAt, lectureRoom.idRoom, "LECTURE");
+            addEventToCache(course.idCourse, lectureRoom.idRoom, lectureProfId,
+                    lectureDay, currentTime, currentTime.plusHours(1), "LECTURE", scheduleId);
+            currentTime = currentTime.plusHours(1);
+        }
+
+        // Save exercises (each hour separately)
+        currentTime = exerciseStart;
+        for (int i = 0; i < course.exercisesPerWeek; i++) {
+            LocalDateTime startsAt = convertDayToDate(exerciseDay, currentTime);
+            LocalDateTime endsAt = startsAt.plusHours(1);
+            saveToAcademicEvent(scheduleId, course.idCourse, exerciseProfId,
+                    exerciseDay, startsAt, endsAt, exerciseRoom.idRoom, "EXERCISE");
+            addEventToCache(course.idCourse, exerciseRoom.idRoom, exerciseProfId,
+                    exerciseDay, currentTime, currentTime.plusHours(1), "EXERCISE", scheduleId);
+            currentTime = currentTime.plusHours(1);
+        }
+
+        // Save labs (each hour separately)
+        for (int i = 0; i < course.labsPerWeek; i++) {
+            LocalDateTime startsAt = convertDayToDate(exerciseDay, currentTime);
+            LocalDateTime endsAt = startsAt.plusHours(1);
+            saveToAcademicEvent(scheduleId, course.idCourse, exerciseProfId,
+                    exerciseDay, startsAt, endsAt, exerciseRoom.idRoom, "LAB");
+            addEventToCache(course.idCourse, exerciseRoom.idRoom, exerciseProfId,
+                    exerciseDay, currentTime, currentTime.plusHours(1), "LAB", scheduleId);
+            currentTime = currentTime.plusHours(1);
+        }
+
+        return 2; // Successfully scheduled on 2 days
+    }
+
+    /**
+     * Schedules course as one block (only for 4-hour courses if 2-day fails)
+     * Only checks conflicts WITHIN the same schedule
+     */
+    private int scheduleAsOneBlockWithinSchedule(int scheduleId, Course course, int professorId,
+            List<String> days, List<Room> rooms) throws SQLException {
         int totalHours = course.getTotalHoursPerWeek();
-        if (totalHours < 4 || totalHours > 6) {
-            return "SKIP: Invalid total hours (" + totalHours + ")";
-        }
-        
-        // Find lecture professor
-        int lectureProfId = findLectureProfessor(course.idCourse);
-        if (lectureProfId == 0) {
-            return "SKIP: No lecture professor";
-        }
-        
-        // Find exercise professor
-        int exerciseProfId = findExerciseProfessor(course.idCourse);
-        if (exerciseProfId == 0) {
-            exerciseProfId = lectureProfId;
-        }
-        
-        // Get available days for lecture professor
-        List<String> availableDays = getPreferredDays(lectureProfId);
-        if (availableDays.isEmpty()) {
-            availableDays.addAll(Arrays.asList("ponedeljak", "utorak", "srijeda", "cetvrtak", "petak"));
-        }
-        
-        // Get suitable rooms
-        List<Room> lectureRooms = getSuitableRooms(false, 30);
-        List<Room> labRooms = getSuitableRooms(true, 20);
-        
-        if (lectureRooms.isEmpty()) {
-            return "SKIP: No lecture rooms available";
-        }
-        
-        if (course.labsPerWeek > 0 && labRooms.isEmpty()) {
-            labRooms = lectureRooms;
-        }
-        
-        // Try to schedule as two days (preferred for 5-6 hours, optimal for 4)
-        int addedTerms = scheduleAsTwoDaysWithinSchedule(scheduleId, course, 
-                                                         lectureProfId, exerciseProfId,
-                                                         availableDays, lectureRooms, labRooms);
-        
-        // If failed and total hours is 4, try as one block
-        if (addedTerms == 0 && totalHours == 4) {
-            addedTerms = scheduleAsOneBlockWithinSchedule(scheduleId, course, lectureProfId,
-                                                          availableDays, lectureRooms);
-        }
-        
-        if (addedTerms > 0) {
-            return "OK";
-        }
-        
-        return "FAILED: Could not find time slot";
-        
-    } catch (SQLException e) {
-        return "ERROR: " + e.getMessage();
-    }
-}
 
-/**
- * Schedules course as two days (Lectures on day1, Exercises+Labs on day2)
- * Only checks conflicts WITHIN the same schedule
- */
-private int scheduleAsTwoDaysWithinSchedule(int scheduleId, Course course,
-                                           int lectureProfId, int exerciseProfId,
-                                           List<String> days, List<Room> lectureRooms, 
-                                           List<Room> labRooms) throws SQLException {
-    String lectureDay = null;
-    String exerciseDay = null;
-    Room lectureRoom = null;
-    Room exerciseRoom = null;
-    LocalTime lectureStart = null;
-    LocalTime exerciseStart = null;
-    
-    // Day 1: Find free slot for lectures
-    for (String day : days) {
-        for (Room room : lectureRooms) {
-            for (int hour = 8; hour <= 17 - course.lecturesPerWeek; hour++) {
-                LocalTime start = LocalTime.of(hour, 0);
-                LocalTime end = start.plusHours(course.lecturesPerWeek);
-                
-                if (!hasConflictInSchedule(scheduleId, day, room.idRoom, lectureProfId, start, end)) {
-                    lectureDay = day;
-                    lectureRoom = room;
-                    lectureStart = start;
-                    break;
+        for (String day : days) {
+            for (Room room : rooms) {
+                for (int hour = 8; hour <= 17 - totalHours; hour++) {
+                    LocalTime startTime = LocalTime.of(hour, 0);
+                    LocalTime endTime = startTime.plusHours(totalHours);
+
+                    if (!hasConflictInSchedule(scheduleId, day, room.idRoom, professorId, startTime, endTime)) {
+                        // Save each hour separately
+                        LocalTime currentTime = startTime;
+
+                        // Lectures
+                        for (int i = 0; i < course.lecturesPerWeek; i++) {
+                            LocalDateTime startsAt = convertDayToDate(day, currentTime);
+                            LocalDateTime endsAt = startsAt.plusHours(1);
+                            saveToAcademicEvent(scheduleId, course.idCourse, professorId,
+                                    day, startsAt, endsAt, room.idRoom, "LECTURE");
+                            addEventToCache(course.idCourse, room.idRoom, professorId,
+                                    day, currentTime, currentTime.plusHours(1), "LECTURE", scheduleId);
+                            currentTime = currentTime.plusHours(1);
+                        }
+
+                        // Exercises
+                        for (int i = 0; i < course.exercisesPerWeek; i++) {
+                            LocalDateTime startsAt = convertDayToDate(day, currentTime);
+                            LocalDateTime endsAt = startsAt.plusHours(1);
+                            saveToAcademicEvent(scheduleId, course.idCourse, professorId,
+                                    day, startsAt, endsAt, room.idRoom, "EXERCISE");
+                            addEventToCache(course.idCourse, room.idRoom, professorId,
+                                    day, currentTime, currentTime.plusHours(1), "EXERCISE", scheduleId);
+                            currentTime = currentTime.plusHours(1);
+                        }
+
+                        // Labs
+                        for (int i = 0; i < course.labsPerWeek; i++) {
+                            LocalDateTime startsAt = convertDayToDate(day, currentTime);
+                            LocalDateTime endsAt = startsAt.plusHours(1);
+                            saveToAcademicEvent(scheduleId, course.idCourse, professorId,
+                                    day, startsAt, endsAt, room.idRoom, "LAB");
+                            addEventToCache(course.idCourse, room.idRoom, professorId,
+                                    day, currentTime, currentTime.plusHours(1), "LAB", scheduleId);
+                            currentTime = currentTime.plusHours(1);
+                        }
+
+                        return 1; // Successfully scheduled as 1 block
+                    }
                 }
             }
-            if (lectureDay != null) break;
         }
-        if (lectureDay != null) break;
-    }
-    
-    if (lectureDay == null) {
+
         return 0;
     }
-    
-    // Day 2: Find free slot for exercises + labs (must be different day)
-    int exerciseHours = course.exercisesPerWeek + course.labsPerWeek;
-    List<Room> exerciseRoomList = course.labsPerWeek > 0 ? labRooms : lectureRooms;
-    
-    for (String day : days) {
-        if (day.equals(lectureDay)) continue; // Must be different day
-        
-        for (Room room : exerciseRoomList) {
-            for (int hour = 8; hour <= 17 - exerciseHours; hour++) {
-                LocalTime start = LocalTime.of(hour, 0);
-                LocalTime end = start.plusHours(exerciseHours);
-                
-                if (!hasConflictInSchedule(scheduleId, day, room.idRoom, exerciseProfId, start, end)) {
-                    exerciseDay = day;
-                    exerciseRoom = room;
-                    exerciseStart = start;
-                    break;
-                }
-            }
-            if (exerciseDay != null) break;
-        }
-        if (exerciseDay != null) break;
-    }
-    
-    if (exerciseDay == null) {
-        return 0;
-    }
-    
-    // Save lectures (each hour separately)
-    LocalTime currentTime = lectureStart;
-    for (int i = 0; i < course.lecturesPerWeek; i++) {
-        LocalDateTime startsAt = convertDayToDate(lectureDay, currentTime);
-        LocalDateTime endsAt = startsAt.plusHours(1);
-        saveToAcademicEvent(scheduleId, course.idCourse, lectureProfId,
-                          lectureDay, startsAt, endsAt, lectureRoom.idRoom, "LECTURE");
-        addEventToCache(course.idCourse, lectureRoom.idRoom, lectureProfId,
-                       lectureDay, currentTime, currentTime.plusHours(1), "LECTURE", scheduleId);
-        currentTime = currentTime.plusHours(1);
-    }
-    
-    // Save exercises (each hour separately)
-    currentTime = exerciseStart;
-    for (int i = 0; i < course.exercisesPerWeek; i++) {
-        LocalDateTime startsAt = convertDayToDate(exerciseDay, currentTime);
-        LocalDateTime endsAt = startsAt.plusHours(1);
-        saveToAcademicEvent(scheduleId, course.idCourse, exerciseProfId,
-                          exerciseDay, startsAt, endsAt, exerciseRoom.idRoom, "EXERCISE");
-        addEventToCache(course.idCourse, exerciseRoom.idRoom, exerciseProfId,
-                       exerciseDay, currentTime, currentTime.plusHours(1), "EXERCISE", scheduleId);
-        currentTime = currentTime.plusHours(1);
-    }
-    
-    // Save labs (each hour separately)
-    for (int i = 0; i < course.labsPerWeek; i++) {
-        LocalDateTime startsAt = convertDayToDate(exerciseDay, currentTime);
-        LocalDateTime endsAt = startsAt.plusHours(1);
-        saveToAcademicEvent(scheduleId, course.idCourse, exerciseProfId,
-                          exerciseDay, startsAt, endsAt, exerciseRoom.idRoom, "LAB");
-        addEventToCache(course.idCourse, exerciseRoom.idRoom, exerciseProfId,
-                       exerciseDay, currentTime, currentTime.plusHours(1), "LAB", scheduleId);
-        currentTime = currentTime.plusHours(1);
-    }
-    
-    return 2; // Successfully scheduled on 2 days
-}
 
-/**
- * Schedules course as one block (only for 4-hour courses if 2-day fails)
- * Only checks conflicts WITHIN the same schedule
- */
-private int scheduleAsOneBlockWithinSchedule(int scheduleId, Course course, int professorId,
-                                             List<String> days, List<Room> rooms) throws SQLException {
-    int totalHours = course.getTotalHoursPerWeek();
-    
-    for (String day : days) {
-        for (Room room : rooms) {
-            for (int hour = 8; hour <= 17 - totalHours; hour++) {
-                LocalTime startTime = LocalTime.of(hour, 0);
-                LocalTime endTime = startTime.plusHours(totalHours);
-                
-                if (!hasConflictInSchedule(scheduleId, day, room.idRoom, professorId, startTime, endTime)) {
-                    // Save each hour separately
-                    LocalTime currentTime = startTime;
-                    
-                    // Lectures
-                    for (int i = 0; i < course.lecturesPerWeek; i++) {
-                        LocalDateTime startsAt = convertDayToDate(day, currentTime);
-                        LocalDateTime endsAt = startsAt.plusHours(1);
-                        saveToAcademicEvent(scheduleId, course.idCourse, professorId,
-                                          day, startsAt, endsAt, room.idRoom, "LECTURE");
-                        addEventToCache(course.idCourse, room.idRoom, professorId,
-                                       day, currentTime, currentTime.plusHours(1), "LECTURE", scheduleId);
-                        currentTime = currentTime.plusHours(1);
-                    }
-                    
-                    // Exercises
-                    for (int i = 0; i < course.exercisesPerWeek; i++) {
-                        LocalDateTime startsAt = convertDayToDate(day, currentTime);
-                        LocalDateTime endsAt = startsAt.plusHours(1);
-                        saveToAcademicEvent(scheduleId, course.idCourse, professorId,
-                                          day, startsAt, endsAt, room.idRoom, "EXERCISE");
-                        addEventToCache(course.idCourse, room.idRoom, professorId,
-                                       day, currentTime, currentTime.plusHours(1), "EXERCISE", scheduleId);
-                        currentTime = currentTime.plusHours(1);
-                    }
-                    
-                    // Labs
-                    for (int i = 0; i < course.labsPerWeek; i++) {
-                        LocalDateTime startsAt = convertDayToDate(day, currentTime);
-                        LocalDateTime endsAt = startsAt.plusHours(1);
-                        saveToAcademicEvent(scheduleId, course.idCourse, professorId,
-                                          day, startsAt, endsAt, room.idRoom, "LAB");
-                        addEventToCache(course.idCourse, room.idRoom, professorId,
-                                       day, currentTime, currentTime.plusHours(1), "LAB", scheduleId);
-                        currentTime = currentTime.plusHours(1);
-                    }
-                    
-                    return 1; // Successfully scheduled as 1 block
-                }
+    /**
+     * Checks for conflicts ONLY within the same schedule
+     * Does NOT check against events in other schedules
+     */
+    private boolean hasConflictInSchedule(int scheduleId, String day, int roomId, int professorId,
+            LocalTime startTime, LocalTime endTime) {
+        for (AcademicEvent event : academicEvents.values()) {
+            // Only check events in the SAME schedule
+            if (event.scheduleId != scheduleId) {
+                continue;
             }
-        }
-    }
-    
-    return 0;
-}
 
-/**
- * Checks for conflicts ONLY within the same schedule
- * Does NOT check against events in other schedules
- */
-private boolean hasConflictInSchedule(int scheduleId, String day, int roomId, int professorId,
-                                     LocalTime startTime, LocalTime endTime) {
-    for (AcademicEvent event : academicEvents.values()) {
-        // Only check events in the SAME schedule
-        if (event.scheduleId != scheduleId) {
-            continue;
-        }
-        
-        // Check day match
-        boolean dayMatch = (day != null && event.day != null && event.day.equals(day));
-        if (!dayMatch) {
-            continue;
-        }
-        
-        // Check room conflict
-        boolean roomConflict = (event.idRoom == roomId);
-        
-        // Check professor conflict
-        boolean profConflict = (event.idProfessor == professorId);
-        
-        if (roomConflict || profConflict) {
-            // Check time overlap
-            if (startTime != null && endTime != null && event.startTime != null && event.endTime != null) {
-                if (startTime.isBefore(event.endTime) && endTime.isAfter(event.startTime)) {
-                    return true; // Conflict found
+            // Check day match
+            boolean dayMatch = (day != null && event.day != null && event.day.equals(day));
+            if (!dayMatch) {
+                continue;
+            }
+
+            // Check room conflict
+            boolean roomConflict = (event.idRoom == roomId);
+
+            // Check professor conflict
+            boolean profConflict = (event.idProfessor == professorId);
+
+            if (roomConflict || profConflict) {
+                // Check time overlap
+                if (startTime != null && endTime != null && event.startTime != null && event.endTime != null) {
+                    if (startTime.isBefore(event.endTime) && endTime.isAfter(event.startTime)) {
+                        return true; // Conflict found
+                    }
                 }
             }
         }
+
+        return false; // No conflict
     }
-    
-    return false; // No conflict
-}
 
 }
 

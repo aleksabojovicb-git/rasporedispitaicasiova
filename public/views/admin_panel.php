@@ -7,6 +7,20 @@ if (isset($_GET['action']) && $_GET['action'] === 'getschedule') {
     header('Content-Type: application/json; charset=utf-8');
 
     try {
+        // Get all distinct schedule_ids (latest 6)
+        $scheduleStmt = $pdo->prepare("
+            SELECT DISTINCT schedule_id 
+            FROM academic_event 
+            WHERE schedule_id IS NOT NULL 
+            ORDER BY schedule_id DESC 
+            LIMIT 6
+        ");
+        $scheduleStmt->execute();
+        $scheduleIds = $scheduleStmt->fetchAll(PDO::FETCH_COLUMN);
+        
+        // Reverse to show oldest first (1, 2, 3, 4, 5, 6)
+        $scheduleIds = array_reverse($scheduleIds);
+
         $stmt = $pdo->prepare("
             SELECT 
                 ae.schedule_id,
@@ -19,22 +33,32 @@ if (isset($_GET['action']) && $_GET['action'] === 'getschedule') {
             FROM academic_event ae
             JOIN course c ON ae.course_id = c.id
             LEFT JOIN room r ON ae.room_id = r.id
-            WHERE ae.type_enum = 'LECTURE'
-            ORDER BY c.semester, ae.day, ae.starts_at
+            WHERE ae.type_enum IN ('LECTURE', 'EXERCISE', 'LAB')
+              AND ae.schedule_id IN (" . implode(',', array_fill(0, count($scheduleIds), '?')) . ")
+            ORDER BY ae.schedule_id, c.semester, ae.day, ae.starts_at
         ");
-        $stmt->execute();
+        $stmt->execute($scheduleIds);
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-
-        $data = [];
+        // Group by schedule_id -> semester -> events
+        $data = [
+            'schedules' => [],
+            'schedule_ids' => $scheduleIds
+        ];
+        
+        foreach ($scheduleIds as $sid) {
+            $data['schedules'][$sid] = [];
+        }
+        
         foreach ($rows as $row) {
+            $schedId = (int)$row['schedule_id'];
             $sem = (int)$row['semester'];
 
-            if (!isset($data[$sem])) {
-                $data[$sem] = [];
+            if (!isset($data['schedules'][$schedId][$sem])) {
+                $data['schedules'][$schedId][$sem] = [];
             }
 
-            $data[$sem][] = [
+            $data['schedules'][$schedId][$sem][] = [
                 'day'    => (int)$row['day'],
                 'start'  => substr($row['starts_at'], 11, 5),
                 'end'    => substr($row['ends_at'],   11, 5),
@@ -45,7 +69,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'getschedule') {
 
         echo json_encode($data, JSON_UNESCAPED_UNICODE);
     } catch (PDOException $e) {
-        echo json_encode(['error' => 'Greška pri čitanju rasporeda.']);
+        echo json_encode(['error' => 'Greška pri čitanju rasporeda: ' . $e->getMessage()]);
     }
     exit;
 }
@@ -1484,117 +1508,197 @@ document.getElementById('generate-schedule').addEventListener('click', async () 
             button.classList.remove('loading');
             return;
         }
-
-        // skupi sve događaje da izvučemo zajedničke vremenske slotove
-        const allEvents = [];
-        Object.keys(data).forEach(sem => {
-            data[sem].forEach(ev => allEvents.push(ev));
-        });
-
-        if (allEvents.length === 0) {
+        // Nova struktura: data.schedules[scheduleId][semester] = events[]
+        // data.schedule_ids = [id1, id2, ...]
+        
+        const schedules = data.schedules || {};
+        const scheduleIds = data.schedule_ids || [];
+        
+        if (scheduleIds.length === 0) {
             container.innerHTML = '<p>Nema rasporeda u bazi.</p>';
+            button.disabled = false;
+            button.textContent = 'Generiši raspored časova';
+            button.classList.remove('loading');
             return;
         }
 
+        // Skupi sve događaje za vremenske slotove
+        const allEvents = [];
+        scheduleIds.forEach(sid => {
+            Object.keys(schedules[sid] || {}).forEach(sem => {
+                (schedules[sid][sem] || []).forEach(ev => allEvents.push(ev));
+            });
+        });
+
         const timeSlots = Array.from(
             new Set(allEvents.map(e => e.start + '-' + e.end))
-        ).sort(); // npr. "08:00-09:00", "09:00-10:00"...
+        ).sort();
 
-        function buildTableForSemester(sem, events) {
-            if (!events || events.length === 0) return;
+        // State: koji raspored je trenutno prikazan za svaki semestar
+        const currentScheduleIndex = {};
+        [1, 2, 3, 4, 5, 6].forEach(sem => {
+            currentScheduleIndex[sem] = 0;
+        });
 
+        function buildTableForSemester(sem, events, scheduleIdx, totalSchedules) {
             const wrapper = document.createElement('div');
+            wrapper.className = 'semester-wrapper';
+            wrapper.id = 'semester-wrapper-' + sem;
             wrapper.style.marginBottom = '40px';
+            wrapper.style.border = '1px solid #444';
+            wrapper.style.borderRadius = '12px';
+            wrapper.style.padding = '20px';
+            wrapper.style.background = 'transparent';
+
+            // Header sa strelicama
+            const header = document.createElement('div');
+            header.style.display = 'flex';
+            header.style.justifyContent = 'space-between';
+            header.style.alignItems = 'center';
+            header.style.marginBottom = '15px';
+
+            const leftArrow = document.createElement('button');
+            leftArrow.innerHTML = '◀';
+            leftArrow.className = 'nav-arrow';
+            leftArrow.style.cssText = 'font-size: 24px; padding: 8px 16px; cursor: pointer; border: none; background: #3b82f6; color: white; border-radius: 8px; transition: all 0.2s;';
+            leftArrow.disabled = scheduleIdx === 0;
+            leftArrow.style.opacity = scheduleIdx === 0 ? '0.5' : '1';
 
             const h3 = document.createElement('h3');
             const semType = (sem % 2 === 1) ? 'Zimski semestar' : 'Ljetnji semestar';
-            h3.textContent = sem + '. semestar – ' + semType;
-            wrapper.appendChild(h3);
+            h3.style.margin = '0';
+            h3.style.textAlign = 'center';
+            h3.innerHTML = sem + '. semestar – ' + semType + 
+                '<br><small style="color: #666; font-weight: normal;">Raspored ' + (scheduleIdx + 1) + ' od ' + totalSchedules + '</small>';
 
-            const table = document.createElement('table');
-            table.border = '1';
-            table.cellPadding = '5';
-            table.style.width = '100%';
-            table.style.borderCollapse = 'collapse';
-            table.className = 'schedule-table';
+            const rightArrow = document.createElement('button');
+            rightArrow.innerHTML = '▶';
+            rightArrow.className = 'nav-arrow';
+            rightArrow.style.cssText = 'font-size: 24px; padding: 8px 16px; cursor: pointer; border: none; background: #3b82f6; color: white; border-radius: 8px; transition: all 0.2s;';
+            rightArrow.disabled = scheduleIdx === totalSchedules - 1;
+            rightArrow.style.opacity = scheduleIdx === totalSchedules - 1 ? '0.5' : '1';
 
-            const thead = document.createElement('thead');
-            const trHead = document.createElement('tr');
-            const thTime = document.createElement('th');
-            thTime.textContent = 'Vrijeme';
-            trHead.appendChild(thTime);
-            days.forEach(d => {
-                const th = document.createElement('th');
-                th.textContent = d;
-                trHead.appendChild(th);
-            });
-            thead.appendChild(trHead);
-            table.appendChild(thead);
-
-            const tbody = document.createElement('tbody');
-
-            timeSlots.forEach(slot => {
-                // prvo proveri da li uopšte postoji neki čas u ovom slotu za bilo koji dan
-                const hasAnyEvent = events.some(ev =>
-                    (ev.start + '-' + ev.end) === slot
-                );
-                if (!hasAnyEvent) {
-                    // nema nijednog časa u tom terminu -> preskačemo red
-                    return;
+            // Event listeneri za strelice
+            leftArrow.addEventListener('click', () => {
+                if (currentScheduleIndex[sem] > 0) {
+                    currentScheduleIndex[sem]--;
+                    updateSemesterTable(sem);
                 }
+            });
 
-                const tr = document.createElement('tr');
-                const tdTime = document.createElement('td');
-                tdTime.textContent = slot;
-                tr.appendChild(tdTime);
+            rightArrow.addEventListener('click', () => {
+                if (currentScheduleIndex[sem] < scheduleIds.length - 1) {
+                    currentScheduleIndex[sem]++;
+                    updateSemesterTable(sem);
+                }
+            });
 
-                for (let d = 1; d <= 5; d++) {
-                    const td = document.createElement('td');
-                    const cellEvents = events.filter(ev =>
-                        ev.day === d && (ev.start + '-' + ev.end) === slot
+            header.appendChild(leftArrow);
+            header.appendChild(h3);
+            header.appendChild(rightArrow);
+            wrapper.appendChild(header);
+
+            // Tabela
+            if (!events || events.length === 0) {
+                const noData = document.createElement('p');
+                noData.textContent = 'Nema podataka za ovaj raspored.';
+                noData.style.textAlign = 'center';
+                noData.style.color = '#999';
+                wrapper.appendChild(noData);
+            } else {
+                const table = document.createElement('table');
+                table.border = '1';
+                table.cellPadding = '5';
+                table.style.width = '100%';
+                table.style.borderCollapse = 'collapse';
+                table.className = 'schedule-table';
+                table.setAttribute('data-semester', sem);
+
+                const thead = document.createElement('thead');
+                const trHead = document.createElement('tr');
+                const thTime = document.createElement('th');
+                thTime.textContent = 'Vrijeme';
+                trHead.appendChild(thTime);
+                days.forEach(d => {
+                    const th = document.createElement('th');
+                    th.textContent = d;
+                    trHead.appendChild(th);
+                });
+                thead.appendChild(trHead);
+                table.appendChild(thead);
+
+                const tbody = document.createElement('tbody');
+
+                timeSlots.forEach(slot => {
+                    const hasAnyEvent = events.some(ev =>
+                        (ev.start + '-' + ev.end) === slot
                     );
-                    if (cellEvents.length > 0) {
-                        td.innerHTML = cellEvents
-                            .map(ev => ev.course + ' (' + ev.room + ')')
-                            .join('<br>');
+                    if (!hasAnyEvent) return;
+
+                    const tr = document.createElement('tr');
+                    const tdTime = document.createElement('td');
+                    tdTime.textContent = slot;
+                    tr.appendChild(tdTime);
+
+                    for (let d = 1; d <= 5; d++) {
+                        const td = document.createElement('td');
+                        const cellEvents = events.filter(ev =>
+                            ev.day === d && (ev.start + '-' + ev.end) === slot
+                        );
+                        if (cellEvents.length > 0) {
+                            td.innerHTML = cellEvents
+                                .map(ev => ev.course + ' (' + ev.room + ')')
+                                .join('<br>');
+                        }
+                        tr.appendChild(td);
                     }
-                    tr.appendChild(td);
-                }
 
-                tbody.appendChild(tr);
-            });
+                    tbody.appendChild(tr);
+                });
 
+                table.appendChild(tbody);
+                wrapper.appendChild(table);
 
-            table.appendChild(tbody);
-            wrapper.appendChild(table);
-            // Dugme za PDF
-            const pdfBtn = document.createElement('button');
-            pdfBtn.textContent = 'Sačuvaj raspored kao PDF';
-            pdfBtn.className = 'action-button add-button';
-            pdfBtn.style.marginTop = '10px';
+                // PDF dugme
+                const pdfBtn = document.createElement('button');
+                pdfBtn.textContent = 'Sačuvaj kao PDF';
+                pdfBtn.className = 'action-button add-button';
+                pdfBtn.style.marginTop = '10px';
+                pdfBtn.addEventListener('click', () => {
+                    saveTableAsPDF(table, sem);
+                });
+                wrapper.appendChild(pdfBtn);
+            }
 
-            pdfBtn.addEventListener('click', () => {
-                saveTableAsPDF(table, sem);
-            });
-
-            wrapper.appendChild(pdfBtn);
-
-            container.appendChild(wrapper);
+            return wrapper;
         }
 
-        // Prvo 1,3,5 (zimski), pa 2,4,6 (ljetnji)
+        function updateSemesterTable(sem) {
+            const oldWrapper = document.getElementById('semester-wrapper-' + sem);
+            if (!oldWrapper) return;
+
+            const schedIdx = currentScheduleIndex[sem];
+            const schedId = scheduleIds[schedIdx];
+            const events = (schedules[schedId] && schedules[schedId][sem]) || [];
+
+            const newWrapper = buildTableForSemester(sem, events, schedIdx, scheduleIds.length);
+            oldWrapper.replaceWith(newWrapper);
+        }
+
+        // Inicijalni prikaz - svi semestri sa prvim rasporedom
         [1, 3, 5, 2, 4, 6].forEach(sem => {
-            if (data[sem]) {
-                buildTableForSemester(parseInt(sem, 10), data[sem]);
-            }
+            const schedId = scheduleIds[0];
+            const events = (schedules[schedId] && schedules[schedId][sem]) || [];
+            const wrapper = buildTableForSemester(sem, events, 0, scheduleIds.length);
+            container.appendChild(wrapper);
         });
+
+        // Dugme za PDF svih
         const pdfAllBtn = document.createElement('button');
         pdfAllBtn.textContent = 'Sačuvaj kompletan raspored kao PDF';
         pdfAllBtn.className = 'action-button add-button';
         pdfAllBtn.style.marginTop = '20px';
-
         pdfAllBtn.addEventListener('click', saveFullScheduleAsPDF);
-
         container.appendChild(pdfAllBtn);
         
         // Vrati dugme u normalno stanje
