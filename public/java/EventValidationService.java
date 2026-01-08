@@ -1816,7 +1816,8 @@ public class EventValidationService {
                     LocalTime start = LocalTime.of(hour, 0);
                     LocalTime end = start.plusHours(course.lecturesPerWeek);
 
-                    if (!hasConflictInSchedule(scheduleId, day, room.idRoom, lectureProfId, start, end)) {
+                    if (!hasConflictInSchedule(scheduleId, day, room.idRoom, lectureProfId, start, end,
+                            course.semester)) {
                         lectureDay = day;
                         lectureRoom = room;
                         lectureStart = start;
@@ -1847,7 +1848,8 @@ public class EventValidationService {
                     LocalTime start = LocalTime.of(hour, 0);
                     LocalTime end = start.plusHours(exerciseHours);
 
-                    if (!hasConflictInSchedule(scheduleId, day, room.idRoom, exerciseProfId, start, end)) {
+                    if (!hasConflictInSchedule(scheduleId, day, room.idRoom, exerciseProfId, start, end,
+                            course.semester)) {
                         exerciseDay = day;
                         exerciseRoom = room;
                         exerciseStart = start;
@@ -1917,7 +1919,8 @@ public class EventValidationService {
                     LocalTime startTime = LocalTime.of(hour, 0);
                     LocalTime endTime = startTime.plusHours(totalHours);
 
-                    if (!hasConflictInSchedule(scheduleId, day, room.idRoom, professorId, startTime, endTime)) {
+                    if (!hasConflictInSchedule(scheduleId, day, room.idRoom, professorId, startTime, endTime,
+                            course.semester)) {
                         // Save each hour separately
                         LocalTime currentTime = startTime;
 
@@ -1966,9 +1969,11 @@ public class EventValidationService {
     /**
      * Checks for conflicts ONLY within the same schedule
      * Does NOT check against events in other schedules
+     * Also checks for semester conflicts (two courses from the same semester at the
+     * same time)
      */
     private boolean hasConflictInSchedule(int scheduleId, String day, int roomId, int professorId,
-            LocalTime startTime, LocalTime endTime) {
+            LocalTime startTime, LocalTime endTime, int courseSemester) {
         for (AcademicEvent event : academicEvents.values()) {
             // Only check events in the SAME schedule
             if (event.scheduleId != scheduleId) {
@@ -1981,23 +1986,40 @@ public class EventValidationService {
                 continue;
             }
 
+            // Check time overlap first
+            boolean timeOverlap = false;
+            if (startTime != null && endTime != null && event.startTime != null && event.endTime != null) {
+                timeOverlap = startTime.isBefore(event.endTime) && endTime.isAfter(event.startTime);
+            }
+
+            if (!timeOverlap) {
+                continue;
+            }
+
             // Check room conflict
-            boolean roomConflict = (event.idRoom == roomId);
+            if (event.idRoom == roomId) {
+                return true; // Room conflict
+            }
 
             // Check professor conflict
-            boolean profConflict = (event.idProfessor == professorId);
+            if (event.idProfessor == professorId) {
+                return true; // Professor conflict
+            }
 
-            if (roomConflict || profConflict) {
-                // Check time overlap
-                if (startTime != null && endTime != null && event.startTime != null && event.endTime != null) {
-                    if (startTime.isBefore(event.endTime) && endTime.isAfter(event.startTime)) {
-                        return true; // Conflict found
-                    }
-                }
+            // Check semester conflict - courses from the same semester cannot overlap
+            Course eventCourse = courses.get(event.idCourse);
+            if (eventCourse != null && eventCourse.semester == courseSemester) {
+                return true; // Semester conflict - students can't attend both
             }
         }
 
         return false; // No conflict
+    }
+
+    // Overloaded method for backward compatibility (without semester check)
+    private boolean hasConflictInSchedule(int scheduleId, String day, int roomId, int professorId,
+            LocalTime startTime, LocalTime endTime) {
+        return hasConflictInSchedule(scheduleId, day, roomId, professorId, startTime, endTime, -1);
     }
 
 }
