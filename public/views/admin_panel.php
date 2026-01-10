@@ -1438,6 +1438,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     ?>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+
 
         <script>
 const days = ['Ponedjeljak', 'Utorak', 'Srijeda', 'Četvrtak', 'Petak'];
@@ -1540,6 +1542,24 @@ document.getElementById('generate-schedule').addEventListener('click', async () 
             currentScheduleIndex[sem] = 0;
         });
 
+        function enableTdSwap(tableEl) {
+            const rows = tableEl.querySelectorAll('tbody tr');
+
+            rows.forEach((tr) => {
+                new Sortable(tr, {
+                animation: 150,
+                draggable: 'td',         
+                filter: '.no-drag',      
+                preventOnFilter: true,    // spriječi drag start na filtriranim 
+
+                swap: true,               
+                swapClass: 'td-swap-hl',  // klasa za “hover” 
+
+                });
+            });
+        }
+
+
         function buildTableForSemester(sem, events, scheduleIdx, totalSchedules) {
             const wrapper = document.createElement('div');
             wrapper.className = 'semester-wrapper';
@@ -1638,6 +1658,7 @@ document.getElementById('generate-schedule').addEventListener('click', async () 
                     const tr = document.createElement('tr');
                     const tdTime = document.createElement('td');
                     tdTime.textContent = slot;
+                    tdTime.classList.add('no-drag');
                     tr.appendChild(tdTime);
 
                     for (let d = 1; d <= 5; d++) {
@@ -1658,6 +1679,7 @@ document.getElementById('generate-schedule').addEventListener('click', async () 
 
                 table.appendChild(tbody);
                 wrapper.appendChild(table);
+                enableTdSwap(table);
 
                 // PDF dugme
                 const pdfBtn = document.createElement('button');
