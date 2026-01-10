@@ -1548,18 +1548,13 @@ document.getElementById('generate-schedule').addEventListener('click', async () 
             rows.forEach((tr) => {
                 new Sortable(tr, {
                 animation: 150,
-                draggable: 'td',          // stavke su td [web:15]
-                filter: '.no-drag',       // ne draguj vrijeme kolonu [web:15]
-                preventOnFilter: true,    // spriječi drag start na filtriranim [web:15]
+                draggable: 'td',         
+                filter: '.no-drag',      
+                preventOnFilter: true,    // spriječi drag start na filtriranim 
 
-                swap: true,               // swap plugin (zamjena) [web:4][web:3]
-                swapClass: 'td-swap-hl',  // klasa za “hover” target [web:4]
+                swap: true,               
+                swapClass: 'td-swap-hl',  // klasa za “hover” 
 
-                // Samo unutar istog reda (default) — jer je svaki <tr> zaseban Sortable.
-                // onEnd: (evt) => {
-                //     // evt.oldIndex / evt.newIndex su indeksi td unutar tog reda [web:15]
-                //     // Ovdje možeš poslati fetch da snimiš promjenu u bazi (po potrebi)
-                // }
                 });
             });
         }
