@@ -1547,17 +1547,23 @@ document.getElementById('generate-schedule').addEventListener('click', async () 
 
             rows.forEach((tr) => {
                 new Sortable(tr, {
+                group: { name: 'cells', pull: true, put: true },
                 animation: 150,
-                draggable: 'td',         
-                filter: '.no-drag',      
-                preventOnFilter: true,    // spriječi drag start na filtriranim 
+                draggable: 'td',
 
-                swap: true,               
-                swapClass: 'td-swap-hl',  // klasa za “hover” 
+                filter: '.no-drag',        
+                preventOnFilter: true,
 
+                swap: true,                
+                swapClass: 'td-swap-hl',   
+
+                fallbackOnBody: true,      
+                swapThreshold: 0.65,       
+                invertSwap: true           
                 });
             });
         }
+
 
 
         function buildTableForSemester(sem, events, scheduleIdx, totalSchedules) {
