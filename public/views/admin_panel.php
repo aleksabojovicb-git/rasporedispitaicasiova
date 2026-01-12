@@ -1,5 +1,7 @@
 
 <?php
+
+
 session_start();
 require_once __DIR__ . '/../../config/dbconnection.php';
 
@@ -975,295 +977,353 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         echo "</table>";
         break;
         case 'predmeti':
-        ?>
+            ?>
 
-        <h2>Upravljanje Predmetima</h2>
-        <button class="action-button add-button" onclick="toggleForm('predmetForm')">+ Dodaj Predmet</button>
-        <button class="action-button add-button" onclick="toggleForm('assignForm')">+ Pridruži Profesora</button>
-        <div id="assignForm" class="form-container" style="display: none">
-            <h3>Pridruži profesora predmetu</h3>
-            <form method="post">
-                <input type="hidden" name="action" value="assign_professor">
+            <h2>Upravljanje Predmetima</h2>
 
-                <label for="assign_course_id">Predmet:</label>
-                <select id="assign_course_id" name="course_id" required>
-                    <option value="">-- Odaberite predmet --</option>
-                    <?php
-                    try {
+            <button class="action-button add-button" onclick="toggleForm('predmetForm')">
+                + Dodaj Predmet
+            </button>
+
+            <button class="action-button add-button" onclick="toggleForm('assignForm')">
+                + Pridruži Profesora
+            </button>
+
+            <!-- ===== Pridruži profesora ===== -->
+            <div id="assignForm" class="form-container" style="display:none">
+                <h3>Pridruži profesora predmetu</h3>
+                <form method="post">
+                    <input type="hidden" name="action" value="assign_professor">
+
+                    <label>Predmet:</label>
+                    <select name="course_id" required>
+                        <option value="">-- Odaberite --</option>
+                        <?php
                         $stmt = $pdo->query("SELECT id, name, code FROM course WHERE is_active = TRUE ORDER BY name");
-                        while ($c = $stmt->fetch()) {
-                            echo "<option value='" . $c['id'] . "'>" . htmlspecialchars($c['name']) . " (" . htmlspecialchars($c['code']) . ")</option>";
-                        }
-                    } catch (PDOException $e) {
-                        echo "<option value=''>Greška pri dohvaćanju predmeta</option>";
-                    }
-                    ?>
-                </select>
+                        while ($c = $stmt->fetch()):
+                            ?>
+                            <option value="<?= $c['id'] ?>">
+                                <?= htmlspecialchars($c['name']) ?> (<?= htmlspecialchars($c['code']) ?>)
+                            </option>
+                        <?php endwhile; ?>
+                    </select>
 
-                <label for="assign_professor_id">Profesor:</label>
-                <select id="assign_professor_id" name="professor_id" required>
-                    <option value="">-- Odaberite profesora --</option>
-                    <?php
-                    try {
-                        // Dohvati profesore i izbroji koliko njih ima isti full_name
-                        $stmt = $pdo->query("SELECT id, full_name, email FROM professor WHERE is_active = TRUE ORDER BY full_name");
-                        $professors = [];
-                        $nameCounts = [];
-                        while ($p = $stmt->fetch()) {
-                            $professors[] = $p;
-                            $nameCounts[$p['full_name']] = ($nameCounts[$p['full_name']] ?? 0) + 1;
-                        }
+                    <label>Profesor:</label>
+                    <select name="professor_id" required>
+                        <option value="">-- Odaberite --</option>
+                        <?php
+                        $stmt = $pdo->query("SELECT id, full_name FROM professor WHERE is_active = TRUE ORDER BY full_name");
+                        while ($p = $stmt->fetch()):
+                            ?>
+                            <option value="<?= $p['id'] ?>">
+                                <?= htmlspecialchars($p['full_name']) ?>
+                            </option>
+                        <?php endwhile; ?>
+                    </select>
 
-                        foreach ($professors as $p) {
-                            $label = htmlspecialchars($p['full_name']);
-                            if ($nameCounts[$p['full_name']] > 1) {
-                                $label .= ' (' . htmlspecialchars($p['email']) . ')';
-                            }
-                            echo "<option value='" . $p['id'] . "'>" . $label . "</option>";
-                        }
-                    } catch (PDOException $e) {
-                        echo "<option value=''>Greška pri dohvaćanju profesora</option>";
-                    }
-                    ?>
-                </select>
+                    <label>
+                        <input type="checkbox" name="is_assistant"> Asistent
+                    </label>
 
-                <label for="is_assistant"><input type="checkbox" id="is_assistant" name="is_assistant"> Označi ako je asistent</label>
+                    <button type="submit">Sačuvaj</button>
+                </form>
+            </div>
 
-                <button type="submit">Sačuvaj</button>
-            </form>
-        </div>
-        <div id="predmetForm" class="form-container" style="display: none">
-            <h3>Novi predmet</h3>
-            <form method="post">
-                <input type="hidden" name="action" value="add_predmet">
+            <!-- ===== Novi predmet ===== -->
+            <div id="predmetForm" class="form-container" style="display:none">
+                <h3>Novi predmet</h3>
+                <form method="post">
+                    <input type="hidden" name="action" value="add_predmet">
 
-                <label for="name">Naziv predmeta:</label>
-                <input type="text" id="name" name="name" required>
+                    <label>Naziv:</label>
+                    <input type="text" name="name" required>
 
-                <label for="code">Šifra predmeta:</label>
-                <input type="text" id="code" name="code" required>
+                    <label>Šifra:</label>
+                    <input type="text" name="code" required>
 
-                <label for="semester">Semestar:</label>
-                <input type="number" id="semester" name="semester" min="1" max="6" required>
+                    <label>Semestar:</label>
+                    <input type="number" name="semester" min="1" max="6" required>
 
-                <label for="is_optional">Izborni predmet:</label>
-                <input type="checkbox" id="is_optional" name="is_optional">
+                    <label>
+                        <input type="checkbox" name="is_optional"> Izborni
+                    </label>
 
-                <label for="lecture_hours">Broj časova predavanja (nedjeljno):</label>
-                <input type="number" id="lecture_hours" name="lecture_hours" min="0" max="10" value="0">
+                    <button type="submit">Sačuvaj</button>
+                </form>
+            </div>
 
-                <label for="exercise_hours">Broj časova vježbi (nedjeljno):</label>
-                <input type="number" id="exercise_hours" name="exercise_hours" min="0" max="10" value="0">
-
-                // za ovu funkciju fali backend
-                <button type="submit">Sačuvaj</button>
-            </form>
-        </div>
-
-        <table border="1" cellpadding="5">
-            <tr>
-                <th>ID</th>
-                <th>Naziv</th>
-                <th>Šifra</th>
-                <th>Semestar</th>
-                <th>Obavezni</th>
-                <th>Profesori</th>
-                <th>Predavanja / sedmično</th>
-                <th>Vježbe / sedmično</th>
-                <th>Status</th>
-                <th>Akcije</th>
-
-
-            </tr>
             <?php
+            $stmt = $pdo->query("
+    SELECT 
+        c.id AS course_id,
+        c.name,
+        c.code,
+        c.semester,
+        c.is_optional,
+        c.is_active,
+        cp.professor_id,
+        cp.is_assistant,
+        p.full_name
+    FROM course c
+    LEFT JOIN course_professor cp ON cp.course_id = c.id
+    LEFT JOIN professor p ON p.id = cp.professor_id
+    ORDER BY c.id
+");
 
-            try {
-                $stmt = $pdo->query("SELECT * FROM course ORDER BY id");
-                while ($row = $stmt->fetch()) {
-                    echo "<tr>";
-                    echo "<td>" . htmlspecialchars($row['id']) . "</td>";
-                    echo "<td>" . htmlspecialchars($row['name']) . "</td>";
-                    echo "<td>" . htmlspecialchars($row['code']) . "</td>";
-                    echo "<td>" . htmlspecialchars($row['semester']) . "</td>";
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            $courses = [];
 
-
-                    // Obavezni (is_optional == 0 -> Obavezni = Da)
-                    $is_mandatory = $row['is_optional'] ? 'Ne' : 'Da';
-                    echo "<td>" . $is_mandatory . "</td>";
-
-                    // Dohvati pridružene profesore za prikaz i za edit payload
-                    $stmt2 = $pdo->prepare("SELECT cp.professor_id, cp.is_assistant, p.full_name, p.email FROM course_professor cp JOIN professor p ON cp.professor_id = p.id WHERE cp.course_id = ?");
-                    $stmt2->execute([$row['id']]);
-                    $assigned = $stmt2->fetchAll(PDO::FETCH_ASSOC);
-
-                    // Build display for professors column
-                    $profDisplay = [];
-                    $profPayload = [];
-                    foreach ($assigned as $a) {
-                        $displayName = htmlspecialchars($a['full_name']);
-                        if ($a['is_assistant']) $displayName .= ' A';
-                        $profDisplay[] = $displayName;
-                        $profPayload[] = ['id' => (int)$a['professor_id'], 'full_name' => $a['full_name'], 'email' => $a['email'], 'is_assistant' => (int)$a['is_assistant']];
-                    }
-                    echo "<td>" . implode(', ', $profDisplay) . "</td>";
-                    echo "<td>fali backend</td>";
-                    echo "<td>fali backend</td>";
-                    echo "<td>" . ($row['is_active'] ? 'Aktivan' : 'Neaktivan') . "</td>";
-                    echo "<td>";
-                    // Attach professors payload as JSON on the edit button
-                    $profJson = htmlspecialchars(json_encode($profPayload), ENT_QUOTES);
-                    echo "<button class='action-button edit-button' data-entity='predmet' data-id='" . $row['id'] . "' data-name='" . htmlspecialchars($row['name'], ENT_QUOTES) . "' data-code='" . htmlspecialchars($row['code'], ENT_QUOTES) . "' data-semester='" . htmlspecialchars($row['semester'], ENT_QUOTES) . "' data-is_optional='" . ($row['is_optional'] ? '1' : '0') . "' data-professors='" . $profJson . "'>Uredi</button>";
-
-                    // Ako je predmet neaktivan ne moze imati deaktiviraj dugme
-                    if ($row['is_active']) {
-                        echo "<form id='delete-predmet-{$row['id']}' style='display:inline' method='post' action='{$_SERVER['PHP_SELF']}'>
-                            <input type='hidden' name='action' value='delete_predmet'>
-                            <input type='hidden' name='id' value='{$row['id']}'>
-                            <button type='button' class='action-button delete-button' onclick=\"submitDeleteForm({$row['id']}, 'delete_predmet', 'predmet')\">Deaktiviraj</button>
-                        </form>";
-                    }
-
-                    echo "</td>";
-                    echo "</tr>";
+            foreach ($rows as $r) {
+                $cid = (int)$r['course_id'];
+                if (!isset($courses[$cid])) {
+                    $courses[$cid] = [
+                        'id' => $cid,
+                        'name' => $r['name'],
+                        'code' => $r['code'],
+                        'semester' => $r['semester'],
+                        'is_optional' => (int)$r['is_optional'],
+                        'is_active' => (int)$r['is_active'],
+                        'professors' => []
+                    ];
                 }
-            } catch (PDOException $e) {
-                echo "<tr><td colspan='6'>Greška pri dohvaćanju predmeta: " . $e->getMessage() . "</td></tr>";
+
+                if ($r['professor_id']) {
+                    $courses[$cid]['professors'][] = [
+                        'name' => $r['full_name'],
+                        'is_assistant' => (int)$r['is_assistant']
+                    ];
+                }
             }
-            echo "</table>";
+            ?>
+
+            <table border="1" cellpadding="5">
+                <tr>
+                    <th>ID</th>
+                    <th>Naziv</th>
+                    <th>Šifra</th>
+                    <th>Semestar</th>
+                    <th>Obavezni</th>
+                    <th>Profesori</th>
+                    <th>Status</th>
+                    <th>Akcije</th>
+                </tr>
+
+                <?php foreach ($courses as $c): ?>
+                    <tr>
+                        <td><?= $c['id'] ?></td>
+                        <td><?= htmlspecialchars($c['name']) ?></td>
+                        <td><?= htmlspecialchars($c['code']) ?></td>
+                        <td><?= $c['semester'] ?></td>
+                        <td><?= $c['is_optional'] ? 'Ne' : 'Da' ?></td>
+
+                        <td>
+                            <?= $c['professors']
+                                ? implode(', ', array_map(
+                                    fn($p) => htmlspecialchars($p['name']) . ($p['is_assistant'] ? ' (A)' : ''),
+                                    $c['professors']
+                                ))
+                                : '<em>Nema</em>' ?>
+                        </td>
+
+                        <td><?= $c['is_active'] ? 'Aktivan' : 'Neaktivan' ?></td>
+
+                        <td>
+                            <?php if ($c['is_active']): ?>
+                                <form method="post" style="display:inline">
+                                    <input type="hidden" name="action" value="delete_predmet">
+                                    <input type="hidden" name="id" value="<?= $c['id'] ?>">
+                                    <button class="action-button delete-button">Deaktiviraj</button>
+                                </form>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                <?php endforeach; ?>
+            </table>
+
+            <?php
             break;
-            case 'dogadjaji':
+
+
+
+
+
+
+        case 'dogadjaji':
+
+            // ===== PAGINATION SETUP =====
+            $pageNum = isset($_GET['p']) ? max(1, (int)$_GET['p']) : 1;
+            $limit = 50;
+            $offset = ($pageNum - 1) * $limit;
             ?>
 
             <h2>Upravljanje Događajima</h2>
-            <button class="action-button add-button" onclick="toggleForm('dogadjajForm')">+ Dodaj Događaj</button>
-            <?php
 
-            echo "<div id='dogadjajForm' class='form-container' style='display: none'>";
-            echo "<h3>Novi događaj</h3>";
-            echo "<form method='post'>";
-            echo "<input type='hidden' name='action' value='add_dogadjaj'>";
+            <button class="action-button add-button" onclick="toggleForm('dogadjajForm')">
+                + Dodaj Događaj
+            </button>
 
-            // Odabir predmeta
-            echo "<label for='course_id'>Predmet:</label>";
-            echo "<select id='course_id' name='course_id' required>";
-            try {
-                $stmt = $pdo->query("SELECT id, name, code FROM course WHERE is_active = TRUE ORDER BY name");
-                while ($row = $stmt->fetch()) {
-                    echo "<option value='" . $row['id'] . "'>" . htmlspecialchars($row['name']) . " (" . htmlspecialchars($row['code']) . ")</option>";
-                }
-            } catch (PDOException $e) {
-                echo "<option value=''>Greška pri dohvaćanju predmeta</option>";
-            }
-            echo "</select>";
+            <!-- ===== Forma: Novi događaj ===== -->
+            <div id="dogadjajForm" class="form-container" style="display:none">
+                <h3>Novi događaj</h3>
+                <form method="post">
+                    <input type="hidden" name="action" value="add_dogadjaj">
 
-            // Odabir profesora
-            echo "<label for='professor_id'>Profesor:</label>";
-            echo "<select id='professor_id' name='professor_id' required>";
-            try {
-                $stmt = $pdo->query("SELECT id, full_name, email FROM professor WHERE is_active = TRUE ORDER BY full_name");
-                while ($row = $stmt->fetch()) {
-                    echo "<option value='" . $row['id'] . "'>" . htmlspecialchars($row['full_name']) . " (" . htmlspecialchars($row['email']) . ")</option>";
-                }
-            } catch (PDOException $e) {
-                echo "<option value=''>Greška pri dohvaćanju profesora</option>";
-            }
-            echo "</select>";
+                    <label>Predmet:</label>
+                    <select name="course_id" required>
+                        <?php
+                        $stmt = $pdo->query("SELECT id, name, code FROM course WHERE is_active = TRUE ORDER BY name");
+                        while ($c = $stmt->fetch()) {
+                            echo '<option value="' . $c['id'] . '">'
+                                . htmlspecialchars($c['name']) . ' (' . htmlspecialchars($c['code']) . ')'
+                                . '</option>';
+                        }
+                        ?>
+                    </select>
 
-            // Tip dogadjaja
-            echo "<label for='type'>Tip događaja:</label>";
-            echo "<select id='type' name='type' required>";
-            echo "<option value='EXAM'>Ispit</option>";
-            echo "<option value='COLLOQUIUM'>Kolokvijum</option>";
-            echo "</select>";
+                    <label>Profesor:</label>
+                    <select name="professor_id" required>
+                        <?php
+                        $stmt = $pdo->query("SELECT id, full_name FROM professor WHERE is_active = TRUE ORDER BY full_name");
+                        while ($p = $stmt->fetch()) {
+                            echo '<option value="' . $p['id'] . '">'
+                                . htmlspecialchars($p['full_name'])
+                                . '</option>';
+                        }
+                        ?>
+                    </select>
 
-            echo "<label for='starts_at'>Početak:</label>";
-            echo "<input type='datetime-local' id='starts_at' name='starts_at' required>";
+                    <label>Tip događaja:</label>
+                    <select name="type" required>
+                        <option value="EXAM">Ispit</option>
+                        <option value="COLLOQUIUM">Kolokvijum</option>
+                    </select>
 
-            echo "<label for='ends_at'>Kraj:</label>";
-            echo "<input type='datetime-local' id='ends_at' name='ends_at' required>";
+                    <label>Dan (1–5):</label>
+                    <input type="number" name="day" min="1" max="5" required>
 
-            echo "<label for='is_online'>Online događaj:</label>";
-            echo "<input type='checkbox' id='is_online' name='is_online'>";
+                    <label>Početak:</label>
+                    <input type="datetime-local" name="starts_at" required>
 
-            // Odabir sale (prikaži se samo ako nije online)
-            echo "<div id='room_selection'>";
-            echo "<label for='room_id'>Sala:</label>";
-            echo "<select id='room_id' name='room_id'>";
-            try {
-                $stmt = $pdo->query("SELECT id, code, capacity FROM room WHERE is_active = TRUE ORDER BY code");
-                while ($row = $stmt->fetch()) {
-                    echo "<option value='" . $row['id'] . "'>" . htmlspecialchars($row['code']) . " (kapacitet: " . htmlspecialchars($row['capacity']) . ")</option>";
-                }
-            } catch (PDOException $e) {
-                echo "<option value=''>Greška pri dohvaćanju sala</option>";
-            }
-            echo "</select></div>";
+                    <label>Kraj:</label>
+                    <input type="datetime-local" name="ends_at" required>
 
-            echo "<label for='notes'>Napomene:</label>";
-            echo "<textarea id='notes' name='notes' rows='3'></textarea>";
+                    <label>Sala:</label>
+                    <select name="room_id">
+                        <option value="">-- Bez sale --</option>
+                        <?php
+                        $stmt = $pdo->query("SELECT id, code FROM room WHERE is_active = TRUE ORDER BY code");
+                        while ($r = $stmt->fetch()) {
+                            echo '<option value="' . $r['id'] . '">'
+                                . htmlspecialchars($r['code'])
+                                . '</option>';
+                        }
+                        ?>
+                    </select>
 
-            echo "<label for='is_published'>Objavljeno:</label>";
-            echo "<input type='checkbox' id='is_published' name='is_published' checked>";
+                    <label>Napomena:</label>
+                    <textarea name="notes" rows="3"></textarea>
 
-            echo "<button type='submit'>Sačuvaj</button>";
-            echo "</form></div>";
+                    <label>
+                        <input type="checkbox" name="is_published" checked> Objavljeno
+                    </label>
 
-            // Prikaz sala je u admin.js????
+                    <button type="submit">Sačuvaj</button>
+                </form>
+            </div>
 
-            // Prikaz događaja
-            ?>
+            <!-- ===== Tabela događaja ===== -->
             <table border="1" cellpadding="5">
                 <tr>
                     <th>ID</th>
                     <th>Predmet</th>
                     <th>Tip</th>
+                    <th>Dan</th>
                     <th>Početak</th>
                     <th>Kraj</th>
                     <th>Sala</th>
                     <th>Napomena</th>
+                    <th>Status</th>
                     <th>Akcije</th>
                 </tr>
+
                 <?php
+                $stmt = $pdo->query("
+    SELECT 
+        e.id,
+        e.type_enum,
+        e.day,
+        e.starts_at,
+        e.ends_at,
+        e.notes,
+        e.is_published,
+        c.name AS course_name,
+        r.code AS room_code
+    FROM academic_event e
+    JOIN course c ON c.id = e.course_id
+    LEFT JOIN room r ON r.id = e.room_id
+    ORDER BY e.starts_at DESC
+    LIMIT $limit OFFSET $offset
+");
 
-                try {
-                    $stmt = $pdo->query("
-                    SELECT e.*, c.name as course_name, r.code as room_code 
-                    FROM academic_event e
-                    LEFT JOIN course c ON e.course_id = c.id
-                    LEFT JOIN room r ON e.room_id = r.id
-                    ORDER BY e.starts_at DESC
-                ");
-                    while ($row = $stmt->fetch()) {
-                        $event_type = '';
-                        switch ($row['type_enum']) {
-                            case 'EXAM': $event_type = 'Ispit'; break;
-                            case 'COLLOQUIUM': $event_type = 'Kolokvijum'; break;
-                        }
+                while ($row = $stmt->fetch()) {
 
-                        echo "<tr>";
-                        echo "<td>" . htmlspecialchars($row['id']) . "</td>";
-                        echo "<td>" . htmlspecialchars($row['course_name']) . "</td>";
-                        echo "<td>" . $event_type . "</td>";
-                        echo "<td>" . date('d.m.Y H:i', strtotime($row['starts_at'])) . "</td>";
-                        echo "<td>" . date('d.m.Y H:i', strtotime($row['ends_at'])) . "</td>";
-                        echo "<td>" . ($row['is_online'] ? 'Online' : htmlspecialchars($row['room_code'])) . "</td>";
-                        echo "<td>" . htmlspecialchars($row['notes']) . "</td>";
-                        echo "<td>";
-                        echo "<button class='action-button edit-button' data-entity='dogadjaj' data-id='" . $row['id'] . "' data-course_id='" . $row['course_id'] . "' data-professor_id='" . $row['created_by_professor'] . "' data-type='" . htmlspecialchars($row['type_enum'], ENT_QUOTES) . "' data-starts_at='" . htmlspecialchars($row['starts_at'], ENT_QUOTES) . "' data-ends_at='" . htmlspecialchars($row['ends_at'], ENT_QUOTES) . "' data-is_online='" . ($row['is_online'] ? '1' : '0') . "' data-room_id='" . $row['room_id'] . "' data-notes='" . htmlspecialchars($row['notes'], ENT_QUOTES) . "' data-is_published='" . ($row['is_published'] ? '1' : '0') . "'>Uredi</button> ";
-                        echo "<form id='delete-dogadjaj-{$row['id']}' style='display:inline' method='post' action='{$_SERVER['PHP_SELF']}'>
-                            <input type='hidden' name='action' value='delete_dogadjaj'>
-                            <input type='hidden' name='id' value='{$row['id']}'>
-                            <button type='button' class='action-button delete-button' onclick=\"submitDeleteForm({$row['id']}, 'delete_dogadjaj', 'dogadjaj')\">Obriši</button>
-                        </form>
-                    </td>";
-                        echo "</tr>";
+                    switch ($row['type_enum']) {
+                        case 'EXAM': $typeLabel = 'Ispit'; break;
+                        case 'COLLOQUIUM': $typeLabel = 'Kolokvijum'; break;
+                        default: $typeLabel = $row['type_enum'];
                     }
-                } catch (PDOException $e) {
-                    echo "<tr><td colspan='8'>Greška pri dohvaćanju događaja: " . $e->getMessage() . "</td></tr>";
+
+                    echo '<tr>';
+                    echo '<td>' . $row['id'] . '</td>';
+                    echo '<td>' . htmlspecialchars($row['course_name']) . '</td>';
+                    echo '<td>' . $typeLabel . '</td>';
+                    echo '<td>' . (int)$row['day'] . '</td>';
+                    echo '<td>' . date('d.m.Y H:i', strtotime($row['starts_at'])) . '</td>';
+                    echo '<td>' . date('d.m.Y H:i', strtotime($row['ends_at'])) . '</td>';
+                    echo '<td>' . htmlspecialchars($row['room_code'] ?? '-') . '</td>';
+                    echo '<td>' . htmlspecialchars($row['notes']) . '</td>';
+                    echo '<td>' . ($row['is_published'] ? 'Objavljeno' : 'Skriveno') . '</td>';
+                    echo '<td>
+            <form method="post" style="display:inline">
+                <input type="hidden" name="action" value="delete_dogadjaj">
+                <input type="hidden" name="id" value="' . $row['id'] . '">
+                <button class="action-button delete-button">Obriši</button>
+            </form>
+          </td>';
+                    echo '</tr>';
                 }
-                echo "</table>";
-                break;
-                case 'sale':
+                ?>
+            </table>
+
+            <!-- ===== Pagination links ===== -->
+            <?php
+            $total = $pdo->query("SELECT COUNT(*) FROM academic_event")->fetchColumn();
+            $totalPages = (int)ceil($total / $limit);
+
+            if ($totalPages > 1) {
+                echo '<div style="margin-top:15px">';
+                for ($i = 1; $i <= $totalPages; $i++) {
+                    if ($i === $pageNum) {
+                        echo '<strong>' . $i . '</strong> ';
+                    } else {
+                        echo '<a href="?page=dogadjaji&p=' . $i . '">' . $i . '</a> ';
+                    }
+                }
+                echo '</div>';
+            }
+            ?>
+
+            <?php
+            break;
+
+
+
+
+
+
+
+
+        case 'sale':
                 ?>
 
                 <h2>Upravljanje Salama</h2>
