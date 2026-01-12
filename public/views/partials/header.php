@@ -17,7 +17,7 @@ if ($loggedIn) {
     <div class="header-inner">
         <a class="logo" href="index.php">
             <img src="../../img/fit-logo.png" alt="FTN Logo" id="top-logo">
-            <span class="site-title">FTN Sistem</span>
+            <span class="site-title">FIT Sistem</span>
         </a>
         <nav>
             <ul>
