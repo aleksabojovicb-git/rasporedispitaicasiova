@@ -431,6 +431,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 break;
 
+            case 'activate_professor':
+                if (isset($_POST['id']) && is_numeric($_POST['id'])) {
+                    $id = (int)$_POST['id'];
+
+                    try {
+                        $stmt = $pdo->prepare("UPDATE professor SET is_active = TRUE WHERE id = ?");
+                        $stmt->execute([$id]);
+
+                        header("Location: ?page=profesori&success=1&message=" . urlencode("Profesor je uspješno aktiviran."));
+                        exit;
+                    } catch (PDOException $e) {
+                        $error = "Greška pri aktiviranju profesora: " . $e->getMessage();
+                    }
+                }
+                break;
+
+            case 'activate_predmet':
+                if (isset($_POST['id']) && is_numeric($_POST['id'])) {
+                    $id = (int)$_POST['id'];
+
+                    try {
+                        $stmt = $pdo->prepare("UPDATE course SET is_active = TRUE WHERE id = ?");
+                        $stmt->execute([$id]);
+
+                        header("Location: ?page=predmeti&success=1&message=" . urlencode("Predmet je uspješno aktiviran."));
+                        exit;
+                    } catch (PDOException $e) {
+                        $error = "Greška pri aktiviranju predmeta: " . $e->getMessage();
+                    }
+                }
+                break;
+
             case 'delete_predmet':
                 if (isset($_POST['id']) && is_numeric($_POST['id'])) {
                     $id = (int)$_POST['id'];
@@ -443,6 +475,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         exit;
                     } catch (PDOException $e) {
                         $error = "Greška pri deaktiviranju predmeta: " . $e->getMessage();
+                    }
+                }
+                break;
+
+            case 'activate_sala':
+                if (isset($_POST['id']) && is_numeric($_POST['id'])) {
+                    $id = (int)$_POST['id'];
+
+                    try {
+                        $stmt = $pdo->prepare("UPDATE room SET is_active = TRUE WHERE id = ?");
+                        $stmt->execute([$id]);
+
+                        header("Location: ?page=sale&success=1&message=" . urlencode("Sala je uspješno aktivirana."));
+                        exit;
+                    } catch (PDOException $e) {
+                        $error = "Greška pri aktiviranju sale: " . $e->getMessage();
                     }
                 }
                 break;
@@ -995,6 +1043,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <input type='hidden' name='id' value='{$row['id']}'>
                             <button type='button' class='action-button delete-button' onclick=\"submitDeleteForm({$row['id']}, 'delete_professor', 'profesor')\">Deaktiviraj</button>
                         </form>";
+                } else {
+                    echo "<form id='activate-profesor-{$row['id']}' style='display:inline' method='post' action='{$_SERVER['PHP_SELF']}'>
+                            <input type='hidden' name='action' value='activate_professor'>
+                            <input type='hidden' name='id' value='{$row['id']}'>
+                            <button type='button' class='action-button activation-button' onclick=\"submitDeleteForm({$row['id']}, 'activate_professor', 'profesor')\">Aktiviraj</button>
+                        </form>";
                 }
 
                 echo "</td>";
@@ -1163,6 +1217,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     <input type="hidden" name="action" value="delete_predmet">
                                     <input type="hidden" name="id" value="<?= $c['id'] ?>">
                                     <button class="action-button delete-button">Deaktiviraj</button>
+                                </form>
+                            <?php else: ?>
+                                <form method="post" style="display:inline">
+                                    <input type="hidden" name="action" value="activate_predmet">
+                                    <input type="hidden" name="id" value="<?= $c['id'] ?>">
+                                    <button class="action-button activation-button">Aktiviraj</button>
                                 </form>
                             <?php endif; ?>
                         </td>
@@ -1429,6 +1489,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <input type='hidden' name='id' value='{$row['id']}'>
                             <button type='button' class='action-button delete-button' onclick=\"submitDeleteForm({$row['id']}, 'delete_sala', 'salu')\">Deaktiviraj</button>
                         </form>";
+                            } else {
+                                echo "<form id='activate-sala-{$row['id']}' style='display:inline' method='post' action='{$_SERVER['PHP_SELF']}'>
+                            <input type='hidden' name='action' value='activate_sala'>
+                            <input type='hidden' name='id' value='{$row['id']}'>
+                            <button type='button' class='action-button activation-button' onclick=\"submitDeleteForm({$row['id']}, 'activate_sala', 'salu')\">Aktiviraj</button>
+                        </form>";
                             }
 
                             echo "</td>";
@@ -1509,7 +1575,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     echo "<td>" . ($row['is_active'] ? 'Aktivan' : 'Neaktivan') . "</td>";
                                     echo "<td>";
                                     // Edit button: rely on admin.js generic edit handler
-                                    $dataAttr = htmlspecialchars(json_encode(['id' => (int)$row['id'], 'username' => $row['username'], 'role' => $row['role_enum'], 'professor_id' => $row['professor_id']]), ENT_QUOTES);
+                                    $dataAttr = htmlspecialchars(json_encode(['id' => (int)$row['id'], 'username' => $row['username'], 'role' => $row['role_enum'], 'professor_id' => $row['professor_id'], 'is_active' => $row['is_active']]), ENT_QUOTES);
                                     echo "<button class='action-button edit-button' data-entity='account' data-payload='" . $dataAttr . "'>Uredi</button> ";
 
                                     if ($row['is_active']) {
