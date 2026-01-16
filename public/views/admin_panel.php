@@ -5,6 +5,21 @@
 session_start();
 require_once __DIR__ . '/../../config/dbconnection.php';
 
+// Ensure academic_year table exists
+try {
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS academic_year (
+            id bigserial PRIMARY KEY,
+            year_label varchar(9) NOT NULL,
+            winter_semester_start date NOT NULL,
+            summer_semester_start date NOT NULL,
+            is_active boolean DEFAULT true
+        )
+    ");
+} catch (PDOException $e) {
+    // Ignore if exists or permissions issue, application will try to use it anyway
+}
+
 if (isset($_GET['action']) && $_GET['action'] === 'getschedule') {
     header('Content-Type: application/json; charset=utf-8');
 
@@ -468,6 +483,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $pdo->rollBack();
                         $error = "Greška pri brisanju događaja: " . $e->getMessage();
                     }
+                }
+                break;
+
+            case 'add_academic_year':
+                $year_label = $_POST['year_label'];
+                $winter_start = $_POST['winter_semester_start'];
+                $summer_start = $_POST['summer_semester_start'];
+                
+                try {
+                    $stmt = $pdo->prepare("INSERT INTO academic_year (year_label, winter_semester_start, summer_semester_start, is_active) VALUES (?, ?, ?, TRUE)");
+                    $stmt->execute([$year_label, $winter_start, $summer_start]);
+                    header("Location: ?page=dogadjaji&success=1&message=" . urlencode("Akademska godina je uspješno dodata."));
+                    exit;
+                } catch (PDOException $e) {
+                    $error = "Greška pri dodavanju akademske godine: " . $e->getMessage();
                 }
                 break;
 
@@ -1161,6 +1191,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <button class="action-button add-button" onclick="toggleForm('dogadjajForm')">
                 + Dodaj Događaj
             </button>
+            <button class="action-button add-button" onclick="toggleForm('academicYearForm')">
+                + Dodaj datum pocetka semestra
+            </button>
 
             <!-- ===== Forma: Novi događaj ===== -->
             <div id="dogadjajForm" class="form-container" style="display:none">
@@ -1226,6 +1259,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <label>
                         <input type="checkbox" name="is_published" checked> Objavljeno
                     </label>
+
+                    <button type="submit">Sačuvaj</button>
+                </form>
+            </div>
+
+            <!-- ===== Forma: Akademska godina ===== -->
+            <div id="academicYearForm" class="form-container" style="display:none">
+                <h3>Nova akademska godina</h3>
+                <form method="post">
+                    <input type="hidden" name="action" value="add_academic_year">
+
+                    <label>Naziv godine (npr. 2025/2026):</label>
+                    <input type="text" name="year_label" placeholder="2025/2026" required>
+
+                    <label>Početak zimskog semestra:</label>
+                    <input type="date" name="winter_semester_start" required>
+
+                    <label>Početak ljetnjeg semestra:</label>
+                    <input type="date" name="summer_semester_start" required>
 
                     <button type="submit">Sačuvaj</button>
                 </form>

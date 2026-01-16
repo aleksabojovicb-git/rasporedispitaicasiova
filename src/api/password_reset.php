@@ -49,44 +49,76 @@ function sendPasswordResetEmail($emailAddress, $verificationCode) {
 
 // Handle sending reset code
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'send_reset_code') {
-    // Check if user is logged in
-    if (!isset($_SESSION['professor_id'])) {
-        echo json_encode(['success' => false, 'message' => 'Morate biti prijavljeni']);
+    $professorId = null;
+    $email = null;
+
+    // Case 1: Logged in user
+    if (isset($_SESSION['professor_id'])) {
+        $professorId = (int) $_SESSION['professor_id'];
+        try {
+            $stmt = $pdo->prepare("SELECT email FROM professor WHERE id = ? AND is_active = TRUE");
+            $stmt->execute([$professorId]);
+            $professor = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($professor) {
+                $email = $professor['email'];
+            }
+        } catch (PDOException $e) {
+            echo json_encode(['success' => false, 'message' => 'Greška baze podataka']);
+            exit;
+        }
+    } 
+    // Case 2: Email provided in request (from login page)
+    elseif (isset($_POST['email'])) {
+        $inputEmail = trim($_POST['email']);
+        if (!filter_var($inputEmail, FILTER_VALIDATE_EMAIL)) {
+            echo json_encode(['success' => false, 'message' => 'Nevalidan format email adrese']);
+            exit;
+        }
+
+        try {
+            $stmt = $pdo->prepare("SELECT id, email FROM professor WHERE email = ? AND is_active = TRUE");
+            $stmt->execute([$inputEmail]);
+            $professor = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            if ($professor) {
+                $professorId = (int) $professor['id'];
+                $email = $professor['email'];
+            } else {
+                // Security: don't reveal if email exists or not, or be helpful?
+                // User asked: "checks if email exists... don't send code if email doesn't exist"
+                // Returning explicit error as per instruction implies we should tell them.
+                echo json_encode(['success' => false, 'message' => 'Korisnik sa tim emailom ne postoji']);
+                exit;
+            }
+        } catch (PDOException $e) {
+            echo json_encode(['success' => false, 'message' => 'Greška baze podataka']);
+            exit;
+        }
+    } else {
+        echo json_encode(['success' => false, 'message' => 'Morate unijeti email adresu']);
+        exit;
+    }
+
+    if (!$professorId || !$email) {
+        echo json_encode(['success' => false, 'message' => 'Profesor nije pronađen']);
         exit;
     }
     
-    $professorId = (int) $_SESSION['professor_id'];
+    $verificationCode = generateVerificationCode();
     
-    // Get professor email from database
-    try {
-        $stmt = $pdo->prepare("SELECT email FROM professor WHERE id = ? AND is_active = TRUE");
-        $stmt->execute([$professorId]);
-        $professor = $stmt->fetch(PDO::FETCH_ASSOC);
-        
-        if (!$professor) {
-            echo json_encode(['success' => false, 'message' => 'Profesor nije pronađen']);
-            exit;
-        }
-        
-        $email = $professor['email'];
-        $verificationCode = generateVerificationCode();
-        
-        // Store code in session for password reset
-        $_SESSION['password_reset_code'] = $verificationCode;
-        $_SESSION['password_reset_email'] = $email;
-        $_SESSION['password_reset_time'] = time();
-        $_SESSION['password_reset_professor_id'] = $professorId;
-        
-        if (sendPasswordResetEmail($email, $verificationCode)) {
-            // Mask email for display
-            $emailParts = explode('@', $email);
-            $maskedEmail = substr($emailParts[0], 0, 2) . '***@' . $emailParts[1];
-            echo json_encode(['success' => true, 'message' => 'Kod je poslan na ' . $maskedEmail]);
-        } else {
-            echo json_encode(['success' => false, 'message' => 'Greška pri slanju emaila']);
-        }
-    } catch (PDOException $e) {
-        echo json_encode(['success' => false, 'message' => 'Greška baze podataka']);
+    // Store code in session for password reset
+    $_SESSION['password_reset_code'] = $verificationCode;
+    $_SESSION['password_reset_email'] = $email;
+    $_SESSION['password_reset_time'] = time();
+    $_SESSION['password_reset_professor_id'] = $professorId;
+    
+    if (sendPasswordResetEmail($email, $verificationCode)) {
+        // Mask email for display
+        $emailParts = explode('@', $email);
+        $maskedEmail = substr($emailParts[0], 0, 2) . '***@' . $emailParts[1];
+        echo json_encode(['success' => true, 'message' => 'Kod je poslan na ' . $maskedEmail]);
+    } else {
+        echo json_encode(['success' => false, 'message' => 'Greška pri slanju emaila']);
     }
     exit;
 }

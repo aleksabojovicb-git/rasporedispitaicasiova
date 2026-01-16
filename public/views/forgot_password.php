@@ -2,20 +2,26 @@
 session_start();
 require_once __DIR__ . '/../../config/dbconnection.php';
 
-// User must be logged in
-if (!isset($_SESSION['user_id']) || !isset($_SESSION['professor_id'])) {
-    header('Location: authorization.php');
-    exit;
-}
+// User must be logged in OR have a reset session started
+if (isset($_SESSION['professor_id'])) {
+    $professorId = (int) $_SESSION['professor_id'];
+    // Get professor info
+    $stmt = $pdo->prepare("SELECT full_name, email FROM professor WHERE id = ? AND is_active = TRUE");
+    $stmt->execute([$professorId]);
+    $professor = $stmt->fetch(PDO::FETCH_ASSOC);
 
-$professorId = (int) $_SESSION['professor_id'];
-
-// Get professor info
-$stmt = $pdo->prepare("SELECT full_name, email FROM professor WHERE id = ? AND is_active = TRUE");
-$stmt->execute([$professorId]);
-$professor = $stmt->fetch(PDO::FETCH_ASSOC);
-
-if (!$professor) {
+    if (!$professor) {
+        header('Location: authorization.php');
+        exit;
+    }
+} elseif (isset($_SESSION['password_reset_email']) && isset($_SESSION['password_reset_professor_id'])) {
+    // Flow from login page where code was already sent
+    $professor = [
+        'email' => $_SESSION['password_reset_email'],
+        // We might not have full_name here easily unless we fetch it, but email is what matters for display
+        'full_name' => 'Professor' 
+    ];
+} else {
     header('Location: authorization.php');
     exit;
 }
@@ -78,7 +84,16 @@ if (!$professor) {
         <h3 class="text-center mb-4">Reset Lozinke</h3>
         
         <!-- Step 1: Send Code -->
-        <div id="step1" class="step active">
+        <?php 
+        $step1Class = 'active';
+        $step2Class = '';
+        // If coming from login and code is already sent
+        if (!isset($_SESSION['professor_id']) && isset($_SESSION['password_reset_code'])) {
+            $step1Class = '';
+            $step2Class = 'active';
+        }
+        ?>
+        <div id="step1" class="step <?php echo $step1Class; ?>">
             <p class="text-muted text-center">
                 Poslat ćemo verifikacioni kod na vašu email adresu:
                 <br><strong><?php 
@@ -94,7 +109,7 @@ if (!$professor) {
         </div>
 
         <!-- Step 2: Enter Code -->
-        <div id="step2" class="step">
+        <div id="step2" class="step <?php echo $step2Class; ?>">
             <p class="text-muted text-center">Unesite 6-cifreni kod koji ste primili na email</p>
             <div class="code-inputs">
                 <input type="text" maxlength="1" class="code-digit" data-index="0" autofocus>
