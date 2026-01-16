@@ -306,7 +306,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <label for="su-password">Password</label>
                     <input type="password" id="su-password" name="password" placeholder="at least 6 characters" minlength="6" required />
                     <button tabindex="-1" type="button" class="toggle-eye" data-toggle="su-password" aria-label="Show/Hide password">👁️</button>
-                    <div class="meter" aria-hidden="true"><i id="pwd-meter"></i></div>
                     <p class="help" id="pwd-hint">Use upper/lowercase letters and digits.</p>
                     <p class="error" data-error-for="su-password"></p>
                 </div>

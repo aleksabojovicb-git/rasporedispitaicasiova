@@ -452,10 +452,10 @@ function openEditModal(entity, data) {
         const inpUser = document.createElement('input'); inpUser.type = 'text'; inpUser.name = 'username'; inpUser.required = true; inpUser.value = data.username || '';
         form.appendChild(lblUser); form.appendChild(inpUser);
 
-        // password (optional)
-        const lblPass = document.createElement('label'); lblPass.textContent = 'Lozinka (ostavite prazno da ne mijenjate):';
-        const inpPass = document.createElement('input'); inpPass.type = 'password'; inpPass.name = 'password'; inpPass.value = '';
-        form.appendChild(lblPass); form.appendChild(inpPass);
+        // password (removed as per request)
+        // const lblPass = document.createElement('label'); lblPass.textContent = 'Lozinka (ostavite prazno da ne mijenjate):';
+        // const inpPass = document.createElement('input'); inpPass.type = 'password'; inpPass.name = 'password'; inpPass.value = '';
+        // form.appendChild(lblPass); form.appendChild(inpPass);
 
         // role
         const lblRole = document.createElement('label'); lblRole.textContent = 'Uloga:';
