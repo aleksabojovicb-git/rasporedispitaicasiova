@@ -289,6 +289,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <?php endif; ?>
                 <div class="actions">
                     <button class="btn" type="submit">Sign in</button>
+                    <a href="#" id="forgotPasswordLink" onclick="handleForgotPassword(event)" style="display:block; margin-top:10px; text-align:center; font-size:0.9rem; text-decoration:none; color:#fff;">Zaboravili ste password?</a>
+                    <div id="fp-error" class="server-error" style="display:none; margin-top:5px; font-size:0.8rem; text-align:center;"></div>
                 </div>
             </form>
 
@@ -328,5 +330,64 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </main>
 
 <script src="../assets/js/auth-form.js"></script>
+<script>
+function handleForgotPassword(e) {
+    e.preventDefault();
+    const emailInput = document.getElementById('si-email');
+    const errorDiv = document.getElementById('fp-error');
+    const email = emailInput.value.trim();
+    
+    // Clear previous errors
+    errorDiv.style.display = 'none';
+    errorDiv.textContent = '';
+    
+    if (!email) {
+        errorDiv.textContent = 'Molimo unesite email adresu u polje iznad pa pokušajte ponovo.';
+        errorDiv.style.display = 'block';
+        emailInput.focus();
+        return;
+    }
+    
+    // Show loading state
+    const link = document.getElementById('forgotPasswordLink');
+    const originalText = link.textContent;
+    link.textContent = 'Slanje koda...';
+    link.style.pointerEvents = 'none';
+    link.style.opacity = '0.7';
+    
+    const formData = new FormData();
+    formData.append('action', 'send_reset_code');
+    formData.append('email', email);
+    
+    fetch('../../src/api/password_reset.php', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            window.location.href = 'forgot_password.php';
+        } else {
+            errorDiv.textContent = data.message || 'Greška pri slanju koda.';
+            errorDiv.style.display = 'block';
+            
+            // Reset link state
+            link.textContent = originalText;
+            link.style.pointerEvents = 'auto';
+            link.style.opacity = '1';
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        errorDiv.textContent = 'Došlo je do greške. Pokušajte ponovo.';
+        errorDiv.style.display = 'block';
+        
+        // Reset link state
+        link.textContent = originalText;
+        link.style.pointerEvents = 'auto';
+        link.style.opacity = '1';
+    });
+}
+</script>
 </body>
 </html>

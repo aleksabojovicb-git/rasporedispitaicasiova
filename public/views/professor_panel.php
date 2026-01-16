@@ -360,6 +360,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <tbody id="coursesTableBody">
                     <?php
                     try {
+                        // 1. Fetch active academic year
+                        $stmtYear = $pdo->query("SELECT * FROM academic_year WHERE is_active = TRUE ORDER BY id DESC LIMIT 1");
+                        $academicYear = $stmtYear->fetch(PDO::FETCH_ASSOC);
+
+                        $winterStart = $academicYear ? strtotime($academicYear['winter_semester_start']) : null;
+                        $summerStart = $academicYear ? strtotime($academicYear['summer_semester_start']) : null;
+
                         $stmt = $pdo->prepare("
                             SELECT c.id, c.name, c.semester, cp.is_assistant, 
                                    c.colloquium_1_week, c.colloquium_2_week
@@ -378,6 +385,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 $role = $c['is_assistant'] ? 'Asistent' : 'Profesor';
                                 $col1Val = $c['colloquium_1_week'];
                                 $col2Val = $c['colloquium_2_week'];
+                                
+                                // Determine semester start date based on odd/even semester
+                                // Odd (1, 3, 5...) -> Winter, Even (2, 4, 6...) -> Summer
+                                $isWinter = ($c['semester'] % 2 != 0);
+                                $semStart = $isWinter ? $winterStart : $summerStart;
                                 ?>
                                 <tr data-course-id="<?php echo (int)$c['id']; ?>">
                                     <td><?php echo htmlspecialchars($c['name']); ?></td>
@@ -387,8 +399,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                         <select class="form-select form-select-sm colloquium-1-select" data-course-id="<?php echo (int)$c['id']; ?>">
                                             <option value="">-- Izaberi --</option>
                                             <option value="1" <?php echo ($col1Val == 1) ? 'selected' : ''; ?>>Ne održava se</option>
-                                            <?php for($w=5; $w<=13; $w++): ?>
-                                                <option value="<?php echo $w; ?>" <?php echo ($col1Val == $w) ? 'selected' : ''; ?>><?php echo $w; ?>. sedmica</option>
+                                            <?php for($w=5; $w<=13; $w++): 
+                                                $dateLabel = "";
+                                                if ($semStart) {
+                                                    // week 1 starts at $semStart
+                                                    // week $w is + ($w - 1) weeks from start
+                                                    $wStart = strtotime("+" . ($w - 1) . " weeks", $semStart);
+                                                    $wEnd = strtotime("+6 days", $wStart);
+                                                    $dateLabel = " (" . date('d.m.Y', $wStart) . "-" . date('d.m.Y', $wEnd) . ")";
+                                                }
+                                            ?>
+                                                <option value="<?php echo $w; ?>" <?php echo ($col1Val == $w) ? 'selected' : ''; ?>>
+                                                    <?php echo $w; ?>. sedmica<?php echo $dateLabel; ?>
+                                                </option>
                                             <?php endfor; ?>
                                         </select>
                                     </td>
@@ -396,8 +419,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                         <select class="form-select form-select-sm colloquium-2-select" data-course-id="<?php echo (int)$c['id']; ?>">
                                             <option value="">-- Izaberi --</option>
                                             <option value="1" <?php echo ($col2Val == 1) ? 'selected' : ''; ?>>Ne održava se</option>
-                                            <?php for($w=5; $w<=13; $w++): ?>
-                                                <option value="<?php echo $w; ?>" <?php echo ($col2Val == $w) ? 'selected' : ''; ?>><?php echo $w; ?>. sedmica</option>
+                                            <?php for($w=5; $w<=13; $w++): 
+                                                $dateLabel = "";
+                                                if ($semStart) {
+                                                    $wStart = strtotime("+" . ($w - 1) . " weeks", $semStart);
+                                                    $wEnd = strtotime("+6 days", $wStart);
+                                                    $dateLabel = " (" . date('d.m.Y', $wStart) . "-" . date('d.m.Y', $wEnd) . ")";
+                                                }
+                                            ?>
+                                                <option value="<?php echo $w; ?>" <?php echo ($col2Val == $w) ? 'selected' : ''; ?>>
+                                                    <?php echo $w; ?>. sedmica<?php echo $dateLabel; ?>
+                                                </option>
                                             <?php endfor; ?>
                                         </select>
                                     </td>
