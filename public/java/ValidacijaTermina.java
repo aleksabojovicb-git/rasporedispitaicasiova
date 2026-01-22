@@ -128,7 +128,8 @@ public class ValidacijaTermina {
 
                 return;
             } else if (akcija.equals("generisiKompletan")) {
-                rezultat = service.generateSixSchedulesWithDifferentPriorities();
+                ScheduleResult scheduleResult = service.generateSixSchedulesWithDifferentPriorities();
+                rezultat = scheduleResult.message;
 
             } else {
                 System.out.println("GRESKA: Nepoznata akcija");

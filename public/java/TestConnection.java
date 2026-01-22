@@ -1,5 +1,4 @@
 import java.sql.*;
-import java.time.*;
 
 public class TestConnection {
     public static void main(String[] args) {

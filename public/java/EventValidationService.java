@@ -115,10 +115,11 @@ public class EventValidationService {
             System.out.println("\nStarting schedule generation...\n");
 
             // Generate the 6 schedules
-            String result = service.generateSixSchedulesWithDifferentPriorities();
+            ScheduleResult result = service.generateSixSchedulesWithDifferentPriorities();
 
             // Print result
-            System.out.println("\n✓ FINAL RESULT: " + result);
+            System.out.println("FINAL RESULT: " + result.message);
+
 
         } catch (Exception e) {
             System.err.println("✗ Error: " + e.getMessage());
@@ -824,6 +825,8 @@ public class EventValidationService {
         }
     }
 
+
+    
     /**
      * Raspoređuje predmet na 2 dana: Predavanja dan1, Vježbe+Lab dan2
      */
@@ -1524,7 +1527,8 @@ public class EventValidationService {
      * 
      * Each schedule is independent - conflicts checked only within same schedule
      */
-    public String generateSixSchedulesWithDifferentPriorities() {
+    public ScheduleResult generateSixSchedulesWithDifferentPriorities() {
+        ScheduleResult result = new ScheduleResult();
         try {
             System.out.println("=== GENERATING 6 SCHEDULES WITH DIFFERENT YEAR PRIORITIES ===\n");
 
@@ -1541,6 +1545,8 @@ public class EventValidationService {
             List<Integer> generatedScheduleIds = new ArrayList<>();
             int successCount = 0;
             int failCount = 0;
+            List<FailedCourse> allFailedCourses = new ArrayList<>();
+
 
             // Generate each of the 6 schedules
             for (int i = 0; i < 6; i++) {
@@ -1550,7 +1556,7 @@ public class EventValidationService {
                         priorityOrder[1] + " → Year " + priorityOrder[2]);
                 System.out.println("─".repeat(50));
 
-                int scheduleId = generateScheduleWithYearPriority(priorityOrder);
+                int scheduleId = generateScheduleWithYearPriority(priorityOrder, allFailedCourses);
                 if (scheduleId > 0) {
                     generatedScheduleIds.add(scheduleId);
                     successCount++;
@@ -1580,24 +1586,33 @@ public class EventValidationService {
 
             loadAcademicEvents(); // Reload to reflect all new events
 
-            if (failCount == 0) {
-                return "OK: Successfully generated all 6 schedules with different year priorities. " +
-                        "Schedule IDs: " + generatedScheduleIds.toString();
+            result.scheduleId = generatedScheduleIds.isEmpty() ? 0 : generatedScheduleIds.get(0);
+            result.successfulCourses = successCount;
+            result.failedCourses = failCount;
+            result.failedCoursesList = allFailedCourses;  // This is the key
+            result.success = (failCount == 0);
+            
+            if (failCount > 0) {
+                result.message = "WARNING: Generated " + successCount + "/6 schedules. " + 
+                            allFailedCourses.size() + " courses failed";
             } else {
-                return "WARNING: Generated " + successCount + "/6 schedules. IDs: " +
-                        generatedScheduleIds.toString();
+                result.message = "OK: All 6 schedules generated successfully";
             }
-
+            return result;
+            
         } catch (Exception e) {
+            result.success = false;
+            result.message = "ERROR: " + e.getMessage();
             e.printStackTrace();
-            return "ERROR: " + e.getMessage();
-        }
+            return result;
+    }
     }
 
     /**
      * Generates a single schedule with specified year priority order
      */
-    private int generateScheduleWithYearPriority(int[] yearPriorityOrder) throws SQLException {
+    private int generateScheduleWithYearPriority(int[] yearPriorityOrder, 
+                                             List<FailedCourse> failedList) throws SQLException {
         int scheduleId = generateNewScheduleId();
 
         // Group courses by year/semester
@@ -1628,7 +1643,7 @@ public class EventValidationService {
             List<Course> yearCourses = coursesByYear.get(priorityYear);
             for (Course course : yearCourses) {
                 if (course.labsPerWeek > 0) {
-                    String result = scheduleCourseForSchedule(scheduleId, course);
+                    String result = scheduleCourseForSchedule(scheduleId, course, failedList);
                     if (result.equals("OK")) {
                         totalScheduled++;
                     }
@@ -1642,7 +1657,7 @@ public class EventValidationService {
             for (Course course : yearCourses) {
                 if (course.labsPerWeek > 0 &&
                         !isAlreadyScheduledInSchedule(scheduleId, course.idCourse)) {
-                    String result = scheduleCourseForSchedule(scheduleId, course);
+                    String result = scheduleCourseForSchedule(scheduleId, course, failedList);
                     if (result.equals("OK")) {
                         totalScheduled++;
                     }
@@ -1658,7 +1673,7 @@ public class EventValidationService {
             List<Course> yearCourses = coursesByYear.get(priorityYear);
             for (Course course : yearCourses) {
                 if (course.labsPerWeek == 0 && !isOnlineClass(course)) {
-                    String result = scheduleCourseForSchedule(scheduleId, course);
+                    String result = scheduleCourseForSchedule(scheduleId, course, failedList);
                     if (result.equals("OK")) {
                         totalScheduled++;
                     }
@@ -1672,7 +1687,7 @@ public class EventValidationService {
             for (Course course : yearCourses) {
                 if (course.labsPerWeek == 0 && !isOnlineClass(course) &&
                         !isAlreadyScheduledInSchedule(scheduleId, course.idCourse)) {
-                    String result = scheduleCourseForSchedule(scheduleId, course);
+                    String result = scheduleCourseForSchedule(scheduleId, course, failedList);
                     if (result.equals("OK")) {
                         totalScheduled++;
                     }
@@ -1688,7 +1703,7 @@ public class EventValidationService {
             List<Course> yearCourses = coursesByYear.get(priorityYear);
             for (Course course : yearCourses) {
                 if (isOnlineClass(course)) {
-                    String result = scheduleCourseForSchedule(scheduleId, course);
+                    String result = scheduleCourseForSchedule(scheduleId, course, failedList);
                     if (result.equals("OK")) {
                         totalScheduled++;
                     }
@@ -1702,7 +1717,7 @@ public class EventValidationService {
             for (Course course : yearCourses) {
                 if (isOnlineClass(course) &&
                         !isAlreadyScheduledInSchedule(scheduleId, course.idCourse)) {
-                    String result = scheduleCourseForSchedule(scheduleId, course);
+                    String result = scheduleCourseForSchedule(scheduleId, course, failedList);
                     if (result.equals("OK")) {
                         totalScheduled++;
                     }
@@ -1731,21 +1746,26 @@ public class EventValidationService {
      * Respects existing time slot constraints within the same schedule
      * Returns "OK" on success, error message on failure
      */
-    private String scheduleCourseForSchedule(int scheduleId, Course course) {
+    private String scheduleCourseForSchedule(int scheduleId, Course course,
+                                            List<FailedCourse> failedList) {
         try {
             if (course == null) {
-                return "SKIP: Course is null";
+                failedList.add(new FailedCourse(0, "Unknown", "Course is null", 0));
+                return "SKIP";
             }
-
+            
             int totalHours = course.getTotalHoursPerWeek();
             if (totalHours < 4 || totalHours > 6) {
-                return "SKIP: Invalid total hours (" + totalHours + ")";
+                failedList.add(new FailedCourse(course.idCourse, course.name,
+                    "Invalid hours: " + totalHours + " (must be 4-6)", course.semester));
+                return "SKIP";
             }
-
-            // Find lecture professor
+            
             int lectureProfId = findLectureProfessor(course.idCourse);
             if (lectureProfId == 0) {
-                return "SKIP: No lecture professor";
+                failedList.add(new FailedCourse(course.idCourse, course.name,
+                    "No professor assigned", course.semester));
+                return "SKIP";
             }
 
             // Find exercise professor
@@ -1786,8 +1806,11 @@ public class EventValidationService {
             if (addedTerms > 0) {
                 return "OK";
             }
+            
+            failedList.add(new FailedCourse(course.idCourse, course.name,
+                "Could not find suitable time slots", course.semester));
+            return "FAILED";
 
-            return "FAILED: Could not find time slot";
 
         } catch (SQLException e) {
             return "ERROR: " + e.getMessage();
@@ -2016,11 +2039,13 @@ public class EventValidationService {
         return false; // No conflict
     }
 
-    // Overloaded method for backward compatibility (without semester check)
-    private boolean hasConflictInSchedule(int scheduleId, String day, int roomId, int professorId,
-            LocalTime startTime, LocalTime endTime) {
-        return hasConflictInSchedule(scheduleId, day, roomId, professorId, startTime, endTime, -1);
-    }
+    // Ne znam od kad je ovo ovjde, izgleda lose, al za svaki slucaj ga necu brisati.
+    
+    // // Overloaded method for backward compatibility (without semester check)
+    // private boolean hasConflictInSchedule(int scheduleId, String day, int roomId, int professorId,
+    //         LocalTime startTime, LocalTime endTime) {
+    //     return hasConflictInSchedule(scheduleId, day, roomId, professorId, startTime, endTime, -1);
+    // }
 
 }
 
@@ -2095,3 +2120,32 @@ class CoursePriority {
 }
 
 // Popravljene greske: day >> weekday
+
+class ScheduleResult {
+    public int scheduleId;
+    public int successfulCourses;
+    public int failedCourses;
+    public List<FailedCourse> failedCoursesList;
+    public String message;
+    public boolean success;
+    public long timestamp;
+    
+    public ScheduleResult() {
+        this.failedCoursesList = new ArrayList<>();
+        this.timestamp = System.currentTimeMillis();
+    }
+}
+
+class FailedCourse {
+    public int courseId;
+    public String courseName;
+    public String reason;
+    public int semester;
+    
+    public FailedCourse(int courseId, String courseName, String reason, int semester) {
+        this.courseId = courseId;
+        this.courseName = courseName;
+        this.reason = reason;
+        this.semester = semester;
+    }
+}
