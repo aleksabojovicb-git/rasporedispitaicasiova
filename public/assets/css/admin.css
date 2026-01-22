@@ -187,7 +187,6 @@ form button[type="submit"] {
     color: white;
     cursor: pointer;
     font-size: 15px;
-    margin-top: 10px;
 }
 
 form button[type="submit"]:hover {

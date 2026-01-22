@@ -4,6 +4,8 @@
 
 session_start();
 require_once __DIR__ . '/../../config/dbconnection.php';
+require_once __DIR__ . '/../../src/services/OccupancyService.php';
+$occupancyService = new OccupancyService($pdo);
 
 // Ensure academic_year table exists
 try {
@@ -16,8 +18,14 @@ try {
             is_active boolean DEFAULT true
         )
     ");
+// Ensure room_occupancy table exists
+try {
+    // Moved to OccupancyService logic
+    } catch (PDOException $e) {
+        // Ignore if exists
+    }
 } catch (PDOException $e) {
-    // Ignore if exists or permissions issue, application will try to use it anyway
+    // Ignore error if tables already exist or handle appropriately
 }
 
 if (isset($_GET['action']) && $_GET['action'] === 'getschedule') {
@@ -549,7 +557,63 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 break;
 
+            case 'save_occupancy':
+                $selections = json_decode($_POST['selections'] ?? '[]', true);
+                $faculty_code = $_POST['faculty_code'] ?? '';
+                $acad_year_id = (int)($_POST['academic_year_id'] ?? 0);
+
+                if (empty($selections) || $acad_year_id === 0) {
+                    $error = "Nevažeći podaci za snimanje zauzetosti.";
+                    break;
+                }
+
+                $ret = $occupancyService->saveOccupancy($acad_year_id, $selections, $faculty_code);
+                if ($ret['success']) {
+                    header("Location: ?page=zauzetost&success=1&message=" . urlencode("Zauzetost sala je uspješno ažurirana."));
+                    exit;
+                } else {
+                    $error = "Greška pri snimanju zauzetosti sala: " . $ret['error'];
+                }
+                break;
+
             // ****  update  ****
+
+            case 'delete_academic_year':
+                if (isset($_POST['id']) && is_numeric($_POST['id'])) {
+                    $id = (int)$_POST['id'];
+
+                    try {
+                        $stmt = $pdo->prepare("DELETE FROM academic_year WHERE id = ?");
+                        $stmt->execute([$id]);
+                        header("Location: ?page=dogadjaji&success=1&message=" . urlencode("Akademska godina je uspješno obrisana."));
+                        exit;
+                    } catch (PDOException $e) {
+                         // Check for foreign key violation
+                         if ($e->getCode() == '23503') {
+                            $error = "Greška: Ne možete obrisati ovu akademsku godinu jer postoje podaci vezani za nju. Probajte je deaktivirati.";
+                         } else {
+                            $error = "Greška pri brisanju akademske godine: " . $e->getMessage();
+                         }
+                    }
+                }
+                break;
+
+            case 'update_academic_year':
+                $id = (int)$_POST['year_id'];
+                $year_label = $_POST['year_label'];
+                $winter_start = $_POST['winter_semester_start'];
+                $summer_start = $_POST['summer_semester_start'];
+                $is_active = isset($_POST['is_active']) ? true : false;
+                
+                try {
+                    $stmt = $pdo->prepare("UPDATE academic_year SET year_label = ?, winter_semester_start = ?, summer_semester_start = ?, is_active = ? WHERE id = ?");
+                    $stmt->execute([$year_label, $winter_start, $summer_start, $is_active ? 'TRUE' : 'FALSE', $id]);
+                    header("Location: ?page=dogadjaji&success=1&message=" . urlencode("Akademska godina je uspješno ažurirana."));
+                    exit;
+                } catch (PDOException $e) {
+                    $error = "Greška pri ažuriranju akademske godine: " . $e->getMessage();
+                }
+                break;
 
             case 'update_profesor':
 
@@ -941,6 +1005,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <link rel="stylesheet" href="../assets/css/stacks.css" />
     <link rel="stylesheet" href="../assets/css/tabs.css" />
     <link rel="stylesheet" href="../assets/css/table.css" />
+    <link rel="stylesheet" href="../assets/css/occupancy.css" />
 
     <?php // expose active professors to JS before admin.js loads ?>
     <script>
@@ -954,6 +1019,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             echo '[]';
         }
         ?> || [];
+        // Add faculty codes
+        window.adminData.faculties = ["FIT", "FEB", "MTS", "PF", "FSJ", "FVU"];
     </script>
     <script src="../assets/js/admin.js" defer></script>
 </head>
@@ -968,6 +1035,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <li><a href="?page=predmeti">Predmeti</a></li>
             <li><a href="?page=sale">Sale</a></li>
             <li><a href="?page=account">Nalog</a></li>
+            <li><a href="?page=zauzetost">Zauzetost sala</a></li>
+            <li><a href="?page=dogadjaji">Kalendar</a></li>
             <li><a href="?page=logout">Rasporedi</a></li>
             <li><a href="logout.php">Odjavi se</a></li>
         </ul>
@@ -1409,7 +1478,76 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                         <?php
                         break;
-                    default:
+
+                case 'dogadjaji':
+                    ?>
+                    <h2>Upravljanje Kalendarom i Događajima</h2>
+                    
+                    <!-- Sekcija za Akademsku godinu -->
+                    <div style="margin-bottom: 40px; border-bottom: 1px solid #ccc; padding-bottom: 20px;">
+                        <h3>Akademske Godine</h3>
+                        <p>Definišite početke zimskog i ljetnjeg semestra za svaku akademsku godinu.</p>
+                        
+                        <button class="action-button add-button" onclick="toggleForm('academicYearForm')">+ Nova akademska godina</button>
+    
+                        <div id="academicYearForm" class="form-container" style="display: none; margin-top: 15px;">
+                            <form method="post" style="max-width: 500px;">
+                                <input type="hidden" name="action" value="add_academic_year">
+    
+                                <label for="year_label" style="display:block; margin-bottom:5px;">Naziv godine (npr. 2025/2026):</label>
+                                <input type="text" id="year_label" name="year_label" required placeholder="YYYY/YYYY" style="width:100%; padding:8px; margin-bottom:10px;">
+    
+                                <label for="winter_semester_start" style="display:block; margin-bottom:5px;">Početak zimskog semestra:</label>
+                                <input type="date" id="winter_semester_start" name="winter_semester_start" required style="width:100%; padding:8px; margin-bottom:10px;">
+    
+                                <label for="summer_semester_start" style="display:block; margin-bottom:5px;">Početak ljetnjeg semestra:</label>
+                                <input type="date" id="summer_semester_start" name="summer_semester_start" required style="width:100%; padding:8px; margin-bottom:10px;">
+    
+                                <button type="submit" class="btn btn-primary" style="background: var(--accent); color: white; border: none; padding: 10px 20px; cursor: pointer;">Sačuvaj</button>
+                            </form>
+                        </div>
+    
+                        <table border="1" cellpadding="5" style="margin-top: 20px; width: 100%; border-collapse: collapse;">
+                            <tr style="background: #f4f4f4; color: #333;">
+                                <th>ID</th>
+                                <th>Naziv</th>
+                                <th>Zimski semestar (Start)</th>
+                                <th>Ljetnji semestar (Start)</th>
+                                <th>Aktivan</th>
+                                <th>Akcije</th>
+                            </tr>
+                            <?php
+                            try {
+                                $stmt = $pdo->query("SELECT * FROM academic_year ORDER BY id DESC");
+                                while ($row = $stmt->fetch()) {
+                                    echo "<tr>";
+                                    echo "<td>" . htmlspecialchars($row['id']) . "</td>";
+                                    echo "<td>" . htmlspecialchars($row['year_label']) . "</td>";
+                                    echo "<td>" . htmlspecialchars($row['winter_semester_start']) . "</td>";
+                                    echo "<td>" . htmlspecialchars($row['summer_semester_start']) . "</td>";
+                                    echo "<td>" . ($row['is_active'] ? 'DA' : 'NE') . "</td>";
+                                    echo "<td>";
+                                    echo "<button class='action-button edit-button' data-entity='academic_year' data-id='" . $row['id'] . "' data-year_label='" . htmlspecialchars($row['year_label'], ENT_QUOTES) . "' data-winter_semester_start='" . htmlspecialchars($row['winter_semester_start'], ENT_QUOTES) . "' data-summer_semester_start='" . htmlspecialchars($row['summer_semester_start'], ENT_QUOTES) . "' data-is_active='" . ($row['is_active'] ? 'true' : 'false') . "'>Uredi</button> ";
+                                    
+                                    echo "<form method='post' action='{$_SERVER['PHP_SELF']}' style='display:inline-block; margin-left:2px;'>";
+                                    echo "<input type='hidden' name='action' value='delete_academic_year'>"; 
+                                    echo "<input type='hidden' name='id' value='" . $row['id'] . "'>";
+                                    echo "<button type='button' class='action-button delete-button' onclick=\"submitDeleteForm({$row['id']}, 'delete_academic_year', 'akademsku godinu')\">Obriši</button>";
+                                    echo "</form>";
+
+                                    echo "</td>";
+                                    echo "</tr>";
+                                }
+                            } catch (PDOException $e) {
+                                echo "<tr><td colspan='6'>Greška: " . $e->getMessage() . "</td></tr>";
+                            }
+                            ?>
+                        </table>
+                    </div>
+                    <?php
+                    break;
+
+                case 'pocetna':
                         echo "<h2>Dobrodošli u Admin Panel</h2>";
                         echo "<p>Odaberite opciju ispod da generišete raspored časova:</p>";
 
@@ -1826,12 +1964,265 @@ document.getElementById('generate-schedule').addEventListener('click', async () 
                             doc.save(`raspored_semestar_${semester}.pdf`);
                         }
                     </script>
+                    <?php 
+                    break; 
 
+                case 'zauzetost':
+                    // 1. Get Academic Year
+                    $year_id = 0;
+                    $year_label = "Nije definisana";
+                    $stmtYear = $pdo->query("SELECT id, year_label FROM academic_year WHERE is_active = TRUE LIMIT 1");
+                    if ($y = $stmtYear->fetch()) {
+                        $year_id = $y['id'];
+                        $year_label = $y['year_label'];
+                    }
 
+                    // 2. Define Time Slots
+                    $slots = [
+                        ['08:15', '09:00'], ['09:15', '10:00'], ['10:15', '11:00'],
+                        ['11:15', '12:00'], ['12:15', '13:00'], ['13:15', '14:00'],
+                        ['14:15', '15:00'], ['15:15', '16:00'], ['16:15', '17:00'],
+                        ['17:15', '18:00'], ['18:15', '19:00'], ['19:15', '20:00'],
+                        ['20:15', '21:00']
+                    ];
 
-                        <?php
-    break;
+                    // 3. Get Rooms
+                    $rooms = $occupancyService->getRooms();
 
+                    // 4. Get Occupancy Data
+                    $occupancy = ($year_id > 0) ? $occupancyService->getOccupancy($year_id) : [];
+
+                    $days = [
+                        1 => 'PONEDJELJAK',
+                        2 => 'UTORAK',
+                        3 => 'SRIJEDA',
+                        4 => 'ČETVRTAK',
+                        5 => 'PETAK'
+                    ];
+                    ?>
+
+                    <div class="occupancy-header">
+                        <h2>Zauzetost sala - Akademska godina: <?= htmlspecialchars($year_label) ?></h2>
+                        <p class="info-text">Kliknite na polje (ili prevucite preko više polja) da biste rezervisali termin za fakultet.</p>
+                    </div>
+
+                    <div class="legend-container">
+                        <div class="legend-item"><div class="legend-color faculty-fit"></div> <span>FIT</span></div>
+                        <div class="legend-item"><div class="legend-color faculty-feb"></div> <span>FEB</span></div>
+                        <div class="legend-item"><div class="legend-color faculty-mts"></div> <span>MTS</span></div>
+                        <div class="legend-item"><div class="legend-color faculty-pf"></div> <span>PF</span></div>
+                        <div class="legend-item"><div class="legend-color faculty-fsj"></div> <span>FSJ</span></div>
+                        <div class="legend-item"><div class="legend-color faculty-fvu"></div> <span>FVU</span></div>
+                    </div>
+
+                    <div class="occupancy-container" id="occupancy-grid-container">
+                        <table class="occupancy-table" id="occupancy-table">
+                            <thead>
+                                <tr>
+                                    <th rowspan="2" class="time-col">Vrijeme</th>
+                                    <?php foreach ($days as $dayNum => $dayName): ?>
+                                        <th colspan="<?= count($rooms) ?>"><?= $dayName ?></th>
+                                    <?php endforeach; ?>
+                                </tr>
+                                <tr>
+                                    <?php foreach ($days as $dayNum => $dayName): ?>
+                                        <?php foreach ($rooms as $room): ?>
+                                            <th><?= htmlspecialchars($room['code']) ?></th>
+                                        <?php endforeach; ?>
+                                    <?php endforeach; ?>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($slots as $slot): ?>
+                                    <tr>
+                                        <td class="time-col"><?= $slot[0] ?> - <?= $slot[1] ?></td>
+                                        <?php foreach ($days as $dayNum => $dayName): ?>
+                                            <?php foreach ($rooms as $room): ?>
+                                                <?php 
+                                                    $key = $room['id'] . '-' . $dayNum . '-' . $slot[0];
+                                                    $occ = $occupancy[$key] ?? null;
+                                                    $class = "";
+                                                    if ($occ) {
+                                                        $class = "faculty-" . strtolower($occ['faculty_code']);
+                                                    }
+                                                ?>
+                                                <td class="occupancy-cell <?= $class ?>" 
+                                                    data-room-id="<?= $room['id'] ?>" 
+                                                    data-weekday="<?= $dayNum ?>" 
+                                                    data-start="<?= $slot[0] ?>" 
+                                                    data-end="<?= $slot[1] ?>"
+                                                    data-faculty="<?= $occ ? htmlspecialchars($occ['faculty_code']) : '' ?>"
+                                                    title="<?= $occ ? "Zauzeto: {$occ['faculty_code']} ({$occ['source_type']})" : "Slobodno" ?>">
+                                                    <?php if ($occ): ?>
+                                                        <div class="cell-info"><?= htmlspecialchars($occ['faculty_code']) ?></div>
+                                                    <?php endif; ?>
+                                                </td>
+                                            <?php endforeach; ?>
+                                        <?php endforeach; ?>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Occupancy Modal -->
+                    <div id="occupancyModal" class="occupancy-modal">
+                        <div class="occupancy-modal-content">
+                            <h3>Upravljanje terminom</h3>
+                            <p id="modal-selection-info"></p>
+                            <form id="occupancyForm" method="post">
+                                <input type="hidden" name="action" value="save_occupancy">
+                                <input type="hidden" name="academic_year_id" value="<?= $year_id ?>">
+                                <input type="hidden" name="selections" id="selections-input">
+                                
+                                <label for="faculty_code_select">Odaberite fakultet:</label>
+                                <select name="faculty_code" id="faculty_code_select" class="form-control" style="margin-bottom: 15px;" required>
+                                    <option value="" selected disabled>-- Odaberite fakultet --</option>
+                                    <option value="FIT">FIT (Fakultet za informacione tehnologije)</option>
+                                    <option value="FEB">FEB (Fakultet za ekonomiju i biznis)</option>
+                                    <option value="MTS">MTS (Fakultet za mediteranske poslovne studije)</option>
+                                    <option value="PF">PF (Pravni fakultet)</option>
+                                    <option value="FSJ">FSJ (Fakultet za strane jezike)</option>
+                                    <option value="FVU">FVU (Fakultet vizuelnih umjetnosti)</option>
+                                </select>
+
+                                <div id="fit-warning" style="display:none; color: #ffa500; font-size: 0.8rem; margin-bottom: 10px;">
+                                    Napomena: Promjene za FIT je preporučljivo vršiti kroz automatski generator rasporeda.
+                                </div>
+
+                                <div style="display: flex; gap: 10px;">
+                                    <button type="button" class="btn btn-secondary" style="flex: 1;" onclick="closeOccupancyModal()">Otkaži</button>
+                                    <button type="button" id="btn-delete" class="btn btn-danger" style="flex: 1; background: #dc3545; border: none; color: white;">Obriši</button>
+                                    <button type="submit" class="btn btn-primary" style="flex: 1; background: var(--accent); border: none;">Sačuvaj</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+
+                    <script>
+                        document.addEventListener('DOMContentLoaded', function() {
+                            const table = document.getElementById('occupancy-table');
+                            const cells = table.querySelectorAll('.occupancy-cell');
+                            const modal = document.getElementById('occupancyModal');
+                            const facultySelect = document.getElementById('faculty_code_select');
+                            const btnDelete = document.getElementById('btn-delete');
+                            const form = document.getElementById('occupancyForm');
+                            const btnSave = form.querySelector('button[type="submit"]');
+
+                            // Initial state: Disable save button
+                            btnSave.disabled = true;
+                            
+                            // Enable save only when a faculty is selected
+                            facultySelect.addEventListener('change', function() {
+                                if (this.value) {
+                                    btnSave.disabled = false;
+                                } else {
+                                    btnSave.disabled = true;
+                                }
+                            });
+
+                            btnDelete.addEventListener('click', function() {
+                                // To remove reservation, we submit with EMPTY faculty code.
+                                // But since select is required, we must disable validation or remove attribute momentarily
+                                facultySelect.removeAttribute('required');
+                                facultySelect.value = ""; 
+                                form.submit();
+                            });
+                            const fitWarning = document.getElementById('fit-warning');
+                            const selectionsInput = document.getElementById('selections-input');
+                            const infoText = document.getElementById('modal-selection-info');
+
+                            let isMouseDown = false;
+                            let startCell = null;
+                            let selectedCells = [];
+
+                            cells.forEach(cell => {
+                                cell.addEventListener('mousedown', function(e) {
+                                    isMouseDown = true;
+                                    startCell = this;
+                                    clearSelection();
+                                    toggleCellSelection(this);
+                                });
+
+                                cell.addEventListener('mouseenter', function() {
+                                    if (isMouseDown) {
+                                        toggleCellSelection(this);
+                                    }
+                                });
+                            });
+
+                            document.addEventListener('mouseup', function() {
+                                if (isMouseDown) {
+                                    isMouseDown = false;
+                                    if (selectedCells.length > 0) {
+                                        openOccupancyModal();
+                                    }
+                                }
+                            });
+
+                            function toggleCellSelection(cell) {
+                                if (!selectedCells.includes(cell)) {
+                                    selectedCells.push(cell);
+                                    cell.classList.add('selected');
+                                }
+                            }
+
+                            function clearSelection() {
+                                selectedCells.forEach(c => c.classList.remove('selected'));
+                                selectedCells = [];
+                            }
+
+                            function openOccupancyModal() {
+                                const data = selectedCells.map(c => ({
+                                    room_id: c.dataset.roomId,
+                                    weekday: c.dataset.weekday,
+                                    start: c.dataset.start,
+                                    end: c.dataset.end
+                                }));
+
+                                selectionsInput.value = JSON.stringify(data);
+                                infoText.innerText = `Odabrali ste ${selectedCells.length} termin(a).`;
+                                
+                                // Preset the faculty if only one cell is selected and it's already occupied
+                                if (selectedCells.length === 1) {
+                                    facultySelect.value = selectedCells[0].dataset.faculty || "";
+                                } else {
+                                    facultySelect.value = "";
+                                }
+                                
+                                // Trigger change to update button state and warnings
+                                facultySelect.dispatchEvent(new Event('change'));
+                                modal.style.display = 'block';
+                            }
+
+                            window.closeOccupancyModal = function() {
+                                modal.style.display = 'none';
+                                clearSelection();
+                            }
+
+                            facultySelect.addEventListener('change', updateFitWarning);
+
+                            function updateFitWarning() {
+                                if (facultySelect.value === 'FIT') {
+                                    fitWarning.style.display = 'block';
+                                } else {
+                                    fitWarning.style.display = 'none';
+                                }
+                            }
+
+                            // Close modal on escape
+                            document.addEventListener('keydown', (e) => {
+                                if (e.key === 'Escape') closeOccupancyModal();
+                            });
+                        });
+                    </script>
+                    <?php
+                    break;
+
+                default:
+                    // Ako stranica nije pronađena, prikaži početnu
+                    echo "<script>window.location.href='?page=pocetna';</script>";
+                    break;
       }
           ?>
 </main>
