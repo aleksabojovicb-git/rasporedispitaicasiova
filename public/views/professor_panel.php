@@ -1,6 +1,8 @@
 <?php
 session_start();
 require_once __DIR__ . '/../../config/dbconnection.php';
+require_once __DIR__ . '/../../src/services/OccupancyService.php';
+$occupancyService = new OccupancyService($pdo);
 
 if (isset($_GET['logout'])) {
     session_unset();
@@ -238,6 +240,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <link rel="stylesheet" href="../assets/css/stacks.css" />
     <link rel="stylesheet" href="../assets/css/tabs.css" />
     <link rel="stylesheet" href="../assets/css/table.css" />
+    <link rel="stylesheet" href="../assets/css/occupancy.css">
     <link rel="stylesheet" href="../assets/css/profesor_profile.css">
     <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.js"></script>
@@ -268,6 +271,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </li>
         <li class="nav-item" role="presentation">
             <button class="nav-link" id="tab-avail" data-bs-toggle="tab" data-bs-target="#availabilityTab" type="button">Raspoloživost</button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="tab-occupancy" data-bs-toggle="tab" data-bs-target="#occupancyTab" type="button">Zauzetost sala</button>
         </li>
     </ul>
 
@@ -510,6 +516,86 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
             </div>
         </div>
+
+        <!-- OCCUPANCY TAB -->
+        <div class="tab-pane fade" id="occupancyTab">
+           <?php 
+                 $y = $occupancyService->getActiveYear();
+                 $year_label = $y ? $y['year_label'] : "Nije definisana";
+                 $year_id = $y ? $y['id'] : 0;
+                 
+                 $slots = [
+                        ['08:15', '09:00'], ['09:15', '10:00'], ['10:15', '11:00'],
+                        ['11:15', '12:00'], ['12:15', '13:00'], ['13:15', '14:00'],
+                        ['14:15', '15:00'], ['15:15', '16:00'], ['16:15', '17:00'],
+                        ['17:15', '18:00'], ['18:15', '19:00'], ['19:15', '20:00'],
+                        ['20:15', '21:00']
+                 ];
+                 
+                 $rooms = $occupancyService->getRooms();
+                 $occupancy = ($year_id > 0) ? $occupancyService->getOccupancy($year_id) : [];
+                 
+                 $days = [1 => 'PONEDJELJAK', 2 => 'UTORAK', 3 => 'SRIJEDA', 4 => 'ČETVRTAK', 5 => 'PETAK'];
+           ?>
+
+            <div class="occupancy-header mb-3">
+                <h4>Zauzetost sala - Akademska godina: <?= htmlspecialchars($year_label) ?></h4>
+            </div>
+
+            <div class="legend-container mb-3">
+                <div class="legend-item"><div class="legend-color faculty-fit"></div> <span>FIT</span></div>
+                <div class="legend-item"><div class="legend-color faculty-feb"></div> <span>FEB</span></div>
+                <div class="legend-item"><div class="legend-color faculty-mts"></div> <span>MTS</span></div>
+                <div class="legend-item"><div class="legend-color faculty-pf"></div> <span>PF</span></div>
+                <div class="legend-item"><div class="legend-color faculty-fsj"></div> <span>FSJ</span></div>
+                <div class="legend-item"><div class="legend-color faculty-fvu"></div> <span>FVU</span></div>
+            </div>
+
+            <div class="occupancy-container" style="max-height: 800px; overflow-y: auto;">
+                <table class="occupancy-table">
+                    <thead>
+                        <tr>
+                            <th rowspan="2" class="time-col">Vrijeme</th>
+                            <?php foreach ($days as $dayNum => $dayName): ?>
+                                <th colspan="<?= count($rooms) ?>"><?= $dayName ?></th>
+                            <?php endforeach; ?>
+                        </tr>
+                        <tr>
+                            <?php foreach ($days as $dayNum => $dayName): ?>
+                                <?php foreach ($rooms as $room): ?>
+                                    <th><?= htmlspecialchars($room['code']) ?></th>
+                                <?php endforeach; ?>
+                            <?php endforeach; ?>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($slots as $slot): ?>
+                            <tr>
+                                <td class="time-col"><?= $slot[0] ?> - <?= $slot[1] ?></td>
+                                <?php foreach ($days as $dayNum => $dayName): ?>
+                                    <?php foreach ($rooms as $room): ?>
+                                        <?php 
+                                            $key = $room['id'] . '-' . $dayNum . '-' . $slot[0];
+                                            $occ = $occupancy[$key] ?? null;
+                                            $class = "";
+                                            if ($occ) {
+                                                $class = "faculty-" . strtolower($occ['faculty_code']);
+                                            }
+                                        ?>
+                                        <td class="occupancy-cell <?= $class ?>" 
+                                            title="<?= $occ ? "Zauzeto: {$occ['faculty_code']}\nTip: {$occ['source_type']}" : "Slobodno" ?>">
+                                            <?php if ($occ): ?>
+                                                <div class="cell-info"><?= htmlspecialchars($occ['faculty_code']) ?></div>
+                                            <?php endif; ?>
+                                        </td>
+                                    <?php endforeach; ?>
+                                <?php endforeach; ?>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+
     </div>
 </div>
 

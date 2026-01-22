@@ -248,6 +248,7 @@ function openEditModal(entity, data) {
 
     // allow editing user accounts
     map['account'] = { action: 'update_account', idField: 'account_id', title: 'Uredi nalog' };
+    map['academic_year'] = { action: 'update_academic_year', idField: 'year_id', title: 'Uredi akademsku godinu' };
 
     if (!map[entity]) {
         alert('Editing for "' + entity + '" is not implemented in this editor.');
@@ -303,6 +304,28 @@ function openEditModal(entity, data) {
         const lblEmail = document.createElement('label'); lblEmail.textContent = 'Email:';
         const inpEmail = document.createElement('input'); inpEmail.type = 'email'; inpEmail.name = 'email'; inpEmail.required = true; inpEmail.value = data.email || '';
         form.appendChild(lblEmail); form.appendChild(inpEmail);
+    }
+    
+    if (entity === 'academic_year') {
+        const lblLabel = document.createElement('label'); lblLabel.textContent = 'Naziv godine (202X/202Y):';
+        const inpLabel = document.createElement('input'); inpLabel.type = 'text'; inpLabel.name = 'year_label'; inpLabel.required = true; inpLabel.value = data.year_label || '';
+        form.appendChild(lblLabel); form.appendChild(inpLabel);
+
+        const lblWinter = document.createElement('label'); lblWinter.textContent = 'Početak zimskog semestra:';
+        const inpWinter = document.createElement('input'); inpWinter.type = 'date'; inpWinter.name = 'winter_semester_start'; inpWinter.required = true; inpWinter.value = data.winter_semester_start || '';
+        form.appendChild(lblWinter); form.appendChild(inpWinter);
+
+        const lblSummer = document.createElement('label'); lblSummer.textContent = 'Početak ljetnjeg semestra:';
+        const inpSummer = document.createElement('input'); inpSummer.type = 'date'; inpSummer.name = 'summer_semester_start'; inpSummer.required = true; inpSummer.value = data.summer_semester_start || '';
+        form.appendChild(lblSummer); form.appendChild(inpSummer);
+
+        // Active status checkbox
+        const cbRow = document.createElement('div'); cbRow.className = 'checkbox-row';
+        const inpActive = document.createElement('input'); inpActive.type = 'checkbox'; inpActive.name = 'is_active'; 
+        inpActive.checked = (data.is_active === 'true' || data.is_active === true || data.is_active === '1');
+        const txt = document.createTextNode(' Aktivna');
+        cbRow.appendChild(inpActive); cbRow.appendChild(txt);
+        form.appendChild(cbRow);
     }
 
     if (entity === 'predmet') {
