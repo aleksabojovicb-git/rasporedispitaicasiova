@@ -92,6 +92,47 @@ if (isset($_GET['action']) && $_GET['action'] === 'getschedule') {
             ];
         }
 
+        // Fetch EXAM events (raspored kolokvijuma) - Only for the first schedule in the set
+        $examScheduleId = $scheduleIds[0] ?? 0;
+        $examStmt = $pdo->prepare("
+            SELECT 
+                ae.day,
+                ae.starts_at,
+                ae.ends_at,
+                c.name AS coursename,
+                r.code AS roomcode
+            FROM academic_event ae
+            JOIN course c ON ae.course_id = c.id
+            LEFT JOIN room r ON ae.room_id = r.id
+            WHERE ae.type_enum IN ('EXAM', 'COLLOQUIUM')
+              AND ae.schedule_id = ?
+            ORDER BY ae.starts_at
+        ");
+        $examStmt->execute([$examScheduleId]);
+        $examRows = $examStmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $data['exams'] = [];
+        foreach ($examRows as $row) {
+            // Day for exam might be 'Subota' which is not int
+            // Frontend might expect int day (1-5) or handle string?
+            // buildSimpleScheduleTable uses `ev.day` directly?
+            // Let's check frontend logic later. For now pass raw or convert.
+            // If the Java code sets day='Subota', frontend might fail if it expects int.
+            
+            $d = $row['day']; // "Subota"
+            // If current frontend expects 1..5, we might have issue.
+            // But let's pass it.
+            
+            $data['exams'][] = [
+                'day'    => $d,
+                'start'  => substr($row['starts_at'], 11, 5),
+                'end'    => substr($row['ends_at'],   11, 5),
+                'course' => $row['coursename'],
+                'room'   => $row['roomcode'],
+                'date'   => substr($row['starts_at'], 0, 10) // Adding date for display
+            ];
+        }
+
         echo json_encode($data, JSON_UNESCAPED_UNICODE);
     } catch (PDOException $e) {
         echo json_encode(['error' => 'Greška pri čitanju rasporeda: ' . $e->getMessage()]);
@@ -1833,6 +1874,121 @@ document.getElementById('generate-schedule').addEventListener('click', async () 
             oldWrapper.replaceWith(newWrapper);
         }
 
+        // Helper function for Exams (List View)
+        function buildSimpleScheduleTable(titleText, events, idSuffix) {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'semester-wrapper'; 
+            wrapper.id = 'semester-wrapper-' + idSuffix;
+            wrapper.style.marginTop = '60px';
+            wrapper.style.marginBottom = '40px';
+            wrapper.style.border = '1px solid #444';
+            wrapper.style.borderRadius = '12px';
+            wrapper.style.padding = '20px';
+            wrapper.style.background = 'transparent';
+
+            const header = document.createElement('div');
+            header.style.textAlign = 'center';
+            header.style.marginBottom = '15px';
+
+            const h3 = document.createElement('h3');
+            h3.style.margin = '0';
+            h3.innerHTML = titleText;
+            header.appendChild(h3);
+            wrapper.appendChild(header);
+
+            if (!events || events.length === 0) {
+                 const p = document.createElement('p');
+                 p.textContent = 'Nema zakazanih kolokvijuma.';
+                 p.style.textAlign = 'center';
+                 p.style.color = '#999';
+                 wrapper.appendChild(p);
+                 return wrapper;
+            }
+
+            const table = document.createElement('table');
+            table.border = '1';
+            table.cellPadding = '5';
+            table.style.width = '100%';
+            table.style.borderCollapse = 'collapse';
+            table.className = 'schedule-table'; 
+
+            const thead = document.createElement('thead');
+            const trHead = document.createElement('tr');
+            ['Datum', 'Dan', 'Vrijeme', 'Predmet', 'Sala'].forEach(text => {
+                const th = document.createElement('th');
+                th.textContent = text;
+                // Reuse existing styles logic via class, but enforce headers
+                // trHead.appendChild(th);
+            });
+            
+            // Or better, stick to valid DOM
+             const headers = ['Datum', 'Dan', 'Vrijeme', 'Predmet', 'Sala'];
+             headers.forEach(h => {
+                const th = document.createElement('th');
+                th.textContent = h;
+                trHead.appendChild(th);
+             });
+             
+            thead.appendChild(trHead);
+            table.appendChild(thead);
+
+            const tbody = document.createElement('tbody');
+            
+            // Sort events by date and time
+            events.sort((a, b) => {
+                const dateA = a.date || '';
+                const dateB = b.date || '';
+                if (dateA !== dateB) return dateA < dateB ? -1 : 1;
+                return a.start.localeCompare(b.start);
+            });
+
+            events.forEach(ev => {
+                const tr = document.createElement('tr');
+                
+                // Date
+                const tdDate = document.createElement('td');
+                tdDate.textContent = ev.date || '-';
+                tr.appendChild(tdDate);
+
+                // Day
+                const tdDay = document.createElement('td');
+                tdDay.textContent = ev.day;
+                tr.appendChild(tdDay);
+
+                // Time
+                const tdTime = document.createElement('td');
+                tdTime.textContent = ev.start + ' - ' + ev.end;
+                tr.appendChild(tdTime);
+
+                // Course
+                const tdCourse = document.createElement('td');
+                tdCourse.textContent = ev.course;
+                tr.appendChild(tdCourse);
+
+                // Room
+                const tdRoom = document.createElement('td');
+                tdRoom.textContent = ev.room;
+                tr.appendChild(tdRoom);
+
+                tbody.appendChild(tr);
+            });
+
+            table.appendChild(tbody);
+            wrapper.appendChild(table);
+
+            // Print button for exams
+            const pdfBtn = document.createElement('button');
+            pdfBtn.textContent = 'Sačuvaj kolokvijume kao PDF';
+            pdfBtn.className = 'action-button add-button';
+            pdfBtn.style.marginTop = '10px';
+            pdfBtn.addEventListener('click', () => {
+                saveTableAsPDF(table, 'kolokvijumi');
+            });
+            wrapper.appendChild(pdfBtn);
+
+            return wrapper;
+        }
+
         // Inicijalni prikaz - svi semestri sa prvim rasporedom
         [1, 3, 5, 2, 4, 6].forEach(sem => {
             const schedId = scheduleIds[0];
@@ -1848,6 +2004,12 @@ document.getElementById('generate-schedule').addEventListener('click', async () 
         pdfAllBtn.style.marginTop = '20px';
         pdfAllBtn.addEventListener('click', saveFullScheduleAsPDF);
         container.appendChild(pdfAllBtn);
+
+        // --- EXAM TABLE (Raspored Kolokvijuma) ---
+        if (data.exams && data.exams.length > 0) {
+            const exWrapper = buildSimpleScheduleTable('Raspored kolokvijuma (Ispitni rokovi)', data.exams, 'exams');
+            container.appendChild(exWrapper);
+        }
         
         // Vrati dugme u normalno stanje
         button.disabled = false;
