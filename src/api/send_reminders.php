@@ -17,10 +17,10 @@ use PHPMailer\PHPMailer\Exception;
     if (empty($deadline_date)) {
         exit('Deadline nije postavljen');
     }
-    $today_date = date('Y-m-d');
+    $today_date_plus_2 = date('Y-m-d', strtotime('+2 days'));
     $deadline = date('Y-m-d', strtotime($deadline_date));
     
-    if($deadline > $today_date) {
+    if($deadline > $today_date_plus_2) {
         exit('Deadline jos nije dosao');
     }
     
