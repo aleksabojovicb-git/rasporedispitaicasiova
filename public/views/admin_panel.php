@@ -28,6 +28,10 @@ try {
     // Ignore error if tables already exist or handle appropriately
 }
 
+//DEADLINE
+$current_deadline = $pdo->query("SELECT value FROM config WHERE \"key\" = 'schedule_deadline'")->fetchColumn() ?: '';
+
+
 if (isset($_GET['action']) && $_GET['action'] === 'getschedule') {
     header('Content-Type: application/json; charset=utf-8');
 
@@ -985,6 +989,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }
                 break;
+            
+            case 'set_deadline':
+                $deadline_date = $_POST['deadline_date'];
+                
+                try {
+                    
+                     $stmt = $pdo->prepare("
+                        INSERT INTO config (\"key\", value) 
+                        VALUES ('schedule_deadline', ?) 
+                        ON CONFLICT (\"key\") DO UPDATE SET value = ?
+                    ");
+                    $stmt->execute([$deadline_date, $deadline_date]);
+                    
+                    header("Location: ?page=profesori&success=1&message=" . urlencode("deadline success"));
+                    exit;
+                } catch (PDOException $e) {
+                    $error = "Greška pri postavljanju deadlina: " . $e->getMessage();
+                }
+                break;
 
             // --------- end user_account management ---------
         }
@@ -1068,6 +1091,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     ?>
     <h2>Upravljanje Profesorima</h2>
     <button class="action-button add-button" onclick="toggleForm('profesorForm')">+ Dodaj Profesora</button>
+    <button class="action-button add-button deadline-button" onclick="toggleForm('deadlineForm')">+ Deadline unosa kolokvijuma </button>
 
     <div id="profesorForm" class="form-container" style="display: none">
         <h3>Novi profesor</h3>
@@ -1083,6 +1107,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <button type="submit">Sačuvaj</button>
         </form>
     </div>
+
+    <div id="deadlineForm" class="form-container" style="display:none">
+    <h3>Postavi deadline za izbor sedmice  kolokvijumA</h3>
+    <form method="post">
+        <input type="hidden" name="action" value="set_deadline">
+        <input type="date" id="deadline_date" name="deadline_date"  value="<?php echo $current_deadline; ?>" required>        
+        <div style="display: flex; gap: 10px; margin-top: 15px;">
+            <button type="submit">Sačuvaj</button>
+        </div>
+    </form>
+    </div>
+
 
     <table border="1" cellpadding="5">
         <tr>
