@@ -46,6 +46,19 @@ table.modern-table tr:hover td {
     transition: background .2s ease;
 }
 
+/*DEADLINE DUGME-BUTTON*/
+.deadline-button {
+    background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%) !important;
+    font-weight: 600;
+}
+
+.deadline-button:hover {
+    transform: translateY(-2px);
+}
+
+
+/*DEADLINE DUGME-BUTTON  ****** END*/
+
 .action-button {
     padding: 8px 12px;
     border-radius: 10px;
