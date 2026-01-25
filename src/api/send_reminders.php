@@ -8,7 +8,8 @@ use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\SMTP;
 use PHPMailer\PHPMailer\Exception;
 
-// if($_GET['key'] !== 'token sa cron joba.org') exit('Pristup nije dozvoljen');
+// if($_GET['key'] !== 'token sa cron joba.org ili neceg drugog') exit('Pristup nije dozvoljen');
+// Tek moguce kad se aplikacija digne na server
 
     $stmt = $pdo->query("SELECT value FROM config WHERE \"key\" = 'schedule_deadline'");
     $deadline_date = $stmt->fetchColumn() ?: '';
@@ -22,6 +23,7 @@ use PHPMailer\PHPMailer\Exception;
     if($deadline > $today_date) {
         exit('Deadline jos nije dosao');
     }
+    
     
 
 // $stmt_2 = $pdo->query("
