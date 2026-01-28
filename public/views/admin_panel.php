@@ -748,10 +748,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $fields[] = "capacity = ?";
                     $params[] = $_POST['capacity'];
                 }
-                if(isset($_POST['is_computer_lab'])){
-                    $fields[] = "is_computer_lab = ?";
-                    $params[] = isset($_POST['is_computer_lab']) ? 1 : 0;
-                }
+                
+                // Uvijek ažuriramo checkbox jer HTML forme ne šalju unchecked vrijednosti
+                $fields[] = "is_computer_lab = ?";
+                $params[] = isset($_POST['is_computer_lab']) ? 1 : 0;
 
                 if (!isset($_POST['sala_id'])) {
                     throw new Exception("Sala ID nije validan.");
@@ -1002,7 +1002,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ");
                     $stmt->execute([$deadline_date, $deadline_date]);
                     
-                    header("Location: ?page=profesori&success=1&message=" . urlencode("deadline success"));
+                    header("Location: ?page=profesori&success=1&message=" . urlencode("Uspješno postavljen deadline za izbor sedmice kolokvijuma."));
                     exit;
                 } catch (PDOException $e) {
                     $error = "Greška pri postavljanju deadlina: " . $e->getMessage();
@@ -1109,7 +1109,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </div>
 
     <div id="deadlineForm" class="form-container" style="display:none">
-    <h3>Postavi deadline za izbor sedmice  kolokvijumA</h3>
+    <h3>Postavi deadline za izbor sedmice  kolokvijuma</h3>
     <form method="post">
         <input type="hidden" name="action" value="set_deadline">
         <input type="date" id="deadline_date" name="deadline_date"  value="<?php echo $current_deadline; ?>" required>        
@@ -1277,6 +1277,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 if ($r['professor_id']) {
                     $courses[$cid]['professors'][] = [
+                        'id' => (int)$r['professor_id'],
                         'name' => $r['full_name'],
                         'is_assistant' => (int)$r['is_assistant']
                     ];
@@ -1316,6 +1317,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <td><?= $c['is_active'] ? 'Aktivan' : 'Neaktivan' ?></td>
 
                         <td>
+                            <button class="action-button edit-button"
+                                    data-entity="predmet"
+                                    data-id="<?= $c['id'] ?>"
+                                    data-name="<?= htmlspecialchars($c['name']) ?>"
+                                    data-code="<?= htmlspecialchars($c['code']) ?>"
+                                    data-semester="<?= $c['semester'] ?>"
+                                    data-is_optional="<?= $c['is_optional'] ?>"
+                                    data-professors="<?= htmlspecialchars(json_encode($c['professors'])) ?>">
+                                Uredi
+                            </button>
                             <?php if ($c['is_active']): ?>
                                 <form method="post" style="display:inline">
                                     <input type="hidden" name="action" value="delete_predmet">

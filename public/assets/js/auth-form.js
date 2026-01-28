@@ -122,13 +122,18 @@ document.addEventListener('DOMContentLoaded', function() {
 
         // Additional validation for signup form
         if (form.id === 'signup') {
-            const password = document.getElementById('su-password').value;
-            const confirmPassword = document.getElementById('su-confirm').value;
+            const passwordEl = document.getElementById('su-password');
+            const confirmEl = document.getElementById('su-confirm');
             const termsCheckbox = document.getElementById('su-terms');
 
-            if (password && confirmPassword && password !== confirmPassword) {
-                showError('su-confirm', 'Passwords do not match');
-                isValid = false;
+            if (passwordEl && confirmEl) {
+                const password = passwordEl.value;
+                const confirmPassword = confirmEl.value;
+                
+                if (password && confirmPassword && password !== confirmPassword) {
+                    showError('su-confirm', 'Passwords do not match');
+                    isValid = false;
+                }
             }
 
             // Only validate terms if checkbox exists
