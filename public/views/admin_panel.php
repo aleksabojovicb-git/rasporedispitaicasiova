@@ -1720,6 +1720,10 @@ document.getElementById('generate-schedule').addEventListener('click', async () 
         
         container.appendChild(controlsDiv);
 
+        // Lock state management
+        let isScheduleLocked = false; //zakljucavanje rasporeda
+        const allArrowButtons = []; //zakljucavanje rasporeda
+
         function createControlGroup(title, isWinter) {
             const group = document.createElement('div');
             group.style.textAlign = 'center';
@@ -1740,7 +1744,8 @@ document.getElementById('generate-schedule').addEventListener('click', async () 
             leftBtn.innerHTML = '◀';
             leftBtn.className = 'nav-arrow';
             leftBtn.style.cssText = 'font-size: 20px; padding: 5px 12px; cursor: pointer; border: none; background: #3b82f6; color: white; border-radius: 6px;';
-            
+            allArrowButtons.push(leftBtn); //zakljucavanje rasporeda
+
             const info = document.createElement('span');
             info.innerHTML = 'Verzija 1';
             info.style.fontWeight = 'bold';
@@ -1749,10 +1754,20 @@ document.getElementById('generate-schedule').addEventListener('click', async () 
             rightBtn.innerHTML = '▶';
             rightBtn.className = 'nav-arrow';
             rightBtn.style.cssText = 'font-size: 20px; padding: 5px 12px; cursor: pointer; border: none; background: #3b82f6; color: white; border-radius: 6px;';
-            
+            allArrowButtons.push(rightBtn); //zakljucavanje rasporeda
+
+
             const updateState = () => {
                 const idx = isWinter ? currentWinterIndex : currentSummerIndex;
                 info.innerHTML = 'Verzija ' + (idx + 1);
+                
+                //zakljucavanje rasporeda
+                leftBtn.disabled = idx === 0 || isScheduleLocked;
+                leftBtn.style.opacity = (idx === 0 || isScheduleLocked) ? '0.5' : '1';
+                
+                rightBtn.disabled = idx === scheduleIds.length - 1 || isScheduleLocked;
+                rightBtn.style.opacity = (idx === scheduleIds.length - 1 || isScheduleLocked) ? '0.5' : '1';
+                
                 
                 leftBtn.disabled = idx === 0;
                 leftBtn.style.opacity = idx === 0 ? '0.5' : '1';
@@ -1766,6 +1781,7 @@ document.getElementById('generate-schedule').addEventListener('click', async () 
             };
             
             leftBtn.addEventListener('click', () => {
+                if (isScheduleLocked) return; //zakljucavanje rasporeda
                 if (isWinter) {
                     if (currentWinterIndex > 0) currentWinterIndex--;
                 } else {
@@ -1775,6 +1791,7 @@ document.getElementById('generate-schedule').addEventListener('click', async () 
             });
             
             rightBtn.addEventListener('click', () => {
+                if (isScheduleLocked) return; //zakljucavanje rasporeda
                 if (isWinter) {
                     if (currentWinterIndex < scheduleIds.length - 1) currentWinterIndex++;
                 } else {
@@ -1796,6 +1813,120 @@ document.getElementById('generate-schedule').addEventListener('click', async () 
         }
 
         controlsDiv.appendChild(createControlGroup('Zimski Semestri (1, 3, 5)', true));
+        
+        //Zakljucavanje rasporeda - START
+        // Lock button
+        const lockBtnContainer = document.createElement('div');
+        lockBtnContainer.style.display = 'flex';
+        lockBtnContainer.style.alignItems = 'center';
+        lockBtnContainer.style.justifyContent = 'center';
+        lockBtnContainer.style.margin = '10px';
+        
+        const lockBtn = document.createElement('button');
+        lockBtn.textContent = '🔓 Zakljucaj';
+        lockBtn.style.cssText = 'padding: 10px 20px; font-size: 14px; cursor: pointer; border: 2px solid #f59e0b; background: #f59e0b; color: white; border-radius: 6px; font-weight: bold; transition: all 0.3s ease;';
+        
+        lockBtn.addEventListener('click', async () => {
+            // Determine winter and summer schedule IDs based on what's available
+            // If we have multiple schedules, use different ones for winter/summer
+            // If only 1 schedule, use it for both
+            let winterScheduleId, summerScheduleId;
+            
+            if (scheduleIds.length >= 2) {
+                // Multiple schedules: use first for winter, second for summer
+                winterScheduleId = scheduleIds[currentWinterIndex] || scheduleIds[0];
+                summerScheduleId = scheduleIds[currentSummerIndex] || scheduleIds[1] || scheduleIds[0];
+            } else if (scheduleIds.length === 1) {
+                // Only 1 schedule: use it for both
+                winterScheduleId = scheduleIds[0];
+                summerScheduleId = scheduleIds[0];
+            } else {
+                // No schedules at all
+                console.error('✗ No schedule IDs found');
+                alert('Greška: Nema dostupnih rasporeda.');
+                return;
+            }
+            
+            console.log('=== LOCK TOGGLE ===');
+            console.log('All Available Schedule IDs:', scheduleIds);
+            console.log('Winter Index:', currentWinterIndex);
+            console.log('Summer Index:', currentSummerIndex);
+            console.log('Winter Schedule ID to lock:', winterScheduleId);
+            console.log('Summer Schedule ID to lock:', summerScheduleId);
+            
+            isScheduleLocked = !isScheduleLocked;
+            
+            console.log('Winter scheduleId: ',winterScheduleId);
+            console.log('Summer schedule Id: ',summerScheduleId);
+            console.log('Is Locked:', isScheduleLocked);
+            console.log('==================');
+
+            
+            // Make AJAX call to API
+            try {
+                const payload = {
+                    action: 'toggle_lock',
+                    is_locked: isScheduleLocked,
+                    winter_schedule_id: winterScheduleId,
+                    summer_schedule_id: summerScheduleId
+                };
+                
+                console.log('Sending payload:', JSON.stringify(payload, null, 2));
+                
+                const response = await fetch('../../src/api/schedule_lock.php', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(payload)
+                });
+                
+                const data = await response.json();
+                console.log('API Response:', data);
+                
+                if (data.success) {
+                    console.log('✓ Lock state saved:', data.message);
+                    
+                    // Update button appearance AFTER API succeeds
+                    if (isScheduleLocked) {
+                        lockBtn.textContent = '🔒 Otkljucaj';
+                        lockBtn.style.background = '#ef4444';
+                        lockBtn.style.borderColor = '#ef4444';
+                    } else {
+                        lockBtn.textContent = '🔓 Zakljucaj';
+                        lockBtn.style.background = '#f59e0b';
+                        lockBtn.style.borderColor = '#f59e0b';
+                    }
+                    
+                    // Update all arrow buttons AFTER API succeeds
+                    allArrowButtons.forEach(btn => {
+                        if (isScheduleLocked) {
+                            btn.disabled = true;
+                            btn.style.opacity = '0.5';
+                            btn.style.cursor = 'not-allowed';
+                        } else {
+                            btn.disabled = false;
+                            btn.style.opacity = '1';
+                            btn.style.cursor = 'pointer';
+                        }
+                    });
+                } else {
+                    console.error('✗ Failed to save lock state:', data.message);
+                    // Revert the toggle if API call failed
+                    isScheduleLocked = !isScheduleLocked;
+                }
+            } catch (error) {
+                console.error('✗ API call error:', error);
+                // Revert the toggle if API call failed
+                isScheduleLocked = !isScheduleLocked;
+            }
+        });
+        
+        lockBtnContainer.appendChild(lockBtn);
+        controlsDiv.appendChild(lockBtnContainer);
+                
+        //Zakljucavanje rasporeda - END
+
         controlsDiv.appendChild(createControlGroup('Ljetnji Semestri (2, 4, 6)', false));
 
         function enableTdSwap(tableEl) {
