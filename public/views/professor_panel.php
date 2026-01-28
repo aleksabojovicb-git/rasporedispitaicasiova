@@ -64,9 +64,9 @@ $inputData = json_decode($inputJSON, true);
 
 if ($inputData && isset($inputData['action']) && $inputData['action'] === 'save_availability') {
     header('Content-Type: application/json');
-    
+
     $availability = $inputData['data'] ?? [];
-    
+
     // Validacija
     if (!is_array($availability) || count($availability) === 0) {
         echo json_encode(['success' => false, 'error' => 'Morate izabrati bar jedan termin']);
@@ -108,9 +108,9 @@ if ($inputData && isset($inputData['action']) && $inputData['action'] === 'save_
 // 2) Obrada JSON POST zahtjeva za čuvanje sedmica kolokvijuma
 if ($inputData && isset($inputData['action']) && $inputData['action'] === 'save_colloquium_weeks') {
     header('Content-Type: application/json');
-    
+
     $colloquiumData = $inputData['data'] ?? [];
-    
+
     if (!is_array($colloquiumData) || count($colloquiumData) === 0) {
         echo json_encode(['success' => false, 'error' => 'Nema podataka za čuvanje']);
         exit;
@@ -131,13 +131,13 @@ if ($inputData && isset($inputData['action']) && $inputData['action'] === 'save_
             $courseId = (int)($item['course_id'] ?? 0);
             $col1Week = $item['colloquium_1_week'];
             $col2Week = $item['colloquium_2_week'];
-            
+
             if ($courseId === 0) continue;
-            
+
             // Convert to null or int (1 means "ne odrzava se")
             $col1Value = ($col1Week === '' || $col1Week === null) ? null : (int)$col1Week;
             $col2Value = ($col2Week === '' || $col2Week === null) ? null : (int)$col2Week;
-            
+
             $stmt->execute([$col1Value, $col2Value, $courseId]);
             $updated++;
         }
@@ -310,43 +310,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         <!-- EVENTS -->
         <div class="tab-pane fade" id="eventsTab">
-            <h3>Sva predavanja i kolokvijumi</h3>
-            <table class="table table-bordered">
-                <thead>
-                <tr><th>ID</th><th>Predmet</th><th>Tip</th><th>Početak</th><th>Kraj</th><th>Sala</th><th>Napomena</th></tr>
-                </thead>
-                <tbody>
-                <?php
-                try {
-                    $stmt = $pdo->prepare("
-                SELECT e.*, c.name as course_name, r.code as room_code
-                FROM academic_event e
-                LEFT JOIN course c ON e.course_id = c.id
-                LEFT JOIN room r ON e.room_id = r.id
-                JOIN event_professor ep ON ep.event_id = e.id
-                WHERE ep.professor_id = ?
-                ORDER BY e.starts_at DESC
-            ");
-                    $stmt->execute([$professorId]);
-                    while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-                        $event_type = ($row['type_enum'] === 'EXAM') ? 'Ispit' : (($row['type_enum']==='COLLOQUIUM')?'Kolokvijum':htmlspecialchars($row['type_enum']));
-                        echo "<tr>";
-                        echo "<td>".htmlspecialchars($row['id'])."</td>";
-                        echo "<td>".htmlspecialchars($row['course_name'])."</td>";
-                        echo "<td>".$event_type."</td>";
-                        echo "<td>".date('d.m.Y H:i', strtotime($row['starts_at']))."</td>";
-                        echo "<td>".date('d.m.Y H:i', strtotime($row['ends_at']))."</td>";
-                        echo "<td>".($row['is_online']?'Online':htmlspecialchars($row['room_code']))."</td>";
-                        echo "<td>".htmlspecialchars($row['notes'])."</td>";
-                        echo "</tr>";
-                    }
-                } catch(PDOException $e) {
-                    echo "<tr><td colspan='7'>Greška: ".htmlspecialchars($e->getMessage())."</td></tr>";
-                }
-                ?>
-                </tbody>
-            </table>
+            <h3>Kalendar događaja</h3>
+            <div class="alert alert-info">
+                Kliknite na dan da dodate napomenu. Ispiti su crveni, kolokvijumi narandžasti.
+            </div>
+            <div id="events-calendar"></div>
         </div>
+
 
         <!-- COURSES -->
         <div class="tab-pane fade" id="coursesTab">
@@ -383,7 +353,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         ");
                         $stmt->execute([$professorId]);
                         $courses = $stmt->fetchAll(PDO::FETCH_ASSOC);
-                        
+
                         if (!$courses) {
                             echo "<tr><td colspan='5'>Nema pridruženih predmeta.</td></tr>";
                         } else {
@@ -391,7 +361,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 $role = $c['is_assistant'] ? 'Asistent' : 'Profesor';
                                 $col1Val = $c['colloquium_1_week'];
                                 $col2Val = $c['colloquium_2_week'];
-                                
+
                                 // Determine semester start date based on odd/even semester
                                 // Odd (1, 3, 5...) -> Winter, Even (2, 4, 6...) -> Summer
                                 $isWinter = ($c['semester'] % 2 != 0);
@@ -405,7 +375,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                         <select class="form-select form-select-sm colloquium-1-select" data-course-id="<?php echo (int)$c['id']; ?>">
                                             <option value="">-- Izaberi --</option>
                                             <option value="1" <?php echo ($col1Val == 1) ? 'selected' : ''; ?>>Ne održava se</option>
-                                            <?php for($w=5; $w<=13; $w++): 
+                                            <?php for($w=5; $w<=13; $w++):
                                                 $dateLabel = "";
                                                 if ($semStart) {
                                                     // week 1 starts at $semStart
@@ -425,7 +395,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                         <select class="form-select form-select-sm colloquium-2-select" data-course-id="<?php echo (int)$c['id']; ?>">
                                             <option value="">-- Izaberi --</option>
                                             <option value="1" <?php echo ($col2Val == 1) ? 'selected' : ''; ?>>Ne održava se</option>
-                                            <?php for($w=5; $w<=13; $w++): 
+                                            <?php for($w=5; $w<=13; $w++):
                                                 $dateLabel = "";
                                                 if ($semStart) {
                                                     $wStart = strtotime("+" . ($w - 1) . " weeks", $semStart);
@@ -475,9 +445,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 </tr>
                             </thead>
                             <tbody>
-                                <?php 
+                                <?php
                                 $daysMap = [1=>'Ponedeljak', 2=>'Utorak', 3=>'Srijeda', 4=>'Četvrtak', 5=>'Petak'];
-                                foreach ($existingAvailability as $slot): 
+                                foreach ($existingAvailability as $slot):
                                     $dName = $daysMap[$slot['weekday']] ?? 'Nepoznato';
                                     $tFrom = date('H:i', strtotime($slot['start_time']));
                                     $tTo   = date('H:i', strtotime($slot['end_time']));
@@ -504,7 +474,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <div class="alert alert-warning mt-2">
                     <small>Kliknite i prevucite mišem preko kalendara da označite termine. Kliknite na termin da ga obrišete.</small>
                 </div>
-                
+
                 <div id="availability-calendar" style="margin-top:10px;"></div>
 
                 <h5 class="mt-4">Novi termini za čuvanje:</h5>
@@ -519,11 +489,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         <!-- OCCUPANCY TAB -->
         <div class="tab-pane fade" id="occupancyTab">
-           <?php 
+           <?php
                  $y = $occupancyService->getActiveYear();
                  $year_label = $y ? $y['year_label'] : "Nije definisana";
                  $year_id = $y ? $y['id'] : 0;
-                 
+
                  $slots = [
                         ['08:15', '09:00'], ['09:15', '10:00'], ['10:15', '11:00'],
                         ['11:15', '12:00'], ['12:15', '13:00'], ['13:15', '14:00'],
@@ -531,10 +501,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         ['17:15', '18:00'], ['18:15', '19:00'], ['19:15', '20:00'],
                         ['20:15', '21:00']
                  ];
-                 
+
                  $rooms = $occupancyService->getRooms();
                  $occupancy = ($year_id > 0) ? $occupancyService->getOccupancy($year_id) : [];
-                 
+
                  $days = [1 => 'PONEDJELJAK', 2 => 'UTORAK', 3 => 'SRIJEDA', 4 => 'ČETVRTAK', 5 => 'PETAK'];
            ?>
 
@@ -574,7 +544,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 <td class="time-col"><?= $slot[0] ?> - <?= $slot[1] ?></td>
                                 <?php foreach ($days as $dayNum => $dayName): ?>
                                     <?php foreach ($rooms as $room): ?>
-                                        <?php 
+                                        <?php
                                             $key = $room['id'] . '-' . $dayNum . '-' . $slot[0];
                                             $occ = $occupancy[$key] ?? null;
                                             $class = "";
@@ -582,7 +552,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                                 $class = "faculty-" . strtolower($occ['faculty_code']);
                                             }
                                         ?>
-                                        <td class="occupancy-cell <?= $class ?>" 
+                                        <td class="occupancy-cell <?= $class ?>"
                                             title="<?= $occ ? "Zauzeto: {$occ['faculty_code']}\nTip: {$occ['source_type']}" : "Slobodno" ?>">
                                             <?php if ($occ): ?>
                                                 <div class="cell-info"><?= htmlspecialchars($occ['faculty_code']) ?></div>
@@ -636,16 +606,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 document.addEventListener('DOMContentLoaded', function() {
     const saveBtn = document.getElementById('saveColloquiumWeeksBtn');
     if (!saveBtn) return;
-    
+
     const messageDiv = document.getElementById('colloquiumMessage');
-    
+
     function showMessage(type, text) {
         messageDiv.className = 'alert alert-' + type + ' mb-3';
         messageDiv.textContent = text;
         messageDiv.classList.remove('d-none');
         setTimeout(() => messageDiv.classList.add('d-none'), 5000);
     }
-    
+
     function showLoading(show) {
         const textSpan = saveBtn.querySelector('.btn-text');
         const spinner = saveBtn.querySelector('.spinner-border');
@@ -659,20 +629,20 @@ document.addEventListener('DOMContentLoaded', function() {
             saveBtn.disabled = false;
         }
     }
-    
+
     saveBtn.addEventListener('click', function() {
         const rows = document.querySelectorAll('#coursesTableBody tr[data-course-id]');
         const data = [];
         let hasValidationError = false;
-        
+
         rows.forEach(row => {
             const courseId = row.getAttribute('data-course-id');
             const col1Select = row.querySelector('.colloquium-1-select');
             const col2Select = row.querySelector('.colloquium-2-select');
-            
+
             const col1Value = col1Select.value;
             const col2Value = col2Select.value;
-            
+
             // Validacija: ako su oba odabrana i nisu "ne odrzava se", col2 > col1
             if (col1Value && col2Value && col1Value !== '1' && col2Value !== '1') {
                 if (parseInt(col2Value) <= parseInt(col1Value)) {
@@ -685,18 +655,18 @@ document.addEventListener('DOMContentLoaded', function() {
             } else {
                 row.classList.remove('table-danger');
             }
-            
+
             data.push({
                 course_id: courseId,
                 colloquium_1_week: col1Value || null,
                 colloquium_2_week: col2Value || null
             });
         });
-        
+
         if (hasValidationError) return;
-        
+
         showLoading(true);
-        
+
         fetch(window.location.href, {
             method: 'POST',
             headers: {
@@ -725,5 +695,103 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 <script src="../assets/js/professor_tabs.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+
+            let notesByDate = {}; // frontend-only notes
+
+            // MOCK: generisani raspored (kasnije ide iz baze)
+            const generatedSchedule = [
+                { date: '2026-01-15', type: 'kolokvijum', title: 'Kolokvijum – OS' },
+                { date: '2026-01-22', type: 'ispit', title: 'Ispit – Baze podataka' }
+            ];
+
+            let calendarEl = document.getElementById('events-calendar');
+            if (!calendarEl) return;
+
+            window.eventsCalendar = new FullCalendar.Calendar(calendarEl, {                initialView: 'dayGridMonth',
+                initialDate: new Date(),
+                locale: 'sr',
+                firstDay: 1,
+                height: 'auto',
+
+                events: function(fetchInfo, successCallback) {
+                    successCallback(generateEvents());
+                },
+
+                dateClick: function(info) {
+                    addNote(info.dateStr);
+                },
+
+                eventClick: function(info) {
+                    if (info.event.extendedProps.hasNotes) {
+                        showNotes(info.event.startStr);
+                    }
+                }
+            });
+
+            eventsCalendar.render();
+
+            function generateEvents() {
+                let events = [];
+
+                // Sistemски događaji (kolokvijumi / ispiti)
+                generatedSchedule.forEach(e => {
+                    events.push({
+                        title: e.title,
+                        start: e.date,
+                        allDay: true,
+                        backgroundColor: e.type === 'kolokvijum' ? '#FFD966' : '#F4A261',
+                        borderColor: e.type === 'kolokvijum' ? '#FFD966' : '#F4A261'
+                    });
+                });
+
+                // Pin za notes
+                Object.keys(notesByDate).forEach(date => {
+                    events.push({
+                        title: '📌',
+                        start: date,
+                        allDay: true,
+                        backgroundColor: 'transparent',
+                        textColor: '#000',
+                        hasNotes: true
+                    });
+                });
+
+                return events;
+            }
+
+            function addNote(dateStr) {
+                let note = prompt("Dodaj napomenu za " + dateStr);
+                if (!note) return;
+
+                if (!notesByDate[dateStr]) {
+                    notesByDate[dateStr] = [];
+                }
+
+                notesByDate[dateStr].push(note);
+                eventsCalendar.refetchEvents();
+            }
+
+            function showNotes(dateStr) {
+                let notes = notesByDate[dateStr];
+                if (!notes || notes.length === 0) return;
+
+                alert(
+                    "Napomene za " + dateStr + ":\n\n" +
+                    notes.map((n, i) => (i + 1) + ". " + n).join("\n")
+                );
+            }
+        });
+    </script>
+    <script>
+        document.getElementById('tab-events').addEventListener('shown.bs.tab', function () {
+            if (window.eventsCalendar) {
+                window.eventsCalendar.updateSize();
+            }
+        });
+    </script>
+
+
 </body>
 </html>
