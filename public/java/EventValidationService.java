@@ -2,6 +2,7 @@ import java.sql.*;
 import java.time.*;
 import java.time.format.DateTimeParseException;
 import java.time.temporal.TemporalAdjusters;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 
 public class EventValidationService {
@@ -23,6 +24,8 @@ public class EventValidationService {
         this.holidays = new ArrayList<>();
         loadDataFromDatabase();
     }
+
+    //region DataLoading
 
     private void loadDataFromDatabase() {
         try {
@@ -121,49 +124,7 @@ public class EventValidationService {
             System.out.println("Loaded professors: " + count);
         }
     }
-
-    public static void main(String[] args) {
-        Connection conn = null;
-        try {
-            // Load PostgreSQL driver (since you're using postgresql-42.7.8.jar)
-            Class.forName("org.postgresql.Driver");
-
-            // Connect to your database
-            conn = DriverManager.getConnection(
-                    "jdbc:postgresql://localhost:5432/your_database_name",
-                    "your_username",
-                    "your_password");
-
-            System.out.println("✓ Connected to database");
-
-            // Create the service
-            EventValidationService service = new EventValidationService(conn);
-
-            System.out.println("\nStarting schedule generation...\n");
-
-            // Generate the 6 schedules
-            ScheduleResult result = service.generateSixSchedulesWithDifferentPriorities();
-
-            // Print result
-            System.out.println("FINAL RESULT: " + result.message);
-
-
-        } catch (Exception e) {
-            System.err.println("✗ Error: " + e.getMessage());
-            e.printStackTrace();
-        } finally {
-            // Close connection
-            if (conn != null) {
-                try {
-                    conn.close();
-                    System.out.println("\n✓ Database connection closed");
-                } catch (SQLException e) {
-                    e.printStackTrace();
-                }
-            }
-        }
-    }
-
+    
     private void loadAcademicEvents() throws SQLException {
         String query = "SELECT id, course_id, created_by_professor, type_enum, starts_at, ends_at, " +
                 "room_id, notes, is_published, locked_by_admin, schedule_id, day FROM academic_event";
@@ -220,29 +181,53 @@ public class EventValidationService {
         }
     }
 
-    private int generateNewScheduleId() throws SQLException {
-        // Prvo generišemo novi ID
-        String queryMaxId = "SELECT COALESCE(MAX(id), 0) + 1 as novi_id FROM schedule";
-        int newId = 1;
+    //endregion
+    
+    public static void main(String[] args) {
+        Connection conn = null;
+        try {
+            // Load PostgreSQL driver (since you're using postgresql-42.7.8.jar)
+            Class.forName("org.postgresql.Driver");
 
-        try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery(queryMaxId)) {
-            if (rs.next()) {
-                newId = rs.getInt("novi_id");
+            // Connect to your database
+            conn = DriverManager.getConnection(
+                    "jdbc:postgresql://localhost:5432/your_database_name",
+                    "your_username",
+                    "your_password");
+
+            System.out.println("✓ Connected to database");
+
+            // Create the service
+            EventValidationService service = new EventValidationService(conn);
+
+            System.out.println("\nStarting schedule generation...\n");
+
+            // Generate the 6 schedules
+            ScheduleResult result = service.generateSixSchedulesWithDifferentPriorities();
+
+            // Print result
+            System.out.println("FINAL RESULT: " + result.message);
+
+
+        } catch (Exception e) {
+            System.err.println("✗ Error: " + e.getMessage());
+            e.printStackTrace();
+        } finally {
+            // Close connection
+            if (conn != null) {
+                try {
+                    conn.close();
+                    System.out.println("\n✓ Database connection closed");
+                } catch (SQLException e) {
+                    e.printStackTrace();
+                }
             }
         }
-
-        // Kreiramo zapis u schedule tabeli
-        String insertSchedule = "INSERT INTO schedule (id, name) VALUES (?, ?)";
-        try (PreparedStatement pstmt = conn.prepareStatement(insertSchedule)) {
-            pstmt.setInt(1, newId);
-            pstmt.setString(2, "Auto-generated schedule " + newId + " - " +
-                    java.time.LocalDateTime.now()
-                            .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
-            pstmt.executeUpdate();
-        }
-
-        return newId;
     }
+
+    //region Helper Functions
+
+
 
     private void saveToAcademicEvent(int scheduleId, int courseId, int professorId, String day,
             LocalDateTime startsAt, LocalDateTime endsAt, int roomId, String typeEnum) throws SQLException {
@@ -695,6 +680,11 @@ public class EventValidationService {
         return info.toString();
     }
 
+    //endregion
+    
+
+    //region Automatic Schedule Generation
+
     public String generateCompleteSchedule() {
         try {
             System.out.println("=== STARTING AUTOMATIC COMPLETE SCHEDULE GENERATION ===\n");
@@ -769,6 +759,30 @@ public class EventValidationService {
             e.printStackTrace();
             return "ERROR: " + e.getMessage();
         }
+    }
+
+    private int generateNewScheduleId() throws SQLException {
+        // Prvo generišemo novi ID
+        String queryMaxId = "SELECT COALESCE(MAX(id), 0) + 1 as novi_id FROM schedule";
+        int newId = 1;
+
+        try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery(queryMaxId)) {
+            if (rs.next()) {
+                newId = rs.getInt("novi_id");
+            }
+        }
+
+        // Kreiramo zapis u schedule tabeli
+        String insertSchedule = "INSERT INTO schedule (id, name) VALUES (?, ?)";
+        try (PreparedStatement pstmt = conn.prepareStatement(insertSchedule)) {
+            pstmt.setInt(1, newId);
+            pstmt.setString(2, "Auto-generated schedule " + newId + " - " +
+                    java.time.LocalDateTime.now()
+                            .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+            pstmt.executeUpdate();
+        }
+
+        return newId;
     }
 
     /**
@@ -1554,6 +1568,880 @@ public class EventValidationService {
      * 
      * Each schedule is independent - conflicts checked only within same schedule
      */
+
+    //region Exams
+
+    public ScheduleResult generateCompleteExamAndColloquiumScheduleForAllSemesters(int academicYear) {
+        ScheduleResult finalResult = new ScheduleResult();
+        
+        try {
+            System.out.println("\n" + "=".repeat(70));
+            System.out.println("GENERATING COMPLETE EXAM AND COLLOQUIUM SCHEDULE");
+            System.out.println("Academic Year: " + academicYear);
+            System.out.println("=".repeat(70) + "\n");
+            
+            List<Integer> semestersToProcess = new ArrayList<>();
+            Map<Integer, Integer> semesterCourseCount = new HashMap<>();
+            
+            // Determine which semesters have courses
+            for (Course course : courses.values()) {
+                if (!semestersToProcess.contains(course.semester)) {
+                    semestersToProcess.add(course.semester);
+                }
+                semesterCourseCount.put(course.semester, 
+                    semesterCourseCount.getOrDefault(course.semester, 0) + 1);
+            }
+            
+            Collections.sort(semestersToProcess);
+            
+            if (semestersToProcess.isEmpty()) {
+                finalResult.success = false;
+                finalResult.message = "ERROR: No courses found in any semester";
+                return finalResult;
+            }
+            
+            System.out.println("Found " + semestersToProcess.size() + " semesters with courses:\n");
+            for (Integer sem : semestersToProcess) {
+                System.out.println("  • Semester " + sem + ": " + semesterCourseCount.get(sem) + " courses");
+            }
+            System.out.println("\n" + "=".repeat(70) + "\n");
+            
+            // Results tracking for each semester
+            Map<Integer, ScheduleResult> semesterResults = new LinkedHashMap<>();
+            int totalSuccessfulExams = 0;
+            int totalFailedCourses = 0;
+            List<FailedCourse> allFailedCourses = new ArrayList<>();
+            int totalSavedToDatabase = 0;
+            int totalSaveErrors = 0;
+            
+            // Process each semester
+            for (Integer semester : semestersToProcess) {
+                System.out.println("\n" + "-".repeat(70));
+                System.out.println("PROCESSING SEMESTER " + semester);
+                System.out.println("-".repeat(70) + "\n");
+                
+                ScheduleResult semesterResult = generateExamsAndColloquiums(academicYear, semester);
+                semesterResults.put(semester, semesterResult);
+                
+                totalSuccessfulExams += semesterResult.successfulCourses;
+                totalFailedCourses += semesterResult.failedCourses;
+                
+                if (semesterResult.failedCoursesList != null) {
+                    allFailedCourses.addAll(semesterResult.failedCoursesList);
+                }
+                
+                System.out.println("\n✓ Semester " + semester + " completed");
+                System.out.println("  - Schedule ID: " + semesterResult.scheduleId);
+                System.out.println("  - Successful: " + semesterResult.successfulCourses);
+                System.out.println("  - Failed: " + semesterResult.failedCourses);
+                
+                // AUTOMATICALLY SAVE TO DATABASE
+                System.out.println("\n" + "-".repeat(70));
+                System.out.println("SAVING SEMESTER " + semester + " TO DATABASE");
+                System.out.println("-".repeat(70));
+                
+                try {
+                    int savedCount = saveExamAndColloquiumScheduleToDatabase(semesterResult);
+                    totalSavedToDatabase += savedCount;
+                    System.out.println("✓ Saved " + savedCount + " events for semester " + semester);
+                } catch (Exception e) {
+                    totalSaveErrors++;
+                    System.err.println("✗ Error saving semester " + semester + " to database: " + e.getMessage());
+                }
+            }
+            
+            // Generate final summary
+            System.out.println("\n\n" + "=".repeat(70));
+            System.out.println("FINAL SUMMARY - ALL SEMESTERS");
+            System.out.println("=".repeat(70) + "\n");
+            
+            StringBuilder summary = new StringBuilder();
+            summary.append("Academic Year: ").append(academicYear).append("\n");
+            summary.append("Total Semesters Processed: ").append(semestersToProcess.size()).append("\n\n");
+            
+            summary.append("SCHEDULE STRUCTURE:\n");
+            summary.append("  • Colloquium 1 (Koloq 1): Week 7-8\n");
+            summary.append("  • Colloquium 2 (Koloq 2): Week 13-14\n");
+            summary.append("  • Retake Colloquiums (Popravni): Week 15 (before exams)\n");
+            summary.append("  • Regular Exams (Ispiti): Week 16-18\n");
+            summary.append("  • Exam Weeks (Extra): Week 19-20 (additional exam period)\n");
+            summary.append("  • Retake Exams (Popravni ispiti): Week 21-22 (final retake period)\n\n");
+            
+            summary.append("DETAILED RESULTS BY SEMESTER:\n");
+            summary.append("-".repeat(70)).append("\n");
+            
+            for (Integer semester : semestersToProcess) {
+                ScheduleResult sr = semesterResults.get(semester);
+                summary.append(String.format("Semester %2d | Schedule ID: %5d | Generated: %3d | Failed: %3d\n",
+                        semester, sr.scheduleId, sr.successfulCourses, sr.failedCourses));
+            }
+            
+            summary.append("-".repeat(70)).append("\n\n");
+            summary.append("OVERALL STATISTICS:\n");
+            summary.append("  GENERATION:\n");
+            summary.append("    • Total Exams/Colloquiums Generated: ").append(totalSuccessfulExams).append("\n");
+            summary.append("    • Total Failed Courses: ").append(totalFailedCourses).append("\n");
+            summary.append("    • Generation Success Rate: ").append(
+                totalFailedCourses == 0 ? "100%" : 
+                String.format("%.1f%%", (totalSuccessfulExams * 100.0 / 
+                    (totalSuccessfulExams + totalFailedCourses)))).append("\n");
+            
+            summary.append("\n  DATABASE SAVE:\n");
+            summary.append("    • Total Saved to Database: ").append(totalSavedToDatabase).append("\n");
+            summary.append("    • Save Errors: ").append(totalSaveErrors).append("\n");
+            
+            if (!allFailedCourses.isEmpty()) {
+                summary.append("\nFAILED COURSES:\n");
+                summary.append("-".repeat(70)).append("\n");
+                
+                Map<Integer, List<FailedCourse>> failedBySemester = new TreeMap<>();
+                for (FailedCourse fc : allFailedCourses) {
+                    failedBySemester.computeIfAbsent(fc.semester, k -> new ArrayList<>()).add(fc);
+                }
+                
+                for (Integer semester : failedBySemester.keySet()) {
+                    summary.append("\nSemester ").append(semester).append(":\n");
+                    for (FailedCourse fc : failedBySemester.get(semester)) {
+                        summary.append(String.format("  • %s (ID: %d) - %s\n", 
+                            fc.courseName, fc.courseId, fc.reason));
+                    }
+                }
+            }
+            
+            summary.append("\n").append("=".repeat(70));
+            
+            System.out.println(summary.toString());
+            
+            // Set final result
+            finalResult.success = (totalFailedCourses == 0 && totalSaveErrors == 0);
+            finalResult.successfulCourses = totalSuccessfulExams;
+            finalResult.failedCourses = totalFailedCourses;
+            finalResult.failedCoursesList = allFailedCourses;
+            finalResult.message = finalResult.success ? 
+                "OK: Complete exam and colloquium schedule generated and saved for all semesters" :
+                "WARNING: " + totalFailedCourses + " generation failures and " + totalSaveErrors + 
+                " save errors. Check details above.";
+            
+            System.out.println("\n✓ SCHEDULE GENERATION AND SAVE COMPLETE!\n");
+            
+            return finalResult;
+            
+        } catch (Exception e) {
+            e.printStackTrace();
+            finalResult.success = false;
+            finalResult.message = "ERROR: " + e.getMessage();
+            return finalResult;
+        }
+    }
+
+    public ScheduleResult generateExamsAndColloquiums(int academicYear, int semester) {
+        ScheduleResult result = new ScheduleResult();
+        try {
+            System.out.println("=== GENERATING EXAMS AND COLLOQUIUMS SCHEDULE ===\n");
+            System.out.println("Academic Year: " + academicYear + " | Semester: " + semester + "\n");
+            
+            int scheduleId = generateNewScheduleId();
+            List<FailedCourse> failedList = new ArrayList<>();
+            
+            // Filter courses by semester
+            List<Course> semesterCourses = new ArrayList<>();
+            for (Course course : courses.values()) {
+                if (course.semester == semester) {
+                    semesterCourses.add(course);
+                }
+            }
+            
+            if (semesterCourses.isEmpty()) {
+                result.success = false;
+                result.message = "ERROR: No courses found for semester " + semester;
+                return result;
+            }
+            
+            System.out.println("Found " + semesterCourses.size() + " courses for semester " + semester + "\n");
+            
+            // Determine schedule weeks
+            List<LocalDate> colloqium1Weeks = getWeekDates(academicYear, semester, 4, 6);
+            List<LocalDate> colloqium2Weeks = getWeekDates(academicYear, semester, 7, 9);
+            List<LocalDate> retakeColloqWeeks = getWeekDates(academicYear, semester, 10, 11);
+            List<LocalDate> examWeeks = getWeekDates(academicYear, semester, 12, 15);
+            List<LocalDate> retakeExamWeeks = getWeekDates(academicYear, semester, 16, 17);
+            
+            System.out.println("Schedule Timeline:");
+            System.out.println("  • Colloquium 1: Week 4-6");
+            System.out.println("  • Colloquium 2: Week 7-9");
+            System.out.println("  • Retake Colloquiums: Week 10-11");
+            System.out.println("  • Regular Exams: Week 12-15");
+            System.out.println("  • Retake Exams: Week 16-17\n");
+            System.out.println("=".repeat(50) + "\n");
+            
+            int colloquiumCount = 0;
+            int examCount = 0;
+            
+            // PHASE 1: Schedule Colloquiums 1
+            System.out.println("PHASE 1: Scheduling Colloquium 1...\n");
+            for (Course course : semesterCourses) {
+                int professorId = findLectureProfessor(course.idCourse);
+                if (professorId == 0) continue;
+                
+                String result_colloq = scheduleColloquium(scheduleId, course, professorId, colloqium1Weeks, 1, failedList);
+                if (result_colloq.equals("OK")) {
+                    colloquiumCount++;
+                }
+            }
+            System.out.println("✓ Colloquium 1 scheduled: " + colloquiumCount + " courses\n");
+            
+            // PHASE 2: Schedule Colloquiums 2
+            System.out.println("PHASE 2: Scheduling Colloquium 2...\n");
+            int colloq2Count = 0;
+            for (Course course : semesterCourses) {
+                int professorId = findLectureProfessor(course.idCourse);
+                if (professorId == 0) continue;
+                
+                String result_colloq = scheduleColloquium(scheduleId, course, professorId, colloqium2Weeks, 2, failedList);
+                if (result_colloq.equals("OK")) {
+                    colloq2Count++;
+                }
+            }
+            System.out.println("✓ Colloquium 2 scheduled: " + colloq2Count + " courses\n");
+            colloquiumCount += colloq2Count;
+            
+            // PHASE 3: Schedule Retake Colloquiums
+            System.out.println("PHASE 3: Scheduling Retake Colloquiums (Popravni kolokvijumi)...\n");
+            int retakeColloqCount = 0;
+            for (Course course : semesterCourses) {
+                int professorId = findLectureProfessor(course.idCourse);
+                int supervisorId = findExerciseProfessor(course.idCourse);
+                if (supervisorId == 0) supervisorId = professorId;
+                if (professorId == 0) continue;
+                
+                String result_retake = scheduleRetakeColloquium(scheduleId, course, professorId, 
+                        supervisorId, retakeColloqWeeks.get(0), failedList);
+                if (result_retake.equals("OK")) {
+                    retakeColloqCount++;
+                }
+            }
+            System.out.println("✓ Retake Colloquiums scheduled: " + retakeColloqCount + " courses\n");
+            
+            // PHASE 4: Schedule Main Exams
+            System.out.println("PHASE 4: Scheduling Regular Exams (Ispiti)...\n");
+            int mainExamCount = 0;
+            for (Course course : semesterCourses) {
+                int professorId = findLectureProfessor(course.idCourse);
+                if (professorId == 0) continue;
+                
+                String result_exam = scheduleExamInPeriod(scheduleId, course, professorId, 
+                        examWeeks, "EXAM", failedList);
+                if (result_exam.equals("OK")) {
+                    mainExamCount++;
+                }
+            }
+            System.out.println("✓ Regular Exams scheduled: " + mainExamCount + " courses\n");
+            examCount += mainExamCount;
+            
+            
+            // PHASE 5: Schedule Retake Exams
+            System.out.println("PHASE 5: Scheduling Retake Exams (Popravni ispiti - Week 16-17)...\n");
+            int retakeExamCount = 0;
+            for (Course course : semesterCourses) {
+                int professorId = findLectureProfessor(course.idCourse);
+                if (professorId == 0) continue;
+                
+                String result_retake = scheduleExamInPeriod(scheduleId, course, professorId, 
+                        retakeExamWeeks, "RETAKE_EXAM", failedList);
+                if (result_retake.equals("OK")) {
+                    retakeExamCount++;
+                }
+            }
+            System.out.println("✓ Retake Exams scheduled: " + retakeExamCount + " courses\n");
+            
+            // Generate summary
+            StringBuilder summary = new StringBuilder();
+            summary.append("\n").append("=".repeat(50)).append("\n");
+            summary.append("EXAM SCHEDULE GENERATION COMPLETED\n");
+            summary.append("=".repeat(50)).append("\n");
+            summary.append("Schedule ID: ").append(scheduleId).append("\n");
+            summary.append("Academic Year: ").append(academicYear).append("\n");
+            summary.append("Semester: ").append(semester).append("\n\n");
+            summary.append("STATISTICS:\n");
+            summary.append(" • Colloquiums scheduled: ").append(colloquiumCount).append("\n");
+            summary.append(" • Retake Colloquiums: ").append(retakeColloqCount).append("\n");
+            summary.append(" • Regular Exams: ").append(examCount).append("\n");
+            summary.append(" • Retake Exams: ").append(retakeExamCount).append("\n");
+            summary.append(" • Total events: ").append(colloquiumCount + retakeColloqCount + examCount +  retakeExamCount).append("\n");
+            summary.append(" • Failed courses: ").append(failedList.size()).append("\n");
+            summary.append("=".repeat(50));
+            
+            System.out.println(summary.toString());
+            
+            loadAcademicEvents();
+            
+            result.scheduleId = scheduleId;
+            result.successfulCourses = colloquiumCount + retakeColloqCount + examCount + retakeExamCount;
+            result.failedCourses = failedList.size();
+            result.failedCoursesList = failedList;
+            result.success = (failedList.size() == 0);
+            result.message = result.success ? 
+                "OK: All exams and colloquiums scheduled successfully" :
+                "WARNING: Some courses could not be scheduled";
+            
+            return result;
+            
+        } catch (Exception e) {
+            e.printStackTrace();
+            result.success = false;
+            result.message = "ERROR: " + e.getMessage();
+            return result;
+        }
+    }
+
+    private String scheduleColloquium(int scheduleId, Course course, int professorId, 
+            List<LocalDate> availableWeekDates, int colloquiumNumber, List<FailedCourse> failedList) {
+        try {
+            // Find a suitable day within the available weeks (Monday-Friday, not Sunday)
+            LocalDate colloquiumDate = null;
+            for (LocalDate date : availableWeekDates) {
+                DayOfWeek day = date.getDayOfWeek();
+                // Skip Sunday, prefer weekdays
+                if (day != DayOfWeek.SUNDAY && day != DayOfWeek.SATURDAY) {
+                    // Check if there are max 2 tests in this weekend
+                    int weekendTestCount = countTestsInWeekend(scheduleId, date);
+                    if (weekendTestCount < 2) {
+                        colloquiumDate = date;
+                        break;
+                    }
+                } else if (day == DayOfWeek.SATURDAY) {
+                    // Saturday can be used as backup if weekdays are full
+                    int weekendTestCount = countTestsInWeekend(scheduleId, date);
+                    if (weekendTestCount < 2 && colloquiumDate == null) {
+                        colloquiumDate = date;
+                    }
+                }
+            }
+            
+            if (colloquiumDate == null) {
+                failedList.add(new FailedCourse(course.idCourse, course.name, 
+                    "Could not find available colloquium date", course.semester));
+                return "FAILED";
+            }
+            
+            // Check if it's a holiday
+            for (Holiday holiday : holidays) {
+                if (holiday.date.equals(colloquiumDate)) {
+                    failedList.add(new FailedCourse(course.idCourse, course.name, 
+                        "Selected date is a holiday: " + holiday.name, course.semester));
+                    return "FAILED";
+                }
+            }
+            
+            // Find suitable room (vjezbe room with minimum capacity)
+            List<Room> suitableRooms = getSuitableRooms(false, 20);
+            if (suitableRooms.isEmpty()) {
+                failedList.add(new FailedCourse(course.idCourse, course.name, 
+                    "No suitable exercise rooms available", course.semester));
+                return "FAILED";
+            }
+            
+            // Find time slot (typically during exercise hours: 10:00-12:00, 13:00-15:00, etc.)
+            LocalTime[] exerciseHours = {LocalTime.of(10, 0), LocalTime.of(12, 0), 
+                                        LocalTime.of(14, 0), LocalTime.of(16, 0)};
+            
+            LocalTime colloquiumTime = null;
+            Room selectedRoom = null;
+            
+            for (LocalTime time : exerciseHours) {
+                for (Room room : suitableRooms) {
+                    if (!hasConflict(null, colloquiumDate, room.idRoom, professorId, time, time.plusHours(1))) {
+                        colloquiumTime = time;
+                        selectedRoom = room;
+                        break;
+                    }
+                }
+                if (colloquiumTime != null) break;
+            }
+            
+            if (colloquiumTime == null || selectedRoom == null) {
+                failedList.add(new FailedCourse(course.idCourse, course.name, 
+                    "Could not find available time/room for colloquium", course.semester));
+                return "FAILED";
+            }
+            
+            // Save the colloquium
+            LocalDateTime startsAt = LocalDateTime.of(colloquiumDate, colloquiumTime);
+            LocalDateTime endsAt = startsAt.plusHours(2); // Colloquiums typically 2 hours
+            
+            String type = "COLLOQUIUM_" + colloquiumNumber;
+            saveToAcademicEvent(scheduleId, course.idCourse, professorId, 
+                    colloquiumDate.getDayOfWeek().toString().toLowerCase(), startsAt, endsAt, 
+                    selectedRoom.idRoom, type);
+            
+            System.out.println("  ✓ " + course.name + " (Colloq " + colloquiumNumber + ") scheduled for " + 
+                    colloquiumDate + " at " + colloquiumTime);
+            
+            return "OK";
+            
+        } catch (Exception e) {
+            failedList.add(new FailedCourse(course.idCourse, course.name, 
+                "Exception: " + e.getMessage(), course.semester));
+            return "ERROR";
+        }
+    }
+
+    private String scheduleRetakeColloquium(int scheduleId, Course course, int professorId, 
+            int supervisorId, LocalDate retakeWeek, List<FailedCourse> failedList) {
+        try {
+            // Retake colloquiums are all scheduled in one week
+            // Find available slot
+            LocalDate retakeDate = null;
+            for (int i = 0; i < 5; i++) { // Try Monday through Friday
+                LocalDate date = retakeWeek.plusDays(i);
+                if (date.getDayOfWeek() != DayOfWeek.SUNDAY) {
+                    retakeDate = date;
+                    break;
+                }
+            }
+            
+            if (retakeDate == null) {
+                failedList.add(new FailedCourse(course.idCourse, course.name, 
+                    "Could not find available retake date", course.semester));
+                return "FAILED";
+            }
+            
+            List<Room> rooms = getSuitableRooms(false, 20);
+            if (rooms.isEmpty()) {
+                return "FAILED";
+            }
+            
+            LocalTime[] times = {LocalTime.of(10, 0), LocalTime.of(12, 0), LocalTime.of(14, 0)};
+            LocalTime selectedTime = null;
+            Room selectedRoom = null;
+            
+            for (LocalTime time : times) {
+                for (Room room : rooms) {
+                    // Check supervisor not overloaded (duty tracking)
+                    int supervisorCount = countSupervisorDuties(scheduleId, supervisorId);
+                    if (supervisorCount < 5) {
+                        if (!hasConflict(null, retakeDate, room.idRoom, professorId, time, time.plusHours(1))) {
+                            selectedTime = time;
+                            selectedRoom = room;
+                            break;
+                        }
+                    }
+                }
+                if (selectedTime != null) break;
+            }
+            
+            if (selectedTime == null || selectedRoom == null) {
+                failedList.add(new FailedCourse(course.idCourse, course.name, 
+                    "Could not find available time/room for retake", course.semester));
+                return "FAILED";
+            }
+            
+            LocalDateTime startsAt = LocalDateTime.of(retakeDate, selectedTime);
+            LocalDateTime endsAt = startsAt.plusHours(2);
+            
+            saveToAcademicEvent(scheduleId, course.idCourse, professorId, 
+                    retakeDate.getDayOfWeek().toString().toLowerCase(), startsAt, endsAt, 
+                    selectedRoom.idRoom, "RETAKE_COLLOQUIUM");
+            
+            System.out.println("  ✓ " + course.name + " (Retake Colloq) scheduled for " + 
+                    retakeDate + " at " + selectedTime);
+            
+            return "OK";
+            
+        } catch (Exception e) {
+            failedList.add(new FailedCourse(course.idCourse, course.name, 
+                "Exception: " + e.getMessage(), course.semester));
+            return "ERROR";
+        }
+    }
+
+    private String scheduleExamInPeriod(int scheduleId, Course course, int professorId, 
+            List<LocalDate> examWeekDates, String examType, List<FailedCourse> failedList) {
+        try {
+            // Find suitable date - max 2 exams per weekend
+            LocalDate examDate = null;
+            for (LocalDate date : examWeekDates) {
+                if (date.getDayOfWeek() != DayOfWeek.SUNDAY) {
+                    int weekendExamCount = countTestsInWeekend(scheduleId, date);
+                    if (weekendExamCount < 2) {
+                        examDate = date;
+                        break;
+                    }
+                }
+            }
+            
+            if (examDate == null) {
+                failedList.add(new FailedCourse(course.idCourse, course.name, 
+                    "Could not find available exam date (weekend too crowded)", course.semester));
+                return "FAILED";
+            }
+            
+            // Check holiday
+            for (Holiday holiday : holidays) {
+                if (holiday.date.equals(examDate)) {
+                    failedList.add(new FailedCourse(course.idCourse, course.name, 
+                        "Selected date is a holiday", course.semester));
+                    return "FAILED";
+                }
+            }
+            
+            // Find room and time
+            List<Room> rooms = getSuitableRooms(false, 30);
+            if (rooms.isEmpty()) {
+                failedList.add(new FailedCourse(course.idCourse, course.name, 
+                    "No suitable exam rooms", course.semester));
+                return "FAILED";
+            }
+            
+            LocalTime[] examTimes = {LocalTime.of(8, 0), LocalTime.of(10, 0), LocalTime.of(12, 0), 
+                                    LocalTime.of(14, 0), LocalTime.of(16, 0)};
+            
+            LocalTime selectedTime = null;
+            Room selectedRoom = null;
+            
+            for (LocalTime time : examTimes) {
+                for (Room room : rooms) {
+                    if (!hasConflict(null, examDate, room.idRoom, professorId, time, time.plusHours(2))) {
+                        selectedTime = time;
+                        selectedRoom = room;
+                        break;
+                    }
+                }
+                if (selectedTime != null) break;
+            }
+            
+            if (selectedTime == null || selectedRoom == null) {
+                failedList.add(new FailedCourse(course.idCourse, course.name, 
+                    "Could not find available exam slot", course.semester));
+                return "FAILED";
+            }
+            
+            LocalDateTime startsAt = LocalDateTime.of(examDate, selectedTime);
+            LocalDateTime endsAt = startsAt.plusHours(2);
+            
+            saveToAcademicEvent(scheduleId, course.idCourse, professorId, 
+                    examDate.getDayOfWeek().toString().toLowerCase(), startsAt, endsAt, 
+                    selectedRoom.idRoom, examType);
+            
+            System.out.println("  ✓ " + course.name + " (" + examType + ") scheduled for " + 
+                    examDate + " at " + selectedTime);
+            
+            return "OK";
+            
+        } catch (Exception e) {
+            failedList.add(new FailedCourse(course.idCourse, course.name, 
+                "Exception: " + e.getMessage(), course.semester));
+            return "ERROR";
+        }
+    }
+
+    private List<LocalDate> getWeekDates(int academicYear, int semester, int startWeek, int endWeek) {
+        List<LocalDate> dates = new ArrayList<>();
+        
+        // Determine semester start date (typically mid-September for fall, mid-February for spring)
+        LocalDate semesterStart;
+        if (semester % 2 == 1) {
+            // Odd semesters (1,3,5) start in September
+            semesterStart = LocalDate.of(academicYear, 9, 15);
+        } else {
+            // Even semesters (2,4,6) start in February
+            semesterStart = LocalDate.of(academicYear, 2, 15);
+        }
+        
+        // Calculate week start date (Monday of the week)
+        LocalDate weekStart = semesterStart.plusWeeks(startWeek - 1)
+                .with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+        
+        // Generate all dates from start week to end week
+        LocalDate currentDate = weekStart;
+        LocalDate periodEnd = semesterStart.plusWeeks(endWeek);
+        
+        while (currentDate.isBefore(periodEnd)) {
+            dates.add(currentDate);
+            currentDate = currentDate.plusDays(1);
+        }
+        
+        return dates;
+    }
+
+    private int countTestsInWeekend(int scheduleId, LocalDate date) {
+        int count = 0;
+        LocalDate weekStart = date.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+        LocalDate weekEnd = date.with(TemporalAdjusters.nextOrSame(DayOfWeek.FRIDAY));
+        
+        for (AcademicEvent event : academicEvents.values()) {
+            if (event.scheduleId == scheduleId && event.date != null &&
+                !event.date.isBefore(weekStart) && !event.date.isAfter(weekEnd)) {
+                if (event.typeEnum.contains("EXAM") || event.typeEnum.contains("COLLOQUIUM")) {
+                    count++;
+                }
+            }
+        }
+        return count;
+    }
+
+    private int countSupervisorDuties(int scheduleId, int supervisorId) {
+        int count = 0;
+        for (AcademicEvent event : academicEvents.values()) {
+            if (event.scheduleId == scheduleId && event.idProfessor == supervisorId &&
+                (event.typeEnum.contains("COLLOQUIUM") || event.typeEnum.contains("EXAM"))) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    public int saveExamAndColloquiumScheduleToDatabase(ScheduleResult scheduleResult) {
+        int totalSaved = 0;
+        
+        try {
+            System.out.println("\n  Saving exam and colloquium schedule to database...");
+            System.out.println("  Schedule ID: " + scheduleResult.scheduleId);
+            
+            if (scheduleResult == null || !scheduleResult.success) {
+                System.err.println("  ✗ Cannot save: Schedule generation was not successful");
+                return 0;
+            }
+            
+            // Fetch all events for this schedule
+            List<AcademicEvent> eventsToSave = getEventsBySchedule(scheduleResult.scheduleId);
+            
+            if (eventsToSave.isEmpty()) {
+                System.out.println("  ⚠ No events found for schedule ID: " + scheduleResult.scheduleId);
+                return 0;
+            }
+            
+            int totalFailed = 0;
+            
+            // Group events by type for tracking
+            Map<String, Integer> eventsByType = new HashMap<>();
+            
+            for (AcademicEvent event : eventsToSave) {
+                try {
+                    // Verify all required fields are set
+                    if (event.idCourse == 0 || event.idRoom == 0 || event.idProfessor == 0 || 
+                        event.typeEnum == null || event.startsAt == null || event.endsAt == null) {
+                        System.err.println("    ✗ Invalid event: missing required fields for course " + event.idCourse);
+                        totalFailed++;
+                        continue;
+                    }
+                    
+                    // Get day of week name
+                    String dayName = event.startsAt.getDayOfWeek().toString().toLowerCase();
+                    dayName = translateDayToMontenegrin(dayName);
+                    
+                    // Save to database
+                    saveExamEventToDatabase(scheduleResult.scheduleId, event.idCourse, event.idProfessor, 
+                            dayName, event.startsAt, event.endsAt, event.idRoom, event.typeEnum);
+                    
+                    // Update cache
+                    AcademicEvent savedEvent = new AcademicEvent();
+                    savedEvent.idCourse = event.idCourse;
+                    savedEvent.idRoom = event.idRoom;
+                    savedEvent.idProfessor = event.idProfessor;
+                    savedEvent.typeEnum = event.typeEnum;
+                    savedEvent.day = dayName;
+                    savedEvent.date = event.startsAt.toLocalDate();
+                    savedEvent.startTime = event.startsAt.toLocalTime();
+                    savedEvent.endTime = event.endsAt.toLocalTime();
+                    savedEvent.startsAt = event.startsAt;
+                    savedEvent.endsAt = event.endsAt;
+                    savedEvent.scheduleId = scheduleResult.scheduleId;
+                    savedEvent.isPublished = true;
+                    
+                    academicEvents.put(savedEvent.idAcademicEvent, savedEvent);
+                    
+                    // Track by event type
+                    eventsByType.put(event.typeEnum, eventsByType.getOrDefault(event.typeEnum, 0) + 1);
+                    totalSaved++;
+                    
+                } catch (Exception e) {
+                    System.err.println("    ✗ Error saving event for course " + event.idCourse + 
+                            ": " + e.getMessage());
+                    totalFailed++;
+                }
+            }
+            
+            // Print summary by type
+            System.out.println("\n  Events saved by type:");
+            for (Map.Entry<String, Integer> entry : eventsByType.entrySet()) {
+                System.out.println("    • " + entry.getKey() + ": " + entry.getValue());
+            }
+            
+            System.out.println("\n  ✓ Successfully saved: " + totalSaved + " events");
+            if (totalFailed > 0) {
+                System.out.println("  ✗ Failed to save: " + totalFailed + " events");
+            }
+            
+        } catch (Exception e) {
+            System.err.println("  ✗ Error during save operation: " + e.getMessage());
+            e.printStackTrace();
+        }
+        
+        return totalSaved;
+    }
+
+    private void saveExamEventToDatabase(int scheduleId, int courseId, int professorId, String day,
+            LocalDateTime startsAt, LocalDateTime endsAt, int roomId, String typeEnum) throws SQLException {
+        String insert = "INSERT INTO academic_event " +
+                "(course_id, created_by_professor, type_enum, starts_at, ends_at, " +
+                "room_id, notes, is_published, locked_by_admin, schedule_id, day) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        
+        try (PreparedStatement pstmt = conn.prepareStatement(insert)) {
+            pstmt.setInt(1, courseId);
+            pstmt.setLong(2, professorId);
+            pstmt.setString(3, typeEnum);
+            pstmt.setTimestamp(4, Timestamp.valueOf(startsAt));
+            pstmt.setTimestamp(5, Timestamp.valueOf(endsAt));
+            pstmt.setInt(6, roomId);
+            
+            // Add notes with exam type info
+            String notes = "Auto-generated " + typeEnum.toLowerCase() + " event";
+            pstmt.setString(7, notes);
+            
+            pstmt.setBoolean(8, true);  // is_published
+            pstmt.setBoolean(9, false); // locked_by_admin
+            pstmt.setInt(10, scheduleId);
+            pstmt.setString(11, day);
+            
+            pstmt.executeUpdate();
+        }
+    }
+
+    public void saveAllSemesterExamsToDatabase(int academicYear) {
+        try {
+            System.out.println("\n" + "=".repeat(70));
+            System.out.println("BATCH SAVING ALL SEMESTER EXAMS TO DATABASE");
+            System.out.println("Academic Year: " + academicYear);
+            System.out.println("=".repeat(70) + "\n");
+            
+            // Get all semesters with courses
+            Set<Integer> semesters = new HashSet<>();
+            for (Course course : courses.values()) {
+                semesters.add(course.semester);
+            }
+            
+            if (semesters.isEmpty()) {
+                System.out.println("✗ No courses found for this academic year");
+                return;
+            }
+            
+            int totalSaved = 0;
+            int totalFailed = 0;
+            
+            for (Integer semester : semesters) {
+                try {
+                    System.out.println("\nProcessing Semester " + semester + "...");
+                    
+                    // Generate schedule for this semester
+                    ScheduleResult result = generateExamsAndColloquiums(academicYear, semester);
+                    
+                    if (result.success) {
+                        // Save to database
+                        saveExamAndColloquiumScheduleToDatabase(result);
+                        totalSaved += result.successfulCourses;
+                    } else {
+                        System.err.println("  ⚠ Generation failed for semester " + semester);
+                        totalFailed += result.failedCourses;
+                    }
+                    
+                } catch (Exception e) {
+                    System.err.println("✗ Error processing semester " + semester + ": " + e.getMessage());
+                    totalFailed++;
+                }
+            }
+            
+            // Final batch summary
+            System.out.println("\n" + "=".repeat(70));
+            System.out.println("BATCH SAVE SUMMARY");
+            System.out.println("=".repeat(70));
+            System.out.println("Academic Year: " + academicYear);
+            System.out.println("Semesters processed: " + semesters.size());
+            System.out.println("✓ Total saved: " + totalSaved);
+            System.out.println("✗ Total failed: " + totalFailed);
+            System.out.println("=".repeat(70) + "\n");
+            
+        } catch (Exception e) {
+            System.err.println("✗ Batch save error: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    public void publishExamSchedule(int scheduleId) {
+        try {
+            System.out.println("\nPublishing exam schedule ID: " + scheduleId);
+            
+            String updateQuery = "UPDATE academic_event SET is_published = true " +
+                    "WHERE schedule_id = ? AND (type_enum LIKE '%EXAM%' OR type_enum LIKE '%COLLOQUIUM%')";
+            
+            try (PreparedStatement pstmt = conn.prepareStatement(updateQuery)) {
+                pstmt.setInt(1, scheduleId);
+                int updated = pstmt.executeUpdate();
+                System.out.println("✓ Published " + updated + " exam/colloquium events");
+            }
+            
+        } catch (SQLException e) {
+            System.err.println("✗ Error publishing schedule: " + e.getMessage());
+        }
+    }
+
+    public void lockExamSchedule(int scheduleId) {
+        try {
+            System.out.println("\nLocking exam schedule ID: " + scheduleId + " (professors cannot modify)");
+            
+            String updateQuery = "UPDATE academic_event SET locked_by_admin = true " +
+                    "WHERE schedule_id = ? AND (type_enum LIKE '%EXAM%' OR type_enum LIKE '%COLLOQUIUM%')";
+            
+            try (PreparedStatement pstmt = conn.prepareStatement(updateQuery)) {
+                pstmt.setInt(1, scheduleId);
+                int updated = pstmt.executeUpdate();
+                System.out.println("✓ Locked " + updated + " exam/colloquium events");
+            }
+            
+        } catch (SQLException e) {
+            System.err.println("✗ Error locking schedule: " + e.getMessage());
+        }
+    }
+
+    public void unlockExamSchedule(int scheduleId) {
+        try {
+            System.out.println("\nUnlocking exam schedule ID: " + scheduleId + " (professors can modify)");
+            
+            String updateQuery = "UPDATE academic_event SET locked_by_admin = false " +
+                    "WHERE schedule_id = ? AND (type_enum LIKE '%EXAM%' OR type_enum LIKE '%COLLOQUIUM%')";
+            
+            try (PreparedStatement pstmt = conn.prepareStatement(updateQuery)) {
+                pstmt.setInt(1, scheduleId);
+                int updated = pstmt.executeUpdate();
+                System.out.println("✓ Unlocked " + updated + " exam/colloquium events");
+            }
+            
+        } catch (SQLException e) {
+            System.err.println("✗ Error unlocking schedule: " + e.getMessage());
+        }
+    }
+
+    private String translateDayToMontenegrin(String englishDay) {
+        switch (englishDay.toLowerCase()) {
+            case "monday": return "ponedeljak";
+            case "tuesday": return "utorak";
+            case "wednesday": return "srijeda";
+            case "thursday": return "cetvrtak";
+            case "friday": return "petak";
+            case "saturday": return "subota";
+            case "sunday": return "nedelja";
+            default: return englishDay;
+        }
+    }
+
+
+    //endregion
+
+
+
+    //region SixSchedules
+
     public ScheduleResult generateSixSchedulesWithDifferentPriorities() {
         ScheduleResult result = new ScheduleResult();
         try {
@@ -2274,6 +3162,8 @@ public class EventValidationService {
     }
 }
 
+
+//region Classes
 class Course {
     public int idCourse;
     public String name;
@@ -2376,3 +3266,5 @@ class FailedCourse {
         this.semester = semester;
     }
 }
+
+//endregion

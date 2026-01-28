@@ -22,7 +22,7 @@ input:focus{ border-color: var(--accent); box-shadow: var(--focus-ring); }
 .meter{ height:8px; border-radius: 999px; background: rgba(255,255,255,.08); overflow:hidden; margin-top:8px }
 .meter > i{ /* width controlled from JS */ height:100%; width:0%; background: linear-gradient(90deg, #ef4444, #f59e0b, #22c55e); display:block; transition: width .25s ease }
 
-.error{ font-size: 12px; color: var(--danger); margin-top:6px }
+.error{ font-size: 12px; color: #fff; margin-top:6px }
 /* Server-side error messages inside forms */
 .server-error{
     color: #e53935; /* vivid red */

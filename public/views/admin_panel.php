@@ -28,6 +28,10 @@ try {
     // Ignore error if tables already exist or handle appropriately
 }
 
+//DEADLINE
+$current_deadline = $pdo->query("SELECT value FROM config WHERE \"key\" = 'schedule_deadline'")->fetchColumn() ?: '';
+
+
 if (isset($_GET['action']) && $_GET['action'] === 'getschedule') {
     header('Content-Type: application/json; charset=utf-8');
 
@@ -785,10 +789,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $fields[] = "capacity = ?";
                     $params[] = $_POST['capacity'];
                 }
-                if(isset($_POST['is_computer_lab'])){
-                    $fields[] = "is_computer_lab = ?";
-                    $params[] = isset($_POST['is_computer_lab']) ? 1 : 0;
-                }
+                
+                // Uvijek ažuriramo checkbox jer HTML forme ne šalju unchecked vrijednosti
+                $fields[] = "is_computer_lab = ?";
+                $params[] = isset($_POST['is_computer_lab']) ? 1 : 0;
 
                 if (!isset($_POST['sala_id'])) {
                     throw new Exception("Sala ID nije validan.");
@@ -1026,6 +1030,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }
                 break;
+            
+            case 'set_deadline':
+                $deadline_date = $_POST['deadline_date'];
+                
+                try {
+                    
+                     $stmt = $pdo->prepare("
+                        INSERT INTO config (\"key\", value) 
+                        VALUES ('schedule_deadline', ?) 
+                        ON CONFLICT (\"key\") DO UPDATE SET value = ?
+                    ");
+                    $stmt->execute([$deadline_date, $deadline_date]);
+                    
+                    header("Location: ?page=profesori&success=1&message=" . urlencode("Uspješno postavljen deadline za izbor sedmice kolokvijuma."));
+                    exit;
+                } catch (PDOException $e) {
+                    $error = "Greška pri postavljanju deadlina: " . $e->getMessage();
+                }
+                break;
 
             // --------- end user_account management ---------
         }
@@ -1109,6 +1132,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     ?>
     <h2>Upravljanje Profesorima</h2>
     <button class="action-button add-button" onclick="toggleForm('profesorForm')">+ Dodaj Profesora</button>
+    <button class="action-button add-button deadline-button" onclick="toggleForm('deadlineForm')">+ Deadline unosa kolokvijuma </button>
 
     <div id="profesorForm" class="form-container" style="display: none">
         <h3>Novi profesor</h3>
@@ -1124,6 +1148,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <button type="submit">Sačuvaj</button>
         </form>
     </div>
+
+    <div id="deadlineForm" class="form-container" style="display:none">
+    <h3>Postavi deadline za izbor sedmice  kolokvijuma</h3>
+    <form method="post">
+        <input type="hidden" name="action" value="set_deadline">
+        <input type="date" id="deadline_date" name="deadline_date"  value="<?php echo $current_deadline; ?>" required>        
+        <div style="display: flex; gap: 10px; margin-top: 15px;">
+            <button type="submit">Sačuvaj</button>
+        </div>
+    </form>
+    </div>
+
 
     <table border="1" cellpadding="5">
         <tr>
@@ -1282,6 +1318,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 if ($r['professor_id']) {
                     $courses[$cid]['professors'][] = [
+                        'id' => (int)$r['professor_id'],
                         'name' => $r['full_name'],
                         'is_assistant' => (int)$r['is_assistant']
                     ];
@@ -1321,6 +1358,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <td><?= $c['is_active'] ? 'Aktivan' : 'Neaktivan' ?></td>
 
                         <td>
+                            <button class="action-button edit-button"
+                                    data-entity="predmet"
+                                    data-id="<?= $c['id'] ?>"
+                                    data-name="<?= htmlspecialchars($c['name']) ?>"
+                                    data-code="<?= htmlspecialchars($c['code']) ?>"
+                                    data-semester="<?= $c['semester'] ?>"
+                                    data-is_optional="<?= $c['is_optional'] ?>"
+                                    data-professors="<?= htmlspecialchars(json_encode($c['professors'])) ?>">
+                                Uredi
+                            </button>
                             <?php if ($c['is_active']): ?>
                                 <form method="post" style="display:inline">
                                     <input type="hidden" name="action" value="delete_predmet">
@@ -1697,11 +1744,100 @@ document.getElementById('generate-schedule').addEventListener('click', async () 
             new Set(allEvents.map(e => e.start + '-' + e.end))
         ).sort();
 
-        // State: koji raspored je trenutno prikazan za svaki semestar
-        const currentScheduleIndex = {};
-        [1, 2, 3, 4, 5, 6].forEach(sem => {
-            currentScheduleIndex[sem] = 0;
-        });
+        // State: zimski i ljetnji indeksi
+        let currentWinterIndex = 0;
+        let currentSummerIndex = 0;
+
+        // --- MASTER CONTROLS (ZIMSKI / LJETNJI) ---
+        const controlsDiv = document.createElement('div');
+        controlsDiv.style.display = 'flex';
+        controlsDiv.style.justifyContent = 'space-around';
+        controlsDiv.style.flexWrap = 'wrap';
+        controlsDiv.style.marginBottom = '30px';
+        controlsDiv.style.padding = '20px';
+        controlsDiv.style.background = '#2d2d2d';
+        controlsDiv.style.borderRadius = '10px';
+        controlsDiv.style.border = '1px solid #444';
+        
+        container.appendChild(controlsDiv);
+
+        function createControlGroup(title, isWinter) {
+            const group = document.createElement('div');
+            group.style.textAlign = 'center';
+            group.style.margin = '10px';
+            
+            const label = document.createElement('h3');
+            label.textContent = title;
+            label.style.marginBottom = '10px';
+            label.style.color = '#e5e7eb';
+            
+            const controls = document.createElement('div');
+            controls.style.display = 'flex';
+            controls.style.alignItems = 'center';
+            controls.style.gap = '15px';
+            controls.style.justifyContent = 'center';
+            
+            const leftBtn = document.createElement('button');
+            leftBtn.innerHTML = '◀';
+            leftBtn.className = 'nav-arrow';
+            leftBtn.style.cssText = 'font-size: 20px; padding: 5px 12px; cursor: pointer; border: none; background: #3b82f6; color: white; border-radius: 6px;';
+            
+            const info = document.createElement('span');
+            info.innerHTML = 'Verzija 1';
+            info.style.fontWeight = 'bold';
+            
+            const rightBtn = document.createElement('button');
+            rightBtn.innerHTML = '▶';
+            rightBtn.className = 'nav-arrow';
+            rightBtn.style.cssText = 'font-size: 20px; padding: 5px 12px; cursor: pointer; border: none; background: #3b82f6; color: white; border-radius: 6px;';
+            
+            const updateState = () => {
+                const idx = isWinter ? currentWinterIndex : currentSummerIndex;
+                info.innerHTML = 'Verzija ' + (idx + 1);
+                
+                leftBtn.disabled = idx === 0;
+                leftBtn.style.opacity = idx === 0 ? '0.5' : '1';
+                
+                rightBtn.disabled = idx === scheduleIds.length - 1;
+                rightBtn.style.opacity = idx === scheduleIds.length - 1 ? '0.5' : '1';
+                
+                // Update relevant tables
+                const sems = isWinter ? [1, 3, 5] : [2, 4, 6];
+                sems.forEach(s => updateSemesterTable(s));
+            };
+            
+            leftBtn.addEventListener('click', () => {
+                if (isWinter) {
+                    if (currentWinterIndex > 0) currentWinterIndex--;
+                } else {
+                    if (currentSummerIndex > 0) currentSummerIndex--;
+                }
+                updateState();
+            });
+            
+            rightBtn.addEventListener('click', () => {
+                if (isWinter) {
+                    if (currentWinterIndex < scheduleIds.length - 1) currentWinterIndex++;
+                } else {
+                    if (currentSummerIndex < scheduleIds.length - 1) currentSummerIndex++;
+                }
+                updateState();
+            });
+            
+            // Initial call
+            setTimeout(updateState, 0); 
+            
+            controls.appendChild(leftBtn);
+            controls.appendChild(info);
+            controls.appendChild(rightBtn);
+            
+            group.appendChild(label);
+            group.appendChild(controls);
+            return group;
+        }
+
+        controlsDiv.appendChild(createControlGroup('Zimski Semestri (1, 3, 5)', true));
+        controlsDiv.appendChild(createControlGroup('Ljetnji Semestri (2, 4, 6)', false));
 
         function enableTdSwap(tableEl) {
             const rows = tableEl.querySelectorAll('tbody tr');
@@ -1737,52 +1873,18 @@ document.getElementById('generate-schedule').addEventListener('click', async () 
             wrapper.style.padding = '20px';
             wrapper.style.background = 'transparent';
 
-            // Header sa strelicama
+            // NOVI HEADER BEZ STRELICA (Kontrola je sada na vrhu)
             const header = document.createElement('div');
-            header.style.display = 'flex';
-            header.style.justifyContent = 'space-between';
-            header.style.alignItems = 'center';
+            header.style.textAlign = 'center';
             header.style.marginBottom = '15px';
-
-            const leftArrow = document.createElement('button');
-            leftArrow.innerHTML = '◀';
-            leftArrow.className = 'nav-arrow';
-            leftArrow.style.cssText = 'font-size: 24px; padding: 8px 16px; cursor: pointer; border: none; background: #3b82f6; color: white; border-radius: 8px; transition: all 0.2s;';
-            leftArrow.disabled = scheduleIdx === 0;
-            leftArrow.style.opacity = scheduleIdx === 0 ? '0.5' : '1';
 
             const h3 = document.createElement('h3');
             const semType = (sem % 2 === 1) ? 'Zimski semestar' : 'Ljetnji semestar';
             h3.style.margin = '0';
-            h3.style.textAlign = 'center';
             h3.innerHTML = sem + '. semestar – ' + semType + 
-                '<br><small style="color: #666; font-weight: normal;">Raspored ' + (scheduleIdx + 1) + ' od ' + totalSchedules + '</small>';
+                '<br><small style="color: #666; font-weight: normal;">(Prikazana verzija: ' + (scheduleIdx + 1) + ')</small>';
 
-            const rightArrow = document.createElement('button');
-            rightArrow.innerHTML = '▶';
-            rightArrow.className = 'nav-arrow';
-            rightArrow.style.cssText = 'font-size: 24px; padding: 8px 16px; cursor: pointer; border: none; background: #3b82f6; color: white; border-radius: 8px; transition: all 0.2s;';
-            rightArrow.disabled = scheduleIdx === totalSchedules - 1;
-            rightArrow.style.opacity = scheduleIdx === totalSchedules - 1 ? '0.5' : '1';
-
-            // Event listeneri za strelice
-            leftArrow.addEventListener('click', () => {
-                if (currentScheduleIndex[sem] > 0) {
-                    currentScheduleIndex[sem]--;
-                    updateSemesterTable(sem);
-                }
-            });
-
-            rightArrow.addEventListener('click', () => {
-                if (currentScheduleIndex[sem] < scheduleIds.length - 1) {
-                    currentScheduleIndex[sem]++;
-                    updateSemesterTable(sem);
-                }
-            });
-
-            header.appendChild(leftArrow);
             header.appendChild(h3);
-            header.appendChild(rightArrow);
             wrapper.appendChild(header);
 
             // Tabela
@@ -1866,7 +1968,10 @@ document.getElementById('generate-schedule').addEventListener('click', async () 
             const oldWrapper = document.getElementById('semester-wrapper-' + sem);
             if (!oldWrapper) return;
 
-            const schedIdx = currentScheduleIndex[sem];
+            // Determine if winter or summer
+            const isWinter = (sem % 2 !== 0);
+            const schedIdx = isWinter ? currentWinterIndex : currentSummerIndex;
+            
             const schedId = scheduleIds[schedIdx];
             const events = (schedules[schedId] && schedules[schedId][sem]) || [];
 

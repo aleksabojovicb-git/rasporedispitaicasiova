@@ -1,5 +1,11 @@
 <?php
 session_start();
+require '../../vendor/autoload.php';
+
+use PHPMailer\PHPMailer\PHPMailer;
+use PHPMailer\PHPMailer\SMTP;
+use PHPMailer\PHPMailer\Exception;
+
 // Load PDO instance from config. The file now returns the PDO.
 $pdo = require '../../config/dbconnection.php';
 
@@ -25,6 +31,34 @@ $signupSuccess = null;
 $signinEmailValue = '';
 $signupEmailValue = '';
 $activeTab = 'signin';
+$showVerification = false;
+
+function sendVerificationEmail($emailAddress, $code) {
+    $mail = new PHPMailer(true);
+    try {
+        $mail->SMTPDebug = SMTP::DEBUG_OFF;
+        $mail->isSMTP();
+        $mail->Host = 'smtp-relay.brevo.com'; 
+        $mail->SMTPAuth = true;
+        // Credentials matched from src/api/email_verification.php
+        $mail->Username = '9d2675001@smtp-brevo.com';
+        $mail->Password = 'Sa83rFy5AfqcbTHN'; 
+        $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+        $mail->Port = 587;
+
+        $mail->setFrom('aleksabojovic1b@gmail.com', 'Admin - Raspored');
+        $mail->addAddress($emailAddress);
+
+        $mail->isHTML(false);
+        $mail->Subject = "Verifikacija naloga";
+        $mail->Body = "Vas verifikacioni kod je: $code";
+
+        $mail->send();
+        return true;
+    } catch (Exception $e) {
+        return false;
+    }
+}
 
 function buildUsernameFromFullName(string $fullName): string
 {
@@ -208,7 +242,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $password = $_POST['password'] ?? '';
         $confirmPassword = $_POST['confirm'] ?? '';
 
-        //Use validateSignup (returns 'error' or 'professor')
         $validation = validateSignup($pdo, $signupEmailValue, $password, $confirmPassword);
 
         if (!empty($validation['error'])) {
@@ -218,25 +251,65 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $username = buildUsernameFromFullName($professor['full_name']);
             if ($username === '') {
-                $signupError = "Bug ako se unesu 2 prezimena. Podaci profesora nisu validni. Obratite se administratoru.";
+                $signupError = "Bug ako se unesu 2 prezimena. Podaci profesora nisu validni.";
             } else {
-                try {
+                // Generate verification code
+                $code = str_pad(rand(0, 999999), 6, '0', STR_PAD_LEFT);
+                
+                if (sendVerificationEmail($signupEmailValue, $code)) {
+                     $_SESSION['signup_temp'] = [
+                         'username' => $username,
+                         'password_hash' => password_hash($password, PASSWORD_DEFAULT),
+                         'professor_id' => (int)$professor['id'],
+                         'email' => $signupEmailValue,
+                         'code' => $code,
+                         'expires' => time() + 600
+                     ];
+                     $showVerification = true;
+                } else {
+                    $signupError = "Nije moguće poslati email sa verifikacionim kodom. Pokušajte ponovo.";
+                }
+            }
+        }
+    } elseif ($formType === 'verify_code') {
+        $activeTab = 'signup';
+        $enteredCode = trim($_POST['verification_code'] ?? '');
+        $showVerification = true; // Assume stay on verify unless success/fail
+
+        if (isset($_SESSION['signup_temp'])) {
+            $data = $_SESSION['signup_temp'];
+            $signupEmailValue = $data['email'];
+
+            if (time() > $data['expires']) {
+                $signupError = "Kod je istekao. Molimo registrujte se ponovo.";
+                unset($_SESSION['signup_temp']);
+                $showVerification = false;
+            } elseif ($enteredCode === $data['code']) {
+                 try {
                     $stmt = $pdo->prepare(
-                        "INSERT INTO user_account (username, password_hash, role_enum, is_active, professor_id)\n                        VALUES (?, ?, 'PROFESSOR', TRUE, ?)"
+                        "INSERT INTO user_account (username, password_hash, role_enum, is_active, professor_id)
+                        VALUES (?, ?, 'PROFESSOR', TRUE, ?)"
                     );
                     $stmt->execute([
-                        $username,
-                        password_hash($password, PASSWORD_DEFAULT),
-                        (int) $professor['id']
+                        $data['username'],
+                        $data['password_hash'],
+                        $data['professor_id']
                     ]);
 
                     $signupSuccess = "Nalog je uspješno kreiran. Sada se možete prijaviti.";
                     $signupError = null;
                     $activeTab = 'signin';
+                    $showVerification = false;
+                    unset($_SESSION['signup_temp']);
                 } catch (PDOException $e) {
                     $signupError = "Greška pri kreiranju naloga: " . $e->getMessage();
                 }
+            } else {
+                $signupError = "Pogrešan verifikacioni kod. Pokušajte ponovo.";
             }
+        } else {
+            $signupError = "Sesija je istekla. Molimo registrujte se ponovo.";
+            $showVerification = false;
         }
     }
 }
@@ -294,7 +367,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
             </form>
 
-            <!-- Sign Up -->
+            <!-- Sign Up / Verify -->
+            <?php if ($showVerification): ?>
+            <form id="signup" class="stack" autocomplete="off" method="post">
+                <input type="hidden" name="form_type" value="verify_code" />
+                
+                <div style="text-align:center; margin-bottom:20px;">
+                    <h3 style="color:#2ecc71; margin-bottom:10px;">Verifikacija Email-a</h3>
+                    <p style="color:#ccc; font-size:0.9rem;">
+                        Poslali smo 6-cifreni kod na: <br><strong><?php echo htmlspecialchars($signupEmailValue); ?></strong>
+                    </p>
+                </div>
+
+                <div class="field">
+                    <label for="verification_code">Unesite kod</label>
+                    <input type="text" id="verification_code" name="verification_code" placeholder="XXXXXX" required style="font-size:1.5rem; letter-spacing:5px; text-align:center; text-transform:uppercase;" />
+                </div>
+                
+                <div class="actions">
+                    <button class="btn" type="submit">Potvrdi kod</button>
+                    <a href="<?php echo $_SERVER['PHP_SELF']; ?>" style="display:block; margin-top:15px; text-align:center; color:#888; text-decoration:none; font-size:0.9rem;">Nazad (Poništi registrciju)</a>
+                </div>
+
+                <?php if ($signupError): ?>
+                    <div class="server-error"><?php echo htmlspecialchars($signupError); ?></div>
+                <?php endif; ?>
+            </form>
+            <?php else: ?>
             <form id="signup" class="stack" autocomplete="on" novalidate method="post">
                 <input type="hidden" name="form_type" value="signup" />
                 <div class="field">
@@ -324,6 +423,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <div class="success-server"><?php echo htmlspecialchars($signupSuccess); ?></div>
                 <?php endif; ?>
             </form>
+            <?php endif; ?>
         </div>
     </section>
 </main>

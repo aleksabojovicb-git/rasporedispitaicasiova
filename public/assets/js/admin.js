@@ -348,52 +348,106 @@ function openEditModal(entity, data) {
         cbRow.appendChild(inpOptional); cbRow.appendChild(txt);
         form.appendChild(cbRow);
 
-        // prof_assignments hidden (JSON)
-        const pa = document.createElement('input'); pa.type = 'hidden'; pa.name = 'prof_assignments';
-        // raw data-professors attribute may contain JSON string
-        pa.value = (data.professors !== undefined) ? data.professors : (data.professors_list || '[]');
-        form.appendChild(pa);
+        // --- PROFESSOR MANAGEMENT SECTION ---
+        const profSection = document.createElement('div');
+        profSection.style.marginTop = '15px';
+        profSection.style.borderTop = '1px solid #444';
+        profSection.style.paddingTop = '10px';
+        
+        const hProf = document.createElement('h4'); hProf.textContent = 'Predavači'; hProf.style.marginBottom = '10px';
+        profSection.appendChild(hProf);
 
-        // Try to provide server-required professor_id (single) — extract from data or prof_assignments
-        const profIdInput = document.createElement('input');
-        profIdInput.name = 'professor_id';
-        let profId = data.professor_id || data.professorId || data.professor || '';
+        // Hidden input for submission
+        const paInput = document.createElement('input'); 
+        paInput.type = 'hidden'; 
+        paInput.name = 'prof_assignments';
+        form.appendChild(paInput);
+
+        // State for assignments
+        // data.professors might be a JSON string or an object depending on how it was passed
+        let currentAssignments = [];
         try {
-            const paVal = pa.value;
-            if (!profId && paVal) {
-                const parsed = JSON.parse(paVal);
-                if (Array.isArray(parsed) && parsed.length > 0) {
-                    const first = parsed[0];
-                    if (typeof first === 'object') {
-                        // common shapes: {id:123} or {professor_id:123}
-                        profId = first.id || first.professor_id || first.professorId || '';
-                    } else {
-                        profId = first; // assume it's an id
-                    }
-                }
+            if (typeof data.professors === 'string') {
+                currentAssignments = JSON.parse(data.professors);
+            } else if (Array.isArray(data.professors)) {
+                currentAssignments = data.professors;
+            } else if (data.professors_list) {
+                 currentAssignments = JSON.parse(data.professors_list);
             }
-        } catch (e) {
-            // ignore JSON parse errors
-        }
-        // If we have a professor id, keep field hidden; otherwise make it visible and required
-        if (profId) {
-            profIdInput.type = 'hidden';
-            profIdInput.value = profId;
-            form.appendChild(profIdInput);
-        } else {
-            // visible numeric input to avoid server fatal error when missing
-            const lblProfManual = document.createElement('label'); lblProfManual.textContent = 'Profesor (ID) (required):';
-            profIdInput.type = 'number';
-            profIdInput.required = true;
-            profIdInput.placeholder = 'Enter professor id';
-            profIdInput.style.marginBottom = '8px';
-            form.appendChild(lblProfManual);
-            form.appendChild(profIdInput);
+        } catch(e) { console.error('Error parsing professors', e); }
+
+        // Container for list
+        const listContainer = document.createElement('div');
+        listContainer.className = 'prof-list';
+        listContainer.style.marginBottom = '10px';
+        profSection.appendChild(listContainer);
+
+        function updateHiddenInput() {
+            // Map to format expected by backend: {professor_id: id, is_assistant: 0/1}
+            const payload = currentAssignments.map(a => ({
+                professor_id: a.id || a.professor_id, 
+                is_assistant: a.is_assistant ? 1 : 0
+            }));
+            paInput.value = JSON.stringify(payload);
         }
 
-        // helper note
-        const note = document.createElement('p'); note.style.fontSize = '12px'; note.style.opacity = '0.8'; note.textContent = 'If needed, adjust professors using assign dialog after saving.';
-        form.appendChild(note);
+        function renderList() {
+            listContainer.innerHTML = '';
+            currentAssignments.forEach((p, idx) => {
+                const row = document.createElement('div');
+                row.style.display = 'flex';
+                row.style.justifyContent = 'space-between';
+                row.style.alignItems = 'center';
+                row.style.background = 'rgba(255,255,255,0.05)';
+                row.style.padding = '5px 10px';
+                row.style.marginBottom = '5px';
+                row.style.borderRadius = '4px';
+
+                // We might only have ID if added manually, or full obj if from DB.
+                // Try to find name from window.adminData.professors if missing
+                let name = p.name || p.full_name;
+                if (!name && window.adminData && window.adminData.professors) {
+                    const found = window.adminData.professors.find(x => x.id == (p.id || p.professor_id));
+                    if (found) name = found.full_name;
+                }
+                name = name || 'Prof ID: ' + (p.id || p.professor_id);
+
+                const typeLabel = p.is_assistant ? ' (Asistent)' : ' (Profesor)';
+                
+                const span = document.createElement('span');
+                span.textContent = name + typeLabel;
+                row.appendChild(span);
+
+                const btnRem = document.createElement('button');
+                btnRem.textContent = '×';
+                btnRem.style.color = '#ff4444';
+                btnRem.style.background = 'none';
+                btnRem.style.border = 'none';
+                btnRem.style.fontSize = '18px';
+                btnRem.style.cursor = 'pointer';
+                btnRem.onclick = (e) => {
+                    e.preventDefault();
+                    currentAssignments.splice(idx, 1);
+                    renderList();
+                    updateHiddenInput();
+                };
+                row.appendChild(btnRem);
+                listContainer.appendChild(row);
+            });
+            updateHiddenInput();
+        }
+
+        form.appendChild(profSection);
+
+        // Helper text (backend validation rules)
+        const ruleText = document.createElement('p');
+        ruleText.style.fontSize = '12px';
+        ruleText.style.color = '#888';
+        ruleText.style.marginTop = '5px';
+        ruleText.textContent = '* Max 2 predavača. Ako su 2: jedan mora biti asistent.';
+        form.appendChild(ruleText);
+
+        renderList(); // Initial render
     }
 
     if (entity === 'dogadjaj') {
