@@ -706,10 +706,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $fields[] = "code = ?";
                     $params[] = $_POST['code'];
                 }
-                if(isset($_POST['is_optional'])){
-                    $fields[] = "is_optional = ?";
-                    $params[] = isset($_POST['is_optional']) ? 1 : 0;
-                }
+                
+                // Uvijek ažuriramo checkbox jer HTML forme ne šalju unchecked vrijednosti
+                $fields[] = "is_optional = ?";
+                $params[] = isset($_POST['is_optional']) ? 1 : 0;
 
                 if (!isset($_POST['course_id'])) {
                     throw new Exception("Course ID nije validan.");
