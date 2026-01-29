@@ -467,7 +467,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <title>Profil Profesora</title>
 
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
-    <link rel="stylesheet" href="../assets/css/admin.css" />
+
     <link rel="stylesheet" href="../assets/css/base.css" />
     <link rel="stylesheet" href="../assets/css/fields.css" />
     <link rel="stylesheet" href="../assets/css/colors.css" />
@@ -476,9 +476,85 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <link rel="stylesheet" href="../assets/css/table.css" />
     <link rel="stylesheet" href="../assets/css/occupancy.css">
     <link rel="stylesheet" href="../assets/css/profesor_profile.css">
+    <link rel="stylesheet" href="../assets/css/admin.css" />
     <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.js"></script>
-<style>.note-modal.hidden {
+<style>
+    .site-header {
+        background: rgba(17, 24, 39, 0.52);
+        backdrop-filter: blur(10px);
+        box-shadow: var(--shadow);
+        position: sticky;
+        top: 0;
+        z-index: 50;
+    }
+
+    /* inner wrapper */
+    .header-inner {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 20px 40px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    /* logo */
+    .logo {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        text-decoration: none;
+        color: var(--text);
+    }
+
+    #top-logo {
+        height: 42px;
+    }
+
+    .site-title {
+        font-size: 22px;
+        font-weight: 700;
+        color: var(--text);
+        letter-spacing: 0.3px;
+    }
+
+    /* navigation */
+    .site-header nav ul {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        gap: 25px;
+    }
+
+    .site-header nav a {
+        color: var(--muted);
+        text-decoration: none;
+        font-size: 16px;
+        transition: color 0.2s ease;
+    }
+
+    .site-header nav a:hover {
+        color: var(--accent);
+    }
+
+    /* responsive */
+    @media (max-width: 768px) {
+        .header-inner {
+            padding: 14px 20px;
+        }
+
+        .site-title {
+            display: none;
+        }
+
+        #top-logo {
+            height: 36px;
+        }
+    }z
+
+    .note-modal.hidden {
         display: none;
     }
 #noteModalTitle{
