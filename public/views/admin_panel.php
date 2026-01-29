@@ -1873,10 +1873,10 @@ function renderScheduleData(data) {
     const lockBtn = document.createElement('button');
     // set initial label/style based on current lock state
     if (isScheduleLocked) {
-        lockBtn.textContent = '🔒 Otkljucaj';
+        lockBtn.textContent = '🔒 Otključaj';
         lockBtn.style.cssText = 'padding: 10px 20px; font-size: 14px; cursor: pointer; border: 2px solid #ef4444; background: #ef4444; color: white; border-radius: 6px; font-weight: bold; transition: all 0.3s ease;';
     } else {
-        lockBtn.textContent = '🔓 Zakljucaj';
+        lockBtn.textContent = '🔓 Zaključaj';
         lockBtn.style.cssText = 'padding: 10px 20px; font-size: 14px; cursor: pointer; border: 2px solid #f59e0b; background: #f59e0b; color: white; border-radius: 6px; font-weight: bold; transition: all 0.3s ease;';
     }
     lockBtnContainer.appendChild(lockBtn);
@@ -2270,19 +2270,19 @@ document.getElementById('generate-schedule').addEventListener('click', async () 
                 return;
             }
             
-            console.log('=== LOCK TOGGLE ===');
-            console.log('All Available Schedule IDs:', scheduleIds);
-            console.log('Winter Index:', currentWinterIndex);
-            console.log('Summer Index:', currentSummerIndex);
-            console.log('Winter Schedule ID to lock:', winterScheduleId);
-            console.log('Summer Schedule ID to lock:', summerScheduleId);
+            // console.log('=== LOCK TOGGLE ===');
+            // console.log('All Available Schedule IDs:', scheduleIds);
+            // console.log('Winter Index:', currentWinterIndex);
+            // console.log('Summer Index:', currentSummerIndex);
+            // console.log('Winter Schedule ID to lock:', winterScheduleId);
+            // console.log('Summer Schedule ID to lock:', summerScheduleId);
             
             isScheduleLocked = !isScheduleLocked;
             
-            console.log('Winter scheduleId: ',winterScheduleId);
-            console.log('Summer schedule Id: ',summerScheduleId);
-            console.log('Is Locked:', isScheduleLocked);
-            console.log('==================');
+            // console.log('Winter scheduleId: ',winterScheduleId);
+            // console.log('Summer schedule Id: ',summerScheduleId);
+            // console.log('Is Locked:', isScheduleLocked);
+            // console.log('==================');
 
             
             // Make AJAX call to API
@@ -2294,7 +2294,7 @@ document.getElementById('generate-schedule').addEventListener('click', async () 
                     summer_schedule_id: summerScheduleId
                 };
                 
-                console.log('Sending payload:', JSON.stringify(payload, null, 2));
+                // console.log('Sending payload:', JSON.stringify(payload, null, 2));
                 
                 const response = await fetch('../../src/api/schedule_lock.php', {
                     method: 'POST',
@@ -2308,7 +2308,7 @@ document.getElementById('generate-schedule').addEventListener('click', async () 
                 console.log('API Response:', data);
                 
                 if (data.success) {
-                    console.log('✓ Lock state saved:', data.message);
+                    // console.log('✓ Lock state saved:', data.message);
                     
                     // Update button appearance AFTER API succeeds
                     if (isScheduleLocked) {
