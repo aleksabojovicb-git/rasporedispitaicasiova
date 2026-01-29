@@ -552,7 +552,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         #top-logo {
             height: 36px;
         }
-    }z
+    }
 
     .note-modal.hidden {
         display: none;
