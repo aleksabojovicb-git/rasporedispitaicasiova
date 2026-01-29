@@ -3070,17 +3070,13 @@ public class EventValidationService {
     }
 
     private void generateColloquiums(int scheduleId, List<FailedCourse> failedList) {
-        System.out.println("Phase 4: Scheduling EXAMS/COLLOQUIUMS...");
+        System.out.println("Phase 4: Scheduling EXAMS/COLLOQUIUMS (In Exercise Terms)...");
         System.out.println("Academic Year Check: Winter=" + winterStart + ", Summer=" + summerStart);
         
         if (winterStart == null && summerStart == null) {
             System.out.println("Skipping colloquiums: Semester dates not defined. Please define an active Academic Year in Admin Panel.");
             return;
         }
-
-        // Use larger rooms for exams
-        List<Room> examRooms = getSuitableRooms(false, 40); 
-        if (examRooms.isEmpty()) examRooms = getSuitableRooms(false, 20); // Fallback
 
         int colloquiumsScheduled = 0;
 
@@ -3095,23 +3091,15 @@ public class EventValidationService {
             }
 
             try {
-                int profId = findLectureProfessor(course.idCourse);
-                if (profId == 0) {
-                     // System.out.println("Skipping course " + course.code + ": No professor assigned.");
-                     continue; 
-                }
-
                 // Schedule Colloquium 1
                 if (course.colloquium1Week != null && course.colloquium1Week > 0) {
-                     boolean success = scheduleColloquium(scheduleId, course, 1, course.colloquium1Week, semStart, profId, examRooms, failedList);
+                     boolean success = scheduleColloquiumInExistingTerm(scheduleId, course, 1, course.colloquium1Week, semStart, failedList);
                      if (success) colloquiumsScheduled++;
-                } else {
-                    // System.out.println("Course " + course.code + " has no Colloquium 1 week set.");
                 }
 
                 // Schedule Colloquium 2
                 if (course.colloquium2Week != null && course.colloquium2Week > 0) {
-                     boolean success = scheduleColloquium(scheduleId, course, 2, course.colloquium2Week, semStart, profId, examRooms, failedList);
+                     boolean success = scheduleColloquiumInExistingTerm(scheduleId, course, 2, course.colloquium2Week, semStart, failedList);
                      if (success) colloquiumsScheduled++;
                 }
 
@@ -3122,43 +3110,74 @@ public class EventValidationService {
         System.out.println("Total Colloquiums Scheduled: " + colloquiumsScheduled);
     }
 
-    private boolean scheduleColloquium(int scheduleId, Course course, int colNum, int week, LocalDate semStart, 
-                                   int profId, List<Room> rooms, List<FailedCourse> failedList) throws SQLException {
-        // Calculate week start
-        LocalDate weekStartDate = semStart.plusWeeks(week - 1);
-        // Try Saturday of that week
-        LocalDate targetDate = weekStartDate.with(TemporalAdjusters.nextOrSame(DayOfWeek.SATURDAY));
+    private boolean scheduleColloquiumInExistingTerm(int scheduleId, Course course, int colNum, int week, LocalDate semStart, List<FailedCourse> failedList) throws SQLException {
+        AcademicEvent targetEvent = null;
         
+        // Find existing EXERCISE or LAB event for this course in this schedule
+        for (AcademicEvent event : academicEvents.values()) {
+            if (event.scheduleId == scheduleId && event.idCourse == course.idCourse) {
+                if ("EXERCISE".equals(event.typeEnum)) {
+                    targetEvent = event;
+                    break; // Prefer exercise
+                } else if ("LAB".equals(event.typeEnum) && targetEvent == null) {
+                    targetEvent = event; // Fallback to lab
+                }
+            }
+        }
+        
+        if (targetEvent == null) {
+            System.out.println("No EXERCISE/LAB term found for " + course.name + ". Cannot schedule colloquium.");
+            return false;
+        }
+
+        // Calculate actual date for the colloquium
+        // Week 1 starts at semStart. Week X starts at semStart + (X-1) weeks.
+        LocalDate weekStartDate = semStart.plusWeeks(week - 1).with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+        
+        // Find the specific date corresponding to the event's day in that week
+        DayOfWeek eventDay = parseDayOfWeek(targetEvent.day);
+        LocalDate targetDate = weekStartDate.with(TemporalAdjusters.nextOrSame(eventDay));
+        
+        // Ensure date is within the distinct week
+        LocalDate weekEndDate = weekStartDate.plusDays(6);
+        if (targetDate.isBefore(weekStartDate)) targetDate = targetDate.plusWeeks(1);
+        if (targetDate.isAfter(weekEndDate)) targetDate = targetDate.minusWeeks(1);
+
         // Check if date is a holiday
         for (Holiday holiday : holidays) {
             if (holiday.date.equals(targetDate)) {
-                 System.out.println("Skipping colloquium for " + course.name + " on " + targetDate + " due to holiday: " + holiday.name);
+                 System.out.println("Skipping colloquium for " + course.name + " on " + targetDate + " (Holiday: " + holiday.name + ")");
                  return false;
             }
         }
 
-        // Times to try
-        LocalTime[] starts = { LocalTime.of(9, 0), LocalTime.of(12, 0), LocalTime.of(15, 0), LocalTime.of(8,0), LocalTime.of(16,0) };
-        boolean scheduled = false;
-
-        for (LocalTime start : starts) {
-            LocalTime end = start.plusHours(3); // 3 hours duration
-            
-            for (Room room : rooms) {
-                if (!hasConflictForDateInSchedule(scheduleId, targetDate, room.idRoom, profId, start, end, course.semester)) {
-                    addColloquiumToSchedule(scheduleId, course.idCourse, room.idRoom, profId, 
-                                          targetDate, start, end, "COLLOQUIUM"); 
-                    scheduled = true;
-                    break;
-                }
+        // Check max 2 colloquiums per week for this semester
+        int colloquiaInWeek = 0;
+        for (AcademicEvent event : academicEvents.values()) {
+            if (event.scheduleId == scheduleId && "COLLOQUIUM".equals(event.typeEnum) && event.date != null) {
+                 LocalDate evDate = event.date;
+                 LocalDate evWeekStart = evDate.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+                 
+                 if (evWeekStart.equals(weekStartDate)) {
+                     Course c = courses.get(event.idCourse);
+                     if (c != null && c.semester == course.semester) {
+                         colloquiaInWeek++;
+                     }
+                 }
             }
-            if (scheduled) break;
         }
         
-        if (!scheduled) {
-             System.out.println("Failed to schedule Colloquium " + colNum + " for Course " + course.name + " (" + course.code + ") Week " + week + " at " + targetDate);
+        if (colloquiaInWeek >= 2) {
+             System.out.println("Skipping colloquium for " + course.name + " (Week " + week + "): Max 2 colloquiums limit reached for semester " + course.semester);
+             return false;
         }
-        return scheduled;
+
+        // Create the colloquium event - use existing slot
+        addColloquiumToSchedule(scheduleId, course.idCourse, targetEvent.idRoom, targetEvent.idProfessor, 
+                              targetDate, targetEvent.startTime, targetEvent.endTime, "COLLOQUIUM");
+                              
+        System.out.println("  ✓ Colloquium " + colNum + " for " + course.name + " scheduled on " + targetDate + " using " + targetEvent.typeEnum + " slot");
+        return true;
     }
 }
 
