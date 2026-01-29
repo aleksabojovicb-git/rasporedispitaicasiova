@@ -96,6 +96,18 @@ try {
         
         $total_rows_affected = $rows_winter + $rows_summer;
 
+        // Also update config table flag `schedule_locked` so frontend can read global lock state
+        try {
+            $cfgKey = 'schedule_locked';
+            $cfgValue = $is_locked ? '1' : '0';
+            // Use upsert pattern compatible with PostgreSQL
+            $cfgStmt = $pdo->prepare("INSERT INTO config (\"key\", value) VALUES (:k, :v) ON CONFLICT (\"key\") DO UPDATE SET value = EXCLUDED.value");
+            $cfgStmt->execute([':k' => $cfgKey, ':v' => $cfgValue]);
+        } catch (PDOException $e) {
+            // Don't fail the entire operation if config update fails; just log to error log
+            error_log('Failed to update config.schedule_locked: ' . $e->getMessage());
+        }
+
         // Build appropriate message
         if ($winter_schedule_id === $summer_schedule_id) {
             $message = $is_locked 
