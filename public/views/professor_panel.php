@@ -107,16 +107,15 @@ if (
                 r.code AS roomcode,
                 c.semester
             FROM academic_event ae
-            JOIN event_professor ep ON ep.event_id = ae.id
             JOIN course c ON ae.course_id = c.id
             LEFT JOIN room r ON ae.room_id = r.id
-            WHERE ep.professor_id = ?
+            WHERE (ae.created_by_professor = ? OR EXISTS (SELECT 1 FROM event_professor ep WHERE ep.event_id = ae.id AND ep.professor_id = ?))
               AND ae.type_enum IN ('LECTURE', 'EXERCISE', 'LAB')
               AND ae.schedule_id IN ($in)
             ORDER BY ae.schedule_id, c.semester, ae.day, ae.starts_at
         ");
 
-        $params = array_merge([$professorId], $scheduleIds);
+        $params = array_merge([$professorId, $professorId], $scheduleIds);
         $stmt->execute($params);
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -283,13 +282,12 @@ if (isset($_GET['action']) && $_GET['action'] === 'get_professor_events_summary'
                 SUM(CASE WHEN ae.type_enum = 'COLLOQUIUM' THEN 1 ELSE 0 END) AS colloquiums,
                 COUNT(*) AS total
             FROM academic_event ae
-            JOIN event_professor ep ON ep.event_id = ae.id
-            WHERE ep.professor_id = ?
+            WHERE (ae.created_by_professor = ? OR EXISTS (SELECT 1 FROM event_professor ep WHERE ep.event_id = ae.id AND ep.professor_id = ?))
               AND ae.type_enum IN ('EXAM', 'COLLOQUIUM')
             GROUP BY ae.date::date
         ");
 
-        $stmt->execute([$professorId]);
+        $stmt->execute([$professorId, $professorId]);
         echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC));
     } catch (PDOException $e) {
         echo json_encode([]);
