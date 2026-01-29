@@ -37,7 +37,7 @@ if ($loggedIn) {
     /* ===== Shared Header Style (matches admin panel) ===== */
 
     .site-header {
-        background: rgba(17, 24, 39, 0.7);
+        background: rgba(17, 24, 39, 0.52);
         backdrop-filter: blur(10px);
         box-shadow: var(--shadow);
         position: sticky;
