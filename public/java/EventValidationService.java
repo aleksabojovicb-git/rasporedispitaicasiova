@@ -1958,8 +1958,10 @@ public class EventValidationService {
 
     /**
      * Schedules colloquium during exercise time slots
+     * PRIORITY: 1. Same weekday/time as exercises in target week
+     *           2. Other weekday slots in target week
+     *           3. Saturday as LAST RESORT backup
      * If multiple exercise groups exist, creates multiple colloquium slots
-     * Uses Saturday as backup if no weekday slots available
      */
     private String scheduleColloquiumDuringExerciseTime(int scheduleId, Course course, 
             int professorId, List<LocalDate> availableWeeks, String colloquiumType, 
@@ -1982,7 +1984,7 @@ public class EventValidationService {
                 return "FAILED";
             }
             
-            System.out.println("  → " + course.name + ": Found " + exerciseSlots.size() + " exercise group(s)");
+            System.out.println("  → " + course.name + ": Found " + exerciseSlots.size() + " exercise groups");
             
             int successfullyScheduled = 0;
             
@@ -1990,13 +1992,14 @@ public class EventValidationService {
             for (int groupIndex = 0; groupIndex < exerciseSlots.size(); groupIndex++) {
                 AcademicEvent exerciseSlot = exerciseSlots.get(groupIndex);
                 
-                // Try to find date in the specified week
                 LocalDate colloquiumDate = null;
                 Room selectedRoom = null;
                 LocalTime colloquiumStart = exerciseSlot.startTime;
                 LocalTime colloquiumEnd = exerciseSlot.endTime;
                 
-                // Option 1: Try same day and time as exercise in the target week
+                // ═══════════════════════════════════════════════════════
+                // PRIORITY 1: Try same day/time as exercise in target week
+                // ═══════════════════════════════════════════════════════
                 for (LocalDate weekDate : availableWeeks) {
                     // Match the day of week
                     DayOfWeek exerciseDayOfWeek = parseDayOfWeek(exerciseSlot.day);
@@ -2031,6 +2034,7 @@ public class EventValidationService {
                                 exerciseRoom.idRoom, professorId, colloquiumStart, colloquiumEnd, course.semester)) {
                             colloquiumDate = candidateDate;
                             selectedRoom = exerciseRoom;
+                            System.out.println("    ✓ Group " + (groupIndex + 1) + ": Same time/room as exercise");
                             break;
                         }
                     }
@@ -2042,6 +2046,7 @@ public class EventValidationService {
                                 altRoom.idRoom, professorId, colloquiumStart, colloquiumEnd, course.semester)) {
                             colloquiumDate = candidateDate;
                             selectedRoom = altRoom;
+                            System.out.println("    ✓ Group " + (groupIndex + 1) + ": Same time, different room");
                             break;
                         }
                     }
@@ -2049,18 +2054,79 @@ public class EventValidationService {
                     if (colloquiumDate != null) break;
                 }
                 
-                // Option 2: If no weekday slot found, try Saturday as backup
+                // ═══════════════════════════════════════════════════════
+                // PRIORITY 2: Try OTHER weekday slots in target week
+                // ═══════════════════════════════════════════════════════
                 if (colloquiumDate == null) {
-                    System.out.println("    → No weekday slot found for group " + (groupIndex + 1) + ", trying Saturday...");
+                    System.out.println("    → Group " + (groupIndex + 1) + ": No match at exercise time, trying other weekday slots...");
+                    
+                    for (LocalDate weekDate : availableWeeks) {
+                        // Try Monday-Friday
+                        for (DayOfWeek dow : new DayOfWeek[]{
+                            DayOfWeek.MONDAY, DayOfWeek.TUESDAY, DayOfWeek.WEDNESDAY, 
+                            DayOfWeek.THURSDAY, DayOfWeek.FRIDAY}) {
+                            
+                            LocalDate candidateDate = weekDate.with(TemporalAdjusters.nextOrSame(dow));
+                            
+                            // Check if within available weeks
+                            if (!availableWeeks.contains(candidateDate)) continue;
+                            
+                            // Check if holiday
+                            boolean isHoliday = false;
+                            for (Holiday holiday : holidays) {
+                                if (holiday.date.equals(candidateDate)) {
+                                    isHoliday = true;
+                                    break;
+                                }
+                            }
+                            if (isHoliday) continue;
+                            
+                            // Check max 2 tests per week
+                            int weekTestCount = countTestsInWeekend(scheduleId, candidateDate);
+                            if (weekTestCount >= 2) continue;
+                            
+                            // Try different time slots (8-10, 10-12, 12-14, 14-16, 16-18)
+                            LocalTime[] timeSlots = {
+                                LocalTime.of(8, 0), LocalTime.of(10, 0), LocalTime.of(12, 0),
+                                LocalTime.of(14, 0), LocalTime.of(16, 0)
+                            };
+                            
+                            for (LocalTime start : timeSlots) {
+                                LocalTime end = start.plusHours(2);
+                                
+                                List<Room> availableRooms = getSuitableRooms(false, 20);
+                                for (Room room : availableRooms) {
+                                    if (!hasConflictForDateInSchedule(scheduleId, candidateDate, 
+                                            room.idRoom, professorId, start, end, course.semester)) {
+                                        colloquiumDate = candidateDate;
+                                        selectedRoom = room;
+                                        colloquiumStart = start;
+                                        colloquiumEnd = end;
+                                        System.out.println("    ✓ Group " + (groupIndex + 1) + ": Found weekday slot at " + start);
+                                        break;
+                                    }
+                                }
+                                if (colloquiumDate != null) break;
+                            }
+                            if (colloquiumDate != null) break;
+                        }
+                        if (colloquiumDate != null) break;
+                    }
+                }
+                
+                // ═══════════════════════════════════════════════════════
+                // PRIORITY 3 (LAST RESORT): Try Saturday as backup
+                // ═══════════════════════════════════════════════════════
+                if (colloquiumDate == null) {
+                    System.out.println("    → Group " + (groupIndex + 1) + ": No weekday slots, trying Saturday backup...");
                     
                     for (LocalDate weekDate : availableWeeks) {
                         LocalDate saturday = weekDate.with(TemporalAdjusters.nextOrSame(DayOfWeek.SATURDAY));
                         
+                        // Allow Saturday even if slightly outside week range
                         if (!availableWeeks.contains(saturday) && 
-                            !saturday.isBefore(availableWeeks.get(0)) && 
-                            !saturday.isAfter(availableWeeks.get(availableWeeks.size() - 1))) {
-                            // Saturday might be just outside the week range, allow it
-                        } else if (!availableWeeks.contains(saturday)) {
+                            (saturday.isBefore(availableWeeks.get(0)) || 
+                            saturday.isAfter(availableWeeks.get(availableWeeks.size() - 1)))) {
                             continue;
                         }
                         
@@ -2078,13 +2144,14 @@ public class EventValidationService {
                         int weekTestCount = countTestsInWeekend(scheduleId, saturday);
                         if (weekTestCount >= 2) continue;
                         
-                        // Try same room as exercise
+                        // Try same time as exercise first
                         Room exerciseRoom = rooms.get(exerciseSlot.idRoom);
                         if (exerciseRoom != null && exerciseRoom.isActive) {
                             if (!hasConflictForDateInSchedule(scheduleId, saturday, 
                                     exerciseRoom.idRoom, professorId, colloquiumStart, colloquiumEnd, course.semester)) {
                                 colloquiumDate = saturday;
                                 selectedRoom = exerciseRoom;
+                                System.out.println("    ✓ Group " + (groupIndex + 1) + ": Saturday backup (same room)");
                                 break;
                             }
                         }
@@ -2096,17 +2163,16 @@ public class EventValidationService {
                                     altRoom.idRoom, professorId, colloquiumStart, colloquiumEnd, course.semester)) {
                                 colloquiumDate = saturday;
                                 selectedRoom = altRoom;
+                                System.out.println("    ✓ Group " + (groupIndex + 1) + ": Saturday backup (different room)");
                                 break;
                             }
                         }
                         
-                        if (colloquiumDate != null) {
-                            System.out.println("    ✓ Saturday backup slot found");
-                            break;
-                        }
+                        if (colloquiumDate != null) break;
                     }
                 }
                 
+                // If still no slot found, skip this group
                 if (colloquiumDate == null || selectedRoom == null) {
                     System.out.println("    ✗ Group " + (groupIndex + 1) + ": Could not find available slot");
                     continue;
@@ -2115,9 +2181,8 @@ public class EventValidationService {
                 // Save colloquium
                 LocalDateTime startsAt = LocalDateTime.of(colloquiumDate, colloquiumStart);
                 LocalDateTime endsAt = LocalDateTime.of(colloquiumDate, colloquiumEnd);
-                
                 String dayName = getCroatianDayName(colloquiumDate.getDayOfWeek());
-                String notes = "Group " + (groupIndex + 1) + " (replaces exercise)";
+                String notes = "Group " + (groupIndex + 1) + " - replaces exercise";
                 
                 saveColloquiumToDatabase(scheduleId, course.idCourse, professorId, 
                     dayName, startsAt, endsAt, selectedRoom.idRoom, colloquiumType, notes);
@@ -2136,10 +2201,8 @@ public class EventValidationService {
                 newEvent.endsAt = endsAt;
                 newEvent.scheduleId = scheduleId;
                 newEvent.notes = notes;
+                newEvent.lockedByAdmin = true; // ✅ DODATO: Zaključan po defaultu
                 academicEvents.put(newEvent.hashCode(), newEvent);
-                
-                System.out.println("    ✓ Group " + (groupIndex + 1) + " scheduled: " + 
-                    colloquiumDate + " at " + colloquiumStart + " in room " + selectedRoom.code);
                 
                 successfullyScheduled++;
             }
@@ -2165,6 +2228,36 @@ public class EventValidationService {
         }
     }
 
+
+    /**
+     * Saves colloquium/exam event to database
+     * Sets lockedbyadmin = TRUE by default
+     */
+    private void saveColloquiumToDatabase(int scheduleId, int courseId, int professorId, 
+            String day, LocalDateTime startsAt, LocalDateTime endsAt, int roomId, 
+            String typeEnum, String notes) throws SQLException {
+        
+        String insert = "INSERT INTO academicevent " +
+                    "(courseid, createdbyprofessor, typeenum, startsat, endsat, roomid, " +
+                    "notes, ispublished, lockedbyadmin, scheduleid, day) " +
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        
+        try (PreparedStatement pstmt = conn.prepareStatement(insert)) {
+            pstmt.setInt(1, courseId);
+            pstmt.setLong(2, professorId);
+            pstmt.setString(3, typeEnum);
+            pstmt.setTimestamp(4, Timestamp.valueOf(startsAt));
+            pstmt.setTimestamp(5, Timestamp.valueOf(endsAt));
+            pstmt.setInt(6, roomId);
+            pstmt.setString(7, notes);
+            pstmt.setBoolean(8, true);     // ispublished = TRUE
+            pstmt.setBoolean(9, true);     // ✅ lockedbyadmin = TRUE (po defaultu zaključan!)
+            pstmt.setInt(10, scheduleId);
+            pstmt.setString(11, day);
+            
+            pstmt.executeUpdate();
+        }
+    }
 
     /**
      * Gets list of dates for specified week range in academic calendar
@@ -2216,57 +2309,6 @@ public class EventValidationService {
         }
         return count;
     }
-
-    /**
-     * Saves colloquium event to database with all fields
-     */
-    private void saveColloquiumToDatabase(int scheduleId, int courseId, int professorId, 
-        String day, LocalDateTime startsAt, LocalDateTime endsAt, int roomId, 
-        String typeEnum, String notes) throws SQLException {
-    String insert = "INSERT INTO academic_event " +
-            "(course_id, created_by_professor, type_enum, starts_at, ends_at, " +
-            "room_id, notes, is_published, locked_by_admin, schedule_id, day) " +
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-    
-    try (PreparedStatement pstmt = conn.prepareStatement(insert, Statement.RETURN_GENERATED_KEYS)) {
-        pstmt.setInt(1, courseId);
-        pstmt.setLong(2, professorId);
-        pstmt.setString(3, typeEnum);
-        pstmt.setTimestamp(4, Timestamp.valueOf(startsAt));
-        pstmt.setTimestamp(5, Timestamp.valueOf(endsAt));
-        pstmt.setInt(6, roomId);
-        pstmt.setString(7, notes);
-        pstmt.setBoolean(8, true); // is_published
-        pstmt.setBoolean(9, false); // locked_by_admin
-        pstmt.setInt(10, scheduleId);
-        pstmt.setString(11, day);
-        pstmt.executeUpdate();
-        
-        // Get generated ID and add to cache
-        try (ResultSet rs = pstmt.getGeneratedKeys()) {
-            if (rs.next()) {
-                int id = rs.getInt(1);
-                AcademicEvent newEvent = new AcademicEvent();
-                newEvent.idAcademicEvent = id;
-                newEvent.idCourse = courseId;
-                newEvent.idRoom = roomId;
-                newEvent.idProfessor = professorId;
-                newEvent.typeEnum = typeEnum;
-                newEvent.date = startsAt.toLocalDate();
-                newEvent.day = day;
-                newEvent.startTime = startsAt.toLocalTime();
-                newEvent.endTime = endsAt.toLocalTime();
-                newEvent.startsAt = startsAt;
-                newEvent.endsAt = endsAt;
-                newEvent.scheduleId = scheduleId;
-                newEvent.notes = notes;
-                newEvent.isPublished = true;
-                newEvent.lockedByAdmin = false;
-                academicEvents.put(newEvent.idAcademicEvent, newEvent);
-            }
-        }
-    }
-}
 
 
     //endregion
