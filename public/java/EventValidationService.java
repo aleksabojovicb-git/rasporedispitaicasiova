@@ -1571,6 +1571,77 @@ public class EventValidationService {
     //region Exams
 
     /**
+     * Generates exam schedule for ALL semesters in given period
+     * Winter period: semesters 1, 3, 5
+     * Summer period: semesters 2, 4, 6
+     */
+    public ScheduleResult generateExamScheduleForPeriod(int academicYear, int period) {
+        try {
+            System.out.println("=== GENERATING EXAM SCHEDULE FOR " + 
+                (period == 1 ? "WINTER" : "SUMMER") + " PERIOD ===\n");
+            
+            // Determine which semesters for this period
+            int[] semesters;
+            if (period == 1) {
+                // Winter: 1, 3, 5
+                semesters = new int[]{1, 3, 5};
+            } else {
+                // Summer: 2, 4, 6
+                semesters = new int[]{2, 4, 6};
+            }
+            
+            int totalSuccessful = 0;
+            int totalFailed = 0;
+            List<FailedCourse> allFailedCourses = new ArrayList<>();
+            int mainScheduleId = generateNewScheduleId();
+            
+            // Generate for each semester
+            for (int sem : semesters) {
+                System.out.println("\n--- Processing Semester " + sem + " ---\n");
+                
+                ScheduleResult result = generateColloquiumScheduleForLockedCourses(academicYear, sem);
+                
+                totalSuccessful += result.successfulCourses;
+                totalFailed += result.failedCourses;
+                allFailedCourses.addAll(result.failedCoursesList);
+            }
+            
+            // Summary
+            ScheduleResult finalResult = new ScheduleResult();
+            finalResult.scheduleId = mainScheduleId;
+            finalResult.successfulCourses = totalSuccessful;
+            finalResult.failedCourses = totalFailed;
+            finalResult.failedCoursesList = allFailedCourses;
+            finalResult.success = (totalFailed == 0);
+            finalResult.message = String.format(
+                "Period schedule completed: %d successful, %d failed across %d semesters",
+                totalSuccessful, totalFailed, semesters.length
+            );
+            
+            System.out.println("\n" + "=".repeat(60));
+            System.out.println("PERIOD SCHEDULE GENERATION COMPLETED");
+            System.out.println("=".repeat(60));
+            System.out.println("Period: " + (period == 1 ? "WINTER (Sem 1,3,5)" : "SUMMER (Sem 2,4,6)"));
+            System.out.println("Total successful events: " + totalSuccessful);
+            System.out.println("Total failed courses: " + totalFailed);
+            System.out.println("=".repeat(60));
+            
+            return finalResult;
+            
+        } catch (Exception e) {
+            e.printStackTrace();
+            ScheduleResult errorResult = new ScheduleResult();
+            errorResult.success = false;
+            errorResult.message = "ERROR: " + e.getMessage();
+            return errorResult;
+        }
+    }
+
+
+
+
+
+    /**
      * Generates colloquium AND exam schedule ONLY IF course schedule is locked by admin
      * Schedules colloquiums during exercise time slots
      * Schedules exams in available time slots after colloquiums
