@@ -1,34 +1,35 @@
 <?php
+// start sesije
 session_start();
+// ucitavanje db konekcije
 require_once __DIR__ . '/../../config/dbconnection.php';
+// ucitavanje occupancy servisa
 require_once __DIR__ . '/../../src/services/OccupancyService.php';
 $occupancyService = new OccupancyService($pdo);
-
+// logout handler
 if (isset($_GET['logout'])) {
     session_unset();
     session_destroy();
     header('Location: ./authorization.php');
     exit;
 }
-
-// USER mora biti ulogovan
+// provjera da li je user ulogovan
 if (!isset($_SESSION['user_id'])) {
     header('Location: authorization.php');
     exit;
 }
-
-// PROFESOR mora imati professor_id (ADMIN ne ide ovdje)
+// provjera da li je profesor ulogovan
 if (!isset($_SESSION['professor_id'])) {
     header('Location: authorization.php');
     exit;
 }
 
-
+// inicijalizacija poruka za UI
 $successMessage = null;
 $errorMessage = null;
-
+// profesor id iz sesije
 $professorId = (int) $_SESSION['professor_id'];
-
+// ucitavanje podataka o profesoru
 $stmt = $pdo->prepare("
     SELECT p.id, p.full_name, p.email, u.username
     FROM professor p
@@ -37,14 +38,14 @@ $stmt = $pdo->prepare("
 ");
 $stmt->execute([$professorId]);
 $currentProfessor = $stmt->fetch(PDO::FETCH_ASSOC);
-
+// fallback ako profesor nije aktivan / ne postoji
 if (!$currentProfessor) {
     session_unset();
     session_destroy();
     header('Location: ./authorization.php');
     exit;
 }
-
+// helper funkcija za generisanje username-a iz imena
 function buildUsernameFromFullName(string $fullName): string
 {
     $fullName = strtolower(trim(preg_replace('/\s+/', ' ', $fullName)));
@@ -57,333 +58,7 @@ function buildUsernameFromFullName(string $fullName): string
 
     return $first . '.' . $last;
 }
-
-// 1) Obrada JSON POST zahtjeva (AJAX)
-$inputJSON = file_get_contents('php://input');
-$inputData = json_decode($inputJSON, true);
-if (
-    (isset($_GET['action']) && $_GET['action'] === 'get_professor_schedule')
-) {
-    header('Content-Type: application/json; charset=utf-8');
-
-    $professorId = (int)($_SESSION['professor_id'] ?? 0);
-    if ($professorId === 0) {
-        echo json_encode(['error' => 'Profesor nije prijavljen']);
-        exit;
-    }
-
-    try {
-        // 1) Učitaj poslednjih 6 rasporeda (isto kao admin)
-        $scheduleStmt = $pdo->prepare("
-            SELECT DISTINCT schedule_id
-            FROM academic_event
-            WHERE schedule_id IS NOT NULL
-            ORDER BY schedule_id DESC
-            LIMIT 6
-        ");
-        $scheduleStmt->execute();
-        $scheduleIds = $scheduleStmt->fetchAll(PDO::FETCH_COLUMN);
-        $scheduleIds = array_reverse($scheduleIds);
-
-        // Ako nema rasporeda
-        if (!$scheduleIds) {
-            echo json_encode([
-                'schedules' => [],
-                'schedule_ids' => []
-            ]);
-            exit;
-        }
-
-        // 2) Učitaj SAMO časove tog profesora
-        $in = implode(',', array_fill(0, count($scheduleIds), '?'));
-
-        $stmt = $pdo->prepare("
-            SELECT
-                ae.schedule_id,
-                ae.day,
-                ae.starts_at,
-                ae.ends_at,
-                c.name AS coursename,
-                r.code AS roomcode,
-                c.semester
-            FROM academic_event ae
-            JOIN course c ON ae.course_id = c.id
-            LEFT JOIN room r ON ae.room_id = r.id
-            WHERE (ae.created_by_professor = ? OR EXISTS (SELECT 1 FROM event_professor ep WHERE ep.event_id = ae.id AND ep.professor_id = ?))
-              AND ae.type_enum IN ('LECTURE', 'EXERCISE', 'LAB')
-              AND ae.schedule_id IN ($in)
-            ORDER BY ae.schedule_id, c.semester, ae.day, ae.starts_at
-        ");
-
-        $params = array_merge([$professorId, $professorId], $scheduleIds);
-        $stmt->execute($params);
-        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-        // 3) Grupisanje (ISTO KAO ADMIN)
-        $data = [
-            'schedules' => [],
-            'schedule_ids' => $scheduleIds
-        ];
-
-        foreach ($scheduleIds as $sid) {
-            $data['schedules'][$sid] = [];
-        }
-
-        foreach ($rows as $row) {
-            $sid = (int)$row['schedule_id'];
-            $sem = (int)$row['semester'];
-
-            if (!isset($data['schedules'][$sid][$sem])) {
-                $data['schedules'][$sid][$sem] = [];
-            }
-
-            $data['schedules'][$sid][$sem][] = [
-                'day'    => (int)$row['day'],
-                'start'  => substr($row['starts_at'], 11, 5),
-                'end'    => substr($row['ends_at'], 11, 5),
-                'course' => $row['coursename'],
-                'room'   => $row['roomcode']
-            ];
-        }
-
-        echo json_encode($data, JSON_UNESCAPED_UNICODE);
-    } catch (PDOException $e) {
-        echo json_encode(['error' => 'Greška: ' . $e->getMessage()]);
-    }
-    exit;
-}
-if (isset($_GET['action']) && $_GET['action'] === 'get_holidays') {
-    header('Content-Type: application/json; charset=utf-8');
-
-    try {
-        $stmt = $pdo->prepare("
-            SELECT date, name
-            FROM holiday
-            
-        ");
-        $stmt->execute();
-
-        echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC));
-    } catch (PDOException $e) {
-        echo json_encode([]);
-    }
-    exit;
-}elseif (isset($_GET['action']) && $_GET['action'] === 'save_note') {
-    header('Content-Type: application/json; charset=utf-8');
-
-    $data = json_decode(file_get_contents("php://input"), true);
-
-    $date = $data['date'] ?? null;
-    $content = trim($data['content'] ?? '');
-    $professorId = $_SESSION['professor_id'] ?? null;
-
-    if (!$date || $content === '' || !$professorId) {
-        echo json_encode(['success' => false]);
-        exit;
-    }
-
-    $stmt = $pdo->prepare("
-        INSERT INTO notes (professor_id, note_date, content)
-        VALUES (?, ?, ?)
-    ");
-    $stmt->execute([$professorId, $date, $content]);
-
-    echo json_encode([
-        'success' => true,
-        'id' => $pdo->lastInsertId()
-    ]);
-    exit;
-}
-
-elseif (isset($_GET['action']) && $_GET['action'] === 'update_note') {
-
-    $data = json_decode(file_get_contents("php://input"), true);
-
-    $id = $data['id'] ?? null;
-    $content = $data['content'] ?? '';
-
-    if (!$id || trim($content) === '') {
-        echo json_encode(['success' => false]);
-        exit;
-    }
-
-    $stmt = $pdo->prepare("
-        UPDATE notes
-        SET content = ?
-        WHERE id = ?
-    ");
-    $stmt->execute([$content, $id]);
-
-    echo json_encode(['success' => true]);
-    exit;
-}
-
-
-elseif (isset($_GET['action']) && $_GET['action'] === 'get_notes') {
-    header('Content-Type: application/json; charset=utf-8');
-
-    $professorId = $_SESSION['professor_id'] ?? 0;
-    if (!$professorId) {
-        echo json_encode([]);
-        exit;
-    }
-
-    try {
-        $stmt = $pdo->prepare("
-            SELECT id, note_date, content
-            FROM notes
-            WHERE professor_id = ?
-        ");
-        $stmt->execute([$professorId]);
-
-        echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC));
-    } catch (PDOException $e) {
-        echo json_encode([]);
-    }
-
-    exit;
-}elseif (isset($_GET['action']) && $_GET['action'] === 'delete_note') {
-    header('Content-Type: application/json; charset=utf-8');
-
-    $data = json_decode(file_get_contents('php://input'), true);
-    $id = $data['id'] ?? null;
-
-    if (!$id) {
-        echo json_encode(['success' => false]);
-        exit;
-    }
-
-    $stmt = $pdo->prepare("
-        DELETE FROM notes
-        WHERE id = ? AND professor_id = ?
-    ");
-    $stmt->execute([$id, $_SESSION['professor_id']]);
-
-    echo json_encode(['success' => true]);
-    exit;
-}
-
-
-
-if (isset($_GET['action']) && $_GET['action'] === 'get_professor_events_summary') {
-    header('Content-Type: application/json; charset=utf-8');
-
-    $professorId = (int)($_SESSION['professor_id'] ?? 0);
-    if ($professorId === 0) {
-        echo json_encode([]);
-        exit;
-    }
-
-    try {
-        $stmt = $pdo->prepare("
-            SELECT 
-                ae.date::date AS event_date,
-                SUM(CASE WHEN ae.type_enum = 'EXAM' THEN 1 ELSE 0 END) AS exams,
-                SUM(CASE WHEN ae.type_enum = 'COLLOQUIUM' THEN 1 ELSE 0 END) AS colloquiums,
-                COUNT(*) AS total
-            FROM academic_event ae
-            WHERE (ae.created_by_professor = ? OR EXISTS (SELECT 1 FROM event_professor ep WHERE ep.event_id = ae.id AND ep.professor_id = ?))
-              AND ae.type_enum IN ('EXAM', 'COLLOQUIUM')
-            GROUP BY ae.date::date
-        ");
-
-        $stmt->execute([$professorId, $professorId]);
-        echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC));
-    } catch (PDOException $e) {
-        echo json_encode([]);
-    }
-    exit;
-}
-if ($inputData && isset($inputData['action']) && $inputData['action'] === 'save_availability') {
-    header('Content-Type: application/json');
-
-    $availability = $inputData['data'] ?? [];
-
-    // Validacija
-    if (!is_array($availability) || count($availability) === 0) {
-        echo json_encode(['success' => false, 'error' => 'Morate izabrati bar jedan termin']);
-        exit;
-    }
-
-    try {
-        $pdo->beginTransaction();
-
-        // Brisanje starih termina
-        $stmt = $pdo->prepare("DELETE FROM professor_availability WHERE professor_id = ?");
-        $stmt->execute([$professorId]);
-
-        // Dodavanje novih
-        $stmt = $pdo->prepare("
-            INSERT INTO professor_availability (professor_id, weekday, start_time, end_time) 
-            VALUES (?, ?, ?, ?)
-        ");
-
-        $inserted = 0;
-
-        foreach ($availability as $slot) {
-            $day = (int)($slot['day'] ?? 0);
-            if ($day < 1 || $day > 5) continue;
-
-            $stmt->execute([$professorId, $day, $slot['from'], $slot['to']]);
-            $inserted++;
-        }
-
-        $pdo->commit();
-        echo json_encode(['success' => true, 'count' => $inserted]);
-    } catch (PDOException $e) {
-        $pdo->rollBack();
-        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
-    }
-    exit; // Prekida dalje izvršavanje jer je ovo AJAX response
-}
-
-// 2) Obrada JSON POST zahtjeva za čuvanje sedmica kolokvijuma
-if ($inputData && isset($inputData['action']) && $inputData['action'] === 'save_colloquium_weeks') {
-    header('Content-Type: application/json');
-
-    $colloquiumData = $inputData['data'] ?? [];
-
-    if (!is_array($colloquiumData) || count($colloquiumData) === 0) {
-        echo json_encode(['success' => false, 'error' => 'Nema podataka za čuvanje']);
-        exit;
-    }
-
-    try {
-        $pdo->beginTransaction();
-
-        $stmt = $pdo->prepare("
-            UPDATE course 
-            SET colloquium_1_week = ?, colloquium_2_week = ? 
-            WHERE id = ?
-        ");
-
-        $updated = 0;
-
-        foreach ($colloquiumData as $item) {
-            $courseId = (int)($item['course_id'] ?? 0);
-            $col1Week = $item['colloquium_1_week'];
-            $col2Week = $item['colloquium_2_week'];
-
-            if ($courseId === 0) continue;
-
-            // Convert to null or int (1 means "ne odrzava se")
-            $col1Value = ($col1Week === '' || $col1Week === null) ? null : (int)$col1Week;
-            $col2Value = ($col2Week === '' || $col2Week === null) ? null : (int)$col2Week;
-
-            $stmt->execute([$col1Value, $col2Value, $courseId]);
-            $updated++;
-        }
-
-        $pdo->commit();
-        echo json_encode(['success' => true, 'count' => $updated]);
-    } catch (PDOException $e) {
-        $pdo->rollBack();
-        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
-    }
-    exit;
-}
-
-// 2) Učitavanje postojećih termina za prikaz
+// ucitavanje postojece raspolozivosti profesora
 $stmt = $pdo->prepare("
     SELECT weekday, start_time, end_time
     FROM professor_availability
@@ -392,10 +67,10 @@ $stmt = $pdo->prepare("
 ");
 $stmt->execute([$professorId]);
 $existingAvailability = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
+// POST router za profile/password update
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
-
+// akcija: update profila
     if ($action === 'update_profile') {
         $fullName = trim($_POST['full_name'] ?? '');
         if ($fullName === '') {
@@ -425,7 +100,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
         }
-    } elseif ($action === 'update_password') {
+    }
+    // akcija: update passworda
+    elseif ($action === 'update_password') {
         $oldPassword = $_POST['old_password'] ?? '';
         $newPassword = $_POST['new_password'] ?? '';
         $confirmPassword = $_POST['confirm_password'] ?? '';
@@ -475,154 +152,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <link rel="stylesheet" href="../assets/css/occupancy.css">
     <link rel="stylesheet" href="../assets/css/profesor_profile.css">
     <link rel="stylesheet" href="../assets/css/admin.css" />
+    <link rel="stylesheet" href="../assets/css/professor_notes_modal.css">
     <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.js"></script>
-<style>
-    .site-header {
-        background: rgba(17, 24, 39, 0.52);
-        backdrop-filter: blur(10px);
-        box-shadow: var(--shadow);
-        position: sticky;
-        top: 0;
-        z-index: 50;
-    }
 
-    /* inner wrapper */
-    .header-inner {
-        max-width: 1200px;
-        margin: 0 auto;
-        padding: 20px 40px;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-    }
-
-    /* logo */
-    .logo {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        text-decoration: none;
-        color: var(--text);
-    }
-
-    #top-logo {
-        height: 42px;
-    }
-
-    .site-title {
-        font-size: 22px;
-        font-weight: 700;
-        color: var(--text);
-        letter-spacing: 0.3px;
-    }
-
-    /* navigation */
-    .site-header nav ul {
-        list-style: none;
-        margin: 0;
-        padding: 0;
-        display: flex;
-        gap: 25px;
-    }
-
-    .site-header nav a {
-        color: var(--muted);
-        text-decoration: none;
-        font-size: 16px;
-        transition: color 0.2s ease;
-    }
-
-    .site-header nav a:hover {
-        color: var(--accent);
-    }
-
-    /* responsive */
-    @media (max-width: 768px) {
-        .header-inner {
-            padding: 14px 20px;
-        }
-
-        .site-title {
-            display: none;
-        }
-
-        #top-logo {
-            height: 36px;
-        }
-    }
-
-    .note-modal.hidden {
-        display: none;
-    }
-#noteModalTitle{
-    color: #0f172a;
-}
-    .note-modal {
-        position: fixed;
-        inset: 0;
-        background: rgba(0, 0, 0, 0.22);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 9999;
-    }
-
-    .note-modal-content {
-        background: rgba(161, 162, 166, 0.91);
-        width: 400px;
-        padding: 20px;
-        border-radius: 8px;
-        position: relative;
-    }
-
-    .note-modal-close {
-        position: absolute;
-        top: 10px;
-        right: 10px;
-        border: none;
-        background: none;
-        font-size: 16px;
-        cursor: pointer;
-    }
-
-    #noteTextarea {
-        width: 100%;
-        height: 120px;
-        margin-top: 10px;
-    }
-
-    .note-modal-actions {
-        display: flex;
-        justify-content: flex-end;
-        gap: 10px;
-        margin-top: 10px;
-    }
-
-    .note-modal-actions button {
-        cursor: pointer;
-    }
-
-    .note-modal-actions .danger {
-        color: red;
-    }
-</style>
 
 
 </head>
 <body>
+<!-- header partial include -->
 <?php require __DIR__ . '/partials/header.php'; ?>
-
+<!-- glavni container -->
 <div class="container mt-4">
     <h2>Profil Profesora</h2>
-
     <?php if ($errorMessage): ?>
         <div class="alert alert-danger"><?php echo htmlspecialchars($errorMessage); ?></div>
     <?php endif; ?>
     <?php if ($successMessage): ?>
         <div class="alert alert-success"><?php echo htmlspecialchars($successMessage); ?></div>
     <?php endif; ?>
-
+    <!-- navigacija tabova -->
     <ul class="nav nav-tabs" id="profTab" role="tablist">
         <li class="nav-item" role="presentation">
             <button class="nav-link active" id="tab-profile" data-bs-toggle="tab" data-bs-target="#profileTab" type="button">Profil</button>
@@ -651,7 +200,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </ul>
 
     <div class="tab-content mt-3">
-        <!-- PROFILE -->
+        <!-- PROFILE TAB -->
         <div class="tab-pane fade show active" id="profileTab">
             <div class="edit-controls mb-3">
                 <button id="toggleEditBtn" class="btn btn-secondary">Edit profil</button>
@@ -681,7 +230,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
         </div>
 
-        <!-- EVENTS -->
+        <!-- EVENTS / NOTES TAB -->
         <div class="tab-pane fade" id="eventsTab">
             <h3>Kalendar događaja</h3>
 
@@ -693,7 +242,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
 
 
-        <!-- COURSES -->
+        <!-- COURSES TAB -->
         <div class="tab-pane fade" id="coursesTab">
             <h3>Moji predmeti i izbor nedjelje kolokvijuma</h3>
             <div id="colloquiumMessage" class="alert d-none mb-3"></div>
@@ -711,7 +260,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <tbody id="coursesTableBody">
                     <?php
                     try {
-                        // 1. Fetch active academic year
+
                         $stmtYear = $pdo->query("SELECT * FROM academic_year WHERE is_active = TRUE ORDER BY id DESC LIMIT 1");
                         $academicYear = $stmtYear->fetch(PDO::FETCH_ASSOC);
 
@@ -737,8 +286,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 $col1Val = $c['colloquium_1_week'];
                                 $col2Val = $c['colloquium_2_week'];
 
-                                // Determine semester start date based on odd/even semester
-                                // Odd (1, 3, 5...) -> Winter, Even (2, 4, 6...) -> Summer
                                 $isWinter = ($c['semester'] % 2 != 0);
                                 $semStart = $isWinter ? $winterStart : $summerStart;
                                 ?>
@@ -753,8 +300,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                             <?php for($w=5; $w<=13; $w++):
                                                 $dateLabel = "";
                                                 if ($semStart) {
-                                                    // week 1 starts at $semStart
-                                                    // week $w is + ($w - 1) weeks from start
                                                     $wStart = strtotime("+" . ($w - 1) . " weeks", $semStart);
                                                     $wEnd = strtotime("+6 days", $wStart);
                                                     $dateLabel = " (" . date('d.m.Y', $wStart) . "-" . date('d.m.Y', $wEnd) . ")";
@@ -803,11 +348,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <?php endif; ?>
         </div>
 
-        <!-- AVAILABILITY -->
+        <!-- AVAILABILITY TAB -->
         <div class="tab-pane fade" id="availabilityTab">
             <h3>Raspoloživost</h3>
 
-            <!-- VIEW MODE -->
             <div id="availability-view-mode">
                 <?php if (count($existingAvailability) > 0): ?>
                     <h5 class="mt-3">Vaši trenutni termini:</h5>
@@ -843,8 +387,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <?php echo (count($existingAvailability) > 0) ? 'Ažuriraj raspoloživost' : 'Dodaj raspoloživost'; ?>
                 </button>
             </div>
-
-            <!-- EDIT MODE -->
             <div id="availability-edit-mode" class="d-none">
                 <div class="alert alert-warning mt-2">
                     <small>Kliknite i prevucite mišem preko kalendara da označite termine. Kliknite na termin da ga obrišete.</small>
@@ -942,13 +484,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
 
         </div>
+        <!-- SCHEDULE TAB -->
         <div class="tab-pane fade" id="scheduleTab">
             <h3>Moj raspored časova</h3>
             <div id="professor-schedule-container"></div>
         </div>
     </div>
 
-    <!-- Password modal -->
+    <!-- password modal -->
     <div class="modal fade" id="passwordModal" tabindex="-1">
         <div class="modal-dialog">
             <div class="modal-content">
@@ -975,12 +518,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
     </div>
 
+    <!-- note modal -->
+    <div id="noteModal" class="note-modal hidden">
+        <div class="note-modal-content">
+            <button class="note-modal-close" id="noteModalClose">✖</button>
+
+            <h3 id="noteModalTitle">Napomena</h3>
+
+            <textarea id="noteTextarea" placeholder="Unesi napomenu..."></textarea>
+
+            <div class="note-modal-actions">
+                <button id="noteSaveBtn">✔</button>
+                <button id="noteDeleteBtn" class="danger">🗑</button>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         window.SERVER_EXISTING_AVAILABILITY = <?php echo json_encode($existingAvailability); ?>;
     </script>
     <script>
-
+        // kolokvijum weeks save script
         document.addEventListener('DOMContentLoaded', function() {
             const saveBtn = document.getElementById('saveColloquiumWeeksBtn');
             if (!saveBtn) return;
@@ -1078,6 +637,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 
     <script>
+        // events calendar state varijable
         let eventsCalendar = null;
         let eventsCalendarInitialized = false;
         let holidayDates = new Set();
@@ -1087,7 +647,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         eventsTabBtn.addEventListener('shown.bs.tab', function () {
             setTimeout(initEventsCalendar, 50);
         });
-
+        // init events calendar kada se otvori tab
         function initEventsCalendar() {
 
             if (eventsCalendarInitialized) {
@@ -1098,8 +658,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             const calendarEl = document.getElementById('events-calendar');
             if (!calendarEl) return;
 
-
-            fetch('professor_panel.php?action=get_holidays')
+// fetch holidays iz professor_api
+            fetch('api/professor_api.php?action=get_holidays')
                 .then(r => r.json())
                 .then(data => {
 
@@ -1107,7 +667,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     let notesByDate = {};
 
-                    fetch('professor_panel.php?action=get_notes')
+                    fetch('api/professor_api.php?action=get_notes')
                         .then(r => r.json())
                         .then(notes => {
                             notes.forEach(n => {
@@ -1116,7 +676,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         });
 
 
-                    //kreiranje
+                    // fullcalendar instanca za notes
                     eventsCalendar = new FullCalendar.Calendar(calendarEl, {
                         initialView: 'dayGridMonth',
                         locale: 'sr',
@@ -1128,11 +688,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             center: 'title',
                             right: ''
                         },
+                        // render pin ikone za note event
                         eventContent: function(arg) {
                             const note = arg.event.extendedProps.note;
 
                             if (!note || note.trim() === '') {
-                                return { domNodes: [] }; // nema pina ako nema note
+                                return { domNodes: [] };
                             }
 
                             const pin = document.createElement('span');
@@ -1142,8 +703,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                             return { domNodes: [pin] };
                         },
+                        // klik na dan — pravljenje privremenog note eventa
                         dateClick(info) {
-                            // napravi privremeni event (još nije u bazi)
                             const event = eventsCalendar.addEvent({
                                 title: '',
                                 start: info.dateStr,
@@ -1165,8 +726,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                             modal.classList.remove('hidden');
                         },
+                        // loader events (notes) iz baze
                         events: function(fetchInfo, successCallback) {
-                            fetch('professor_panel.php?action=get_notes')
+                            fetch('api/professor_api.php?action=get_notes')
                                 .then(r => r.json())
                                 .then(data => {
                                     const events = data.map(n => ({
@@ -1183,6 +745,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     successCallback(events);
                                 });
                         },
+                        // highlight praznika i dana sa notes
                         dayCellDidMount(info) {
                             const y = info.date.getFullYear();
                             const m = String(info.date.getMonth() + 1).padStart(2, '0');
@@ -1204,6 +767,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 }
                             }
                         },
+                        // klik na postojeci note event
                         eventClick: function(info) {
                             const modal = document.getElementById('noteModal');
                             const textarea = document.getElementById('noteTextarea');
@@ -1224,7 +788,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     });
                     const modal = document.getElementById('noteModal');
                     const closeBtn = document.getElementById('noteModalClose');
-
+// note modal close dugme
                     closeBtn.addEventListener('click', () => {
                         modal.classList.add('hidden');
                     });
@@ -1234,6 +798,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             modal.classList.add('hidden');
                         }
                     });
+                    // save note handler
                     document.getElementById('noteSaveBtn').addEventListener('click', () => {
                         const textarea = document.getElementById('noteTextarea');
                         const content = textarea.value.trim();
@@ -1243,9 +808,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         const event = window.currentEvent;
                         const noteId = event.extendedProps.noteId;
 
-                        // UPDATE
                         if (noteId) {
-                            fetch('professor_panel.php?action=update_note', {
+                            fetch('api/professor_api.php?action=update_note', {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify({
@@ -1264,8 +828,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             return;
                         }
 
-                        // INSERT
-                        fetch('professor_panel.php?action=save_note', {
+
+                        fetch('api/professor_api.php?action=save_note', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
@@ -1282,13 +846,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 modal.classList.add('hidden');
                             });
                     });
+                    // delete note handler
                     document.getElementById('noteDeleteBtn').addEventListener('click', () => {
                         const event = window.currentEvent;
                         const noteId = event.extendedProps.noteId;
 
                         if (!noteId) return;
 
-                        fetch('professor_panel.php?action=delete_note', {
+                        fetch('api/professor_api.php?action=delete_note', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ id: noteId })
@@ -1297,7 +862,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             .then(res => {
                                 if (!res.success) return;
 
-                                // ukloni event iz kalendara
+
                                 event.remove();
 
                                 document.getElementById('noteModal').classList.add('hidden');
@@ -1318,13 +883,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 
     <script>
+        // professor schedule calendar script
         document.addEventListener('DOMContentLoaded', function () {
 
             let scheduleCalendar = null;
             let initialized = false;
 
             const tabBtn = document.getElementById('schedule-tab-btn');
-
+// init schedule calendar na tab open
             tabBtn.addEventListener('shown.bs.tab', function () {
 
                 if (initialized) {
@@ -1359,7 +925,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 });
 
                 scheduleCalendar.render();
-
+// fetch schedule iz professor_api
                 fetch(window.location.pathname + '?action=get_professor_schedule')
                     .then(r => r.json())
                     .then(data => {
@@ -1389,21 +955,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </script>
 
 
-
-    <div id="noteModal" class="note-modal hidden">
-        <div class="note-modal-content">
-            <button class="note-modal-close" id="noteModalClose">✖</button>
-
-            <h3 id="noteModalTitle">Napomena</h3>
-
-            <textarea id="noteTextarea" placeholder="Unesi napomenu..."></textarea>
-
-            <div class="note-modal-actions">
-                <button id="noteSaveBtn">✔</button>
-                <button id="noteDeleteBtn" class="danger">🗑</button>
-            </div>
-        </div>
-    </div>
 
 
 </body>
