@@ -1642,11 +1642,6 @@ public class EventValidationService {
 
     //region Exams
 
-    /**
-     * Generates exam schedule for ALL semesters in given period
-     * Winter period: semesters 1, 3, 5
-     * Summer period: semesters 2, 4, 6
-     */
     public ScheduleResult generateExamScheduleForPeriod(int academicYear, int period) {
         try {
             System.out.println("=== GENERATING EXAM SCHEDULE FOR " + 
@@ -1710,11 +1705,6 @@ public class EventValidationService {
     }
 
 
-    /**
-     * Generates colloquium and exam schedule ONLY for courses with LOCKED schedule
-     * REQUIREMENT: Must exist a locked schedule in database (schedule.locked_by_admin = TRUE)
-     * Uses ONLY events from that locked schedule as reference for exercise time slots
-     */
     public ScheduleResult generateColloquiumScheduleForLockedCourses(int academicYear, int semester) {
         ScheduleResult result = new ScheduleResult();
         
@@ -1763,6 +1753,11 @@ public class EventValidationService {
                 // Check if course has exercise events in locked schedule
                 boolean hasExercises = false;
                 for (AcademicEvent event : lockedEvents) {
+
+                    // EXPERIMENTAL
+                    if("LAB".equals(event.typeEnum)) event.typeEnum = "EXERCISE";
+                    // FIX
+                    
                     if (event.idCourse == course.idCourse && "EXERCISE".equals(event.typeEnum)) {
                         hasExercises = true;
                         break;
@@ -1800,17 +1795,13 @@ public class EventValidationService {
                 return result;
             }
             
-            List<LocalDate> colloquium1Weeks = getWeekDates(academicYear, semester, 4, 6);
-            List<LocalDate> colloquium2Weeks = getWeekDates(academicYear, semester, 7, 9);
-            List<LocalDate> retakeColloquiumWeeks = getWeekDates(academicYear, semester, 10, 12);
-            List<LocalDate> examWeeks = getWeekDates(academicYear, semester, 13, 15);
-            List<LocalDate> retakeExamWeeks = getWeekDates(academicYear, semester, 16, 18);
-            
+            List<LocalDate> colloquium1Weeks = getWeekDates(academicYear, semester, 5, 7);
+            List<LocalDate> colloquium2Weeks = getWeekDates(academicYear, semester, 9, 11);
+            List<LocalDate> retakeColloquiumWeeks = getWeekDates(academicYear, semester, 12, 14);
+
             int colloquium1Count = 0;
             int colloquium2Count = 0;
             int retakeColloquiumCount = 0;
-            int examCount = 0;
-            int retakeExamCount = 0;
             
             int weekdayColloquiums = 0;
             int saturdayColloquiums = 0;
@@ -1891,43 +1882,11 @@ public class EventValidationService {
             int weekday3 = weekdayColloquiums;
             int totalWeekday = weekday1 + weekday2 + weekday3;
             
-            System.out.println("PHASE 4: Scheduling Final Exams (Week 13-15)...\n");
-            for (Course course : semesterCourses) {
-                int professorId = findLectureProfessor(course.idCourse);
-                if (professorId == 0) continue;
-                
-                String resultMsg = scheduleExamForCourse(
-                    newScheduleId, course, professorId, examWeeks, 
-                    "FINAL_EXAM", failedList
-                );
-                
-                if (resultMsg.equals("OK")) {
-                    examCount++;
-                }
-            }
-            System.out.println("✓ Final Exams: " + examCount + " courses\n");
-            
-            System.out.println("PHASE 5: Scheduling Retake Exams (Week 16-18)...\n");
-            for (Course course : semesterCourses) {
-                int professorId = findLectureProfessor(course.idCourse);
-                if (professorId == 0) continue;
-                
-                String resultMsg = scheduleExamForCourse(
-                    newScheduleId, course, professorId, retakeExamWeeks, 
-                    "RETAKE_EXAM", failedList
-                );
-                
-                if (resultMsg.equals("OK")) {
-                    retakeExamCount++;
-                }
-            }
-            System.out.println("✓ Retake Exams: " + retakeExamCount + " courses\n");
-            
+        
             // ═══════════════════════════════════════════════════════════════
             // VALIDATION: Check if ANY weekday colloquiums were scheduled
             // ═══════════════════════════════════════════════════════════════
-            int totalEvents = colloquium1Count + colloquium2Count + retakeColloquiumCount + 
-                            examCount + retakeExamCount;
+            int totalEvents = colloquium1Count + colloquium2Count + retakeColloquiumCount;
             
             if (totalWeekday == 0 && (colloquium1Count + colloquium2Count + retakeColloquiumCount) > 0) {
                 result.success = false;
@@ -1959,8 +1918,6 @@ public class EventValidationService {
             summary.append(" • Colloquium 1: ").append(colloquium1Count).append("\n");
             summary.append(" • Colloquium 2: ").append(colloquium2Count).append("\n");
             summary.append(" • Retake Colloquiums: ").append(retakeColloquiumCount).append("\n");
-            summary.append(" • Final Exams: ").append(examCount).append("\n");
-            summary.append(" • Retake Exams: ").append(retakeExamCount).append("\n");
             summary.append(" • Total events: ").append(totalEvents).append("\n");
             summary.append(" • Weekday colloquiums: ").append(totalWeekday).append("\n");
             summary.append(" • Failed courses: ").append(failedList.size()).append("\n");
@@ -1990,11 +1947,6 @@ public class EventValidationService {
     }
 
 
-    /**
-     * Finds the locked schedule in database
-     * Returns schedule ID if found, null otherwise
-     */
-
     private Integer findLockedScheduleId() throws SQLException {
         String query = "SELECT DISTINCT schedule_id FROM academic_event " +
                     "WHERE locked_by_admin = TRUE AND schedule_id IS NOT NULL " +
@@ -2014,12 +1966,7 @@ public class EventValidationService {
 
 
 
-    
 
-
-    /**
-     * Gets all events for a specific schedule ID
-     */
     private List<AcademicEvent> getEventsByScheduleId(int scheduleIdFilter) throws SQLException {
     List<AcademicEvent> result = new ArrayList<>();
     String sql = "SELECT id, course_id, created_by_professor, type_enum, starts_at, ends_at, " +
@@ -2065,9 +2012,7 @@ public class EventValidationService {
 
 
 
-    /**
-     * Result tracking for scheduling (weekday vs Saturday)
-     */
+
     private static class SchedulingResult {
         boolean success;
         int weekdayCount;
@@ -2080,16 +2025,6 @@ public class EventValidationService {
         }
     }
 
-
-    /**
-     * Schedules colloquium during exercise time slots FROM LOCKED SCHEDULE
-     * Uses PROVIDED lockedEvents list as reference (not academicEvents cache)
-     */
-/**
- * Schedules colloquium during EXERCISE or LAB time slots FROM LOCKED SCHEDULE
- * PRIORITY: LAB classes first (if exist), then EXERCISE classes
- * Uses PROVIDED lockedEvents list as reference (not academicEvents cache)
- */
     private SchedulingResult scheduleColloquiumDuringExerciseTime(
         int scheduleId, 
         Course course, 
@@ -2100,15 +2035,12 @@ public class EventValidationService {
         List<AcademicEvent> lockedEvents
     ) {
         try {
-            // Find LAB and EXERCISE slots for this course FROM LOCKED SCHEDULE ONLY
-            List<AcademicEvent> labSlots = new ArrayList<>();
+            // Find EXERCISE slots for this course FROM LOCKED SCHEDULE ONLY
             List<AcademicEvent> exerciseSlots = new ArrayList<>();
             
             for (AcademicEvent event : lockedEvents) {
                 if (event.idCourse == course.idCourse) {
-                    if ("LAB".equals(event.typeEnum)) {
-                        labSlots.add(event);
-                    } else if ("EXERCISE".equals(event.typeEnum)) {
+                    if ("EXERCISE".equals(event.typeEnum) || "LAB".equals(event.typeEnum)) {
                         exerciseSlots.add(event);
                     }
                 }
@@ -2118,18 +2050,14 @@ public class EventValidationService {
             List<AcademicEvent> targetSlots;
             String slotType;
             
-            if (!labSlots.isEmpty()) {
-                targetSlots = labSlots;
-                slotType = "LAB";
-                System.out.println("  → " + course.name + ": Found " + labSlots.size() + " LAB groups in locked schedule");
-            } else if (!exerciseSlots.isEmpty()) {
+            if (!exerciseSlots.isEmpty()) {
                 targetSlots = exerciseSlots;
                 slotType = "EXERCISE";
                 System.out.println("  → " + course.name + ": Found " + exerciseSlots.size() + " EXERCISE groups in locked schedule");
             } else {
                 failedList.add(new FailedCourse(course.idCourse, course.name, 
-                    "No LAB or EXERCISE slots found in locked schedule", course.semester));
-                System.out.println("  ✗ " + course.name + ": No LAB/EXERCISE slots in locked schedule");
+                    "No EXERCISE slots found in locked schedule", course.semester));
+                System.out.println("  ✗ " + course.name + ": No EXERCISE slots in locked schedule");
                 return new SchedulingResult(false, 0, 0);
             }
             
@@ -2147,41 +2075,50 @@ public class EventValidationService {
                 LocalTime colloquiumEnd = slot.endTime;
                 boolean isSaturday = false;
                 
-                // PRIORITY 1: Try same day/time as LAB/EXERCISE in target week
+                // PRIORITY 1: Try same time as LAB/EXERCISE but ANY weekday in target week
                 for (LocalDate weekDate : availableWeeks) {
-                    DayOfWeek slotDayOfWeek = parseDayOfWeek(slot.day);
-                    LocalDate candidateDate = weekDate.with(TemporalAdjusters.nextOrSame(slotDayOfWeek));
+                    // Try Monday through Friday
+                    DayOfWeek[] daysOfWeek = new DayOfWeek[] { 
+                        DayOfWeek.MONDAY, DayOfWeek.TUESDAY, DayOfWeek.WEDNESDAY, 
+                        DayOfWeek.THURSDAY, DayOfWeek.FRIDAY 
+                    };
                     
-                    // Must be within week range
-                    if (!isDateInWeekRange(candidateDate, availableWeeks)) continue;
-                    if (isHoliday(candidateDate)) continue;
-                    if (candidateDate.getDayOfWeek() == DayOfWeek.SUNDAY) continue;
-                    if (countTestsInWeek(scheduleId, candidateDate) >= 2) continue;
-                    
-                    // Try same room as LAB/EXERCISE
-                    Room slotRoom = rooms.get(slot.idRoom);
-                    if (slotRoom != null && slotRoom.isActive) {
-                        if (!hasConflictForDateInSchedule(scheduleId, candidateDate, slotRoom.idRoom, 
-                                                        professorId, colloquiumStart, colloquiumEnd, 
-                                                        course.semester, 0)) {
-                            colloquiumDate = candidateDate;
-                            selectedRoom = slotRoom;
-                            System.out.println("    ✓ Group " + (groupIndex + 1) + ": Same time/room as " + slotType + " (" + slot.day + ")");
-                            break;
+                    for (DayOfWeek dow : daysOfWeek) {
+                        LocalDate candidateDate = weekDate.with(TemporalAdjusters.nextOrSame(dow));
+                        
+                        // Must be within week range
+                        if (!isDateInWeekRange(candidateDate, availableWeeks)) continue;
+                        if (isHoliday(candidateDate)) continue;
+                        if (candidateDate.getDayOfWeek() == DayOfWeek.SUNDAY) continue;
+                        if (countTestsInWeek(scheduleId, candidateDate) >= 2) continue;
+
+                        // Try same room as LAB/EXERCISE
+                        Room slotRoom = rooms.get(slot.idRoom);
+                        if (slotRoom != null && slotRoom.isActive) {
+                            if (!hasConflictForDateInSchedule(scheduleId, candidateDate, slotRoom.idRoom, 
+                                                            professorId, colloquiumStart, colloquiumEnd, 
+                                                            course.semester)) {
+                                colloquiumDate = candidateDate;
+                                selectedRoom = slotRoom;
+                                System.out.println("    ✓ Group " + (groupIndex + 1) + ": Same time/room as " + slotType + " on " + dow + " - " + colloquiumDate + " at " + colloquiumStart + " in room " + slotRoom.idRoom);
+                                break;
+                            }
                         }
-                    }
-                    
-                    // Try alternative room at same time
-                    List<Room> alternativeRooms = getSuitableRooms(false, 20);
-                    for (Room altRoom : alternativeRooms) {
-                        if (!hasConflictForDateInSchedule(scheduleId, candidateDate, altRoom.idRoom, 
-                                                        professorId, colloquiumStart, colloquiumEnd, 
-                                                        course.semester, 0)) {
-                            colloquiumDate = candidateDate;
-                            selectedRoom = altRoom;
-                            System.out.println("    ✓ Group " + (groupIndex + 1) + ": Same time, different room (" + slot.day + ")");
-                            break;
+                        
+                        // Try alternative room at same time
+                        List<Room> alternativeRooms = getSuitableRooms(false, 20);
+                        for (Room altRoom : alternativeRooms) {
+                            if (!hasConflictForDateInSchedule(scheduleId, candidateDate, altRoom.idRoom, 
+                                                            professorId, colloquiumStart, colloquiumEnd, 
+                                                            course.semester)) {
+                                colloquiumDate = candidateDate;
+                                selectedRoom = altRoom;
+                                System.out.println("    ✓ Group " + (groupIndex + 1) + ": Same time on " + dow + ", different room");
+                                break;
+                            }
                         }
+                        
+                        if (colloquiumDate != null) break;
                     }
                     
                     if (colloquiumDate != null) break;
@@ -2192,9 +2129,8 @@ public class EventValidationService {
                     System.out.println("    → Group " + (groupIndex + 1) + ": Trying other weekday slots...");
                     
                     for (LocalDate weekDate : availableWeeks) {
-                        for (DayOfWeek dow : new DayOfWeek[]{DayOfWeek.MONDAY, DayOfWeek.TUESDAY, 
-                                                            DayOfWeek.WEDNESDAY, DayOfWeek.THURSDAY, 
-                                                            DayOfWeek.FRIDAY}) {
+                        DayOfWeek[] daysOfWeek = new DayOfWeek[] { DayOfWeek.MONDAY, DayOfWeek.TUESDAY, DayOfWeek.WEDNESDAY, DayOfWeek.THURSDAY, DayOfWeek.FRIDAY };
+                        for (DayOfWeek dow : daysOfWeek) {
                             LocalDate candidateDate = weekDate.with(TemporalAdjusters.nextOrSame(dow));
                             
                             if (!isDateInWeekRange(candidateDate, availableWeeks)) continue;
@@ -2202,8 +2138,17 @@ public class EventValidationService {
                             if (countTestsInWeek(scheduleId, candidateDate) >= 2) continue;
                             
                             LocalTime[] timeSlots = {
-                                LocalTime.of(8, 0), LocalTime.of(10, 0), LocalTime.of(12, 0), 
-                                LocalTime.of(14, 0), LocalTime.of(16, 0)
+                                LocalTime.of(8, 0), LocalTime.of(8, 15), LocalTime.of(8, 30), LocalTime.of(8, 45),
+                                LocalTime.of(9, 0), LocalTime.of(9, 15), LocalTime.of(9, 30), LocalTime.of(9, 45),
+                                LocalTime.of(10, 0), LocalTime.of(10, 15), LocalTime.of(10, 30), LocalTime.of(10, 45),
+                                LocalTime.of(11, 0), LocalTime.of(11, 15), LocalTime.of(11, 30), LocalTime.of(11, 45),
+                                LocalTime.of(12, 0), LocalTime.of(12, 15), LocalTime.of(12, 30), LocalTime.of(12, 45),
+                                LocalTime.of(13, 0), LocalTime.of(13, 15), LocalTime.of(13, 30), LocalTime.of(13, 45),
+                                LocalTime.of(14, 0), LocalTime.of(14, 15), LocalTime.of(14, 30), LocalTime.of(14, 45),
+                                LocalTime.of(15, 0), LocalTime.of(15, 15), LocalTime.of(15, 30), LocalTime.of(15, 45),
+                                LocalTime.of(16, 0), LocalTime.of(16, 15), LocalTime.of(16, 30), LocalTime.of(16, 45),
+                                LocalTime.of(17, 0), LocalTime.of(17, 15), LocalTime.of(17, 30), LocalTime.of(17, 45),
+                                LocalTime.of(18, 0), LocalTime.of(18, 15), LocalTime.of(18, 30), LocalTime.of(18, 45)
                             };
                             
                             for (LocalTime start : timeSlots) {
@@ -2213,7 +2158,7 @@ public class EventValidationService {
                                 for (Room room : availableRooms) {
                                     if (!hasConflictForDateInSchedule(scheduleId, candidateDate, room.idRoom, 
                                                                     professorId, start, end, 
-                                                                    course.semester, 0)) {
+                                                                    course.semester)) {
                                         colloquiumDate = candidateDate;
                                         selectedRoom = room;
                                         colloquiumStart = start;
@@ -2244,7 +2189,7 @@ public class EventValidationService {
                         for (Room room : availableRooms) {
                             if (!hasConflictForDateInSchedule(scheduleId, saturday, room.idRoom, 
                                                             professorId, colloquiumStart, colloquiumEnd, 
-                                                            course.semester, 0)) {
+                                                            course.semester)) {
                                 colloquiumDate = saturday;
                                 selectedRoom = room;
                                 isSaturday = true;
@@ -2271,6 +2216,7 @@ public class EventValidationService {
                 saveColloquiumToDatabase(scheduleId, course.idCourse, professorId, dayName,
                                         startsAt, endsAt, selectedRoom.idRoom, colloquiumType, notes);
                 
+                // Count this group (but we'll only count it as 1 course overall)
                 successfullyScheduled++;
                 if (isSaturday) {
                     saturdayCount++;
@@ -2286,6 +2232,8 @@ public class EventValidationService {
                 return new SchedulingResult(false, 0, 0);
             }
             
+            // Return success=true for this COURSE (not per group)
+            // But preserve the actual weekday/saturday counts (which may be > 1 if multiple groups)
             return new SchedulingResult(true, weekdayCount, saturdayCount);
             
         } catch (Exception e) {
@@ -2295,21 +2243,14 @@ public class EventValidationService {
         }
     }
 
-
-
-
     private boolean isDateInWeekRange(LocalDate date, List<LocalDate> weekDates) {
         if (weekDates.isEmpty()) return false;
         
         LocalDate firstDate = weekDates.get(0);
         LocalDate lastDate = weekDates.get(weekDates.size() - 1);
-        
         return !date.isBefore(firstDate) && !date.isAfter(lastDate);
     }
 
-    /**
-     * Helper: Check if date is holiday
-     */
     private boolean isHoliday(LocalDate date) {
         for (Holiday holiday : holidays) {
             if (holiday.date.equals(date)) {
@@ -2319,9 +2260,7 @@ public class EventValidationService {
         return false;
     }
 
-    /**
-     * Counts number of tests/colloquiums already scheduled in a given week
-     */
+
     private int countTestsInWeek(int scheduleId, LocalDate date) {
         LocalDate weekStart = date.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
         LocalDate weekEnd = date.with(TemporalAdjusters.nextOrSame(DayOfWeek.SUNDAY));
@@ -2337,13 +2276,11 @@ public class EventValidationService {
                 }
             }
         }
+
         return count;
     }
 
 
-    /**
-     * Delete schedule (rollback on failure)
-     */
     private void deleteSchedule(int scheduleId) throws SQLException {
         String delete1 = "DELETE FROM academic_event WHERE schedule_id = ?";
         String delete2 = "DELETE FROM schedule WHERE id = ?";
@@ -2365,9 +2302,6 @@ public class EventValidationService {
 
 
 
-    /**
-     * Gets specific week date ranges for exam/colloquium scheduling
-     */
     private List<LocalDate> getWeekDates(int academicYear, int semester, int startWeek, int endWeek) {
         List<LocalDate> dates = new ArrayList<>();
         
@@ -2378,9 +2312,23 @@ public class EventValidationService {
         LocalDate weekStart = semStart.plusWeeks(startWeek - 1);
         LocalDate weekEnd = semStart.plusWeeks(endWeek);
         
+        // Define which days you want (1=Monday, 2=Tuesday, ..., 7=Sunday)
+        Set<DayOfWeek> targetDays = Set.of(
+            DayOfWeek.MONDAY,
+            DayOfWeek.TUESDAY,
+            DayOfWeek.WEDNESDAY,
+            DayOfWeek.THURSDAY,
+            DayOfWeek.FRIDAY,
+            DayOfWeek.SATURDAY,
+            DayOfWeek.SUNDAY
+        );
+        
         LocalDate current = weekStart;
         while (!current.isAfter(weekEnd)) {
-            dates.add(current);
+            if (targetDays.contains(current.getDayOfWeek())) {
+                dates.add(current);
+                System.out.println("We added this day: " + current);
+            }
             current = current.plusDays(1);
         }
         
@@ -2388,171 +2336,6 @@ public class EventValidationService {
     }
 
 
-    /**
-     * Schedules final exam or retake exam for a course
-     * Tries to find available slot in exam period weeks
-     */
-    private String scheduleExamForCourse(int scheduleId, Course course, int professorId, 
-            List<LocalDate> availableWeeks, String examType, List<FailedCourse> failedList) {
-        try {
-            // Get suitable exam rooms (prefer larger rooms)
-            List<Room> examRooms = getSuitableRooms(false, 40);
-            if (examRooms.isEmpty()) {
-                examRooms = getSuitableRooms(false, 30); // Fallback to smaller
-            }
-            
-            if (examRooms.isEmpty()) {
-                failedList.add(new FailedCourse(course.idCourse, course.name, 
-                    "No suitable exam rooms available", course.semester));
-                return "ERROR";
-            }
-            
-            // Exam duration: 2-3 hours
-            LocalTime[] startTimes = {
-                LocalTime.of(9, 0), LocalTime.of(12, 0), LocalTime.of(15, 0)
-            };
-            
-            // Try each week
-            for (LocalDate weekStart : availableWeeks) {
-                // Try weekdays (Mon-Fri)
-                for (DayOfWeek dow : new DayOfWeek[]{
-                    DayOfWeek.MONDAY, DayOfWeek.TUESDAY, DayOfWeek.WEDNESDAY, 
-                    DayOfWeek.THURSDAY, DayOfWeek.FRIDAY}) {
-                    
-                    LocalDate examDate = weekStart.with(TemporalAdjusters.nextOrSame(dow));
-                    
-                    // Skip if date not in week range
-                    if (!isDateInWeekRange(examDate, availableWeeks)) continue;
-                    
-                    // Skip holidays and Sundays
-                    if (isHoliday(examDate)) continue;
-                    if (examDate.getDayOfWeek() == DayOfWeek.SUNDAY) continue;
-                    
-                    // Try different time slots
-                    for (LocalTime startTime : startTimes) {
-                        LocalTime endTime = startTime.plusHours(3);
-                        
-                        // Try available rooms
-                        for (Room room : examRooms) {
-                            if (!hasConflictForDateInSchedule(scheduleId, examDate, 
-                                    room.idRoom, professorId, startTime, endTime, course.semester, 0)) {
-                                
-                                // Found available slot - save exam
-                                LocalDateTime startsAt = LocalDateTime.of(examDate, startTime);
-                                LocalDateTime endsAt = LocalDateTime.of(examDate, endTime);
-                                String dayName = getCroatianDayName(examDate.getDayOfWeek());
-                                
-                                saveExamToDatabase(scheduleId, course.idCourse, professorId, 
-                                    dayName, startsAt, endsAt, room.idRoom, examType);
-                                
-                                System.out.println("  ✓ " + course.name + ": " + examType + 
-                                    " scheduled on " + examDate + " at " + startTime);
-                                
-                                return "OK";
-                            }
-                        }
-                    }
-                }
-            }
-            
-            // If no weekday slot found, try Saturday as last resort
-            for (LocalDate weekStart : availableWeeks) {
-                LocalDate saturday = weekStart.with(TemporalAdjusters.nextOrSame(DayOfWeek.SATURDAY));
-                
-                if (isHoliday(saturday)) continue;
-                if (!isDateInWeekRange(saturday, availableWeeks)) continue;
-                
-                for (LocalTime startTime : startTimes) {
-                    LocalTime endTime = startTime.plusHours(3);
-                    
-                    for (Room room : examRooms) {
-                        if (!hasConflictForDateInSchedule(scheduleId, saturday, 
-                                room.idRoom, professorId, startTime, endTime, course.semester, 0)) {
-                            
-                            LocalDateTime startsAt = LocalDateTime.of(saturday, startTime);
-                            LocalDateTime endsAt = LocalDateTime.of(saturday, endTime);
-                            String dayName = getCroatianDayName(saturday.getDayOfWeek());
-                            
-                            saveExamToDatabase(scheduleId, course.idCourse, professorId, 
-                                dayName, startsAt, endsAt, room.idRoom, examType);
-                            
-                            System.out.println("  ⚠ " + course.name + ": " + examType + 
-                                " scheduled on Saturday " + saturday);
-                            
-                            return "OK";
-                        }
-                    }
-                }
-            }
-            
-            failedList.add(new FailedCourse(course.idCourse, course.name, 
-                "Could not find available exam slot", course.semester));
-            System.out.println("  ✗ " + course.name + ": Could not schedule " + examType);
-            return "ERROR";
-            
-        } catch (Exception e) {
-            failedList.add(new FailedCourse(course.idCourse, course.name, 
-                "Exception: " + e.getMessage(), course.semester));
-            return "ERROR";
-        }
-    }
-
-
-    /**
-     * Saves exam to database
-     */
-    private void saveExamToDatabase(int scheduleId, int courseId, int professorId, 
-            String day, LocalDateTime startsAt, LocalDateTime endsAt, int roomId, String examType) 
-            throws SQLException {
-        
-        String insert = "INSERT INTO academic_event (course_id, created_by_professor, type_enum, " +
-                    "starts_at, ends_at, room_id, ispublished, locked_by_admin, schedule_id, day) " +
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-        
-        try (PreparedStatement pstmt = conn.prepareStatement(insert, Statement.RETURN_GENERATED_KEYS)) {
-            pstmt.setInt(1, courseId);
-            pstmt.setLong(2, professorId);
-            pstmt.setString(3, examType);
-            pstmt.setTimestamp(4, Timestamp.valueOf(startsAt));
-            pstmt.setTimestamp(5, Timestamp.valueOf(endsAt));
-            pstmt.setInt(6, roomId);
-            pstmt.setBoolean(7, true);  // isPublished
-            pstmt.setBoolean(8, false); // lockedByAdmin
-            pstmt.setInt(9, scheduleId);
-            pstmt.setString(10, day);
-            
-            pstmt.executeUpdate();
-            
-            // Add to cache
-            try (ResultSet rs = pstmt.getGeneratedKeys()) {
-                if (rs.next()) {
-                    int id = rs.getInt(1);
-                    AcademicEvent newEvent = new AcademicEvent();
-                    newEvent.idAcademicEvent = id;
-                    newEvent.idCourse = courseId;
-                    newEvent.idRoom = roomId;
-                    newEvent.idProfessor = professorId;
-                    newEvent.typeEnum = examType;
-                    newEvent.date = startsAt.toLocalDate();
-                    newEvent.day = day;
-                    newEvent.startTime = startsAt.toLocalTime();
-                    newEvent.endTime = endsAt.toLocalTime();
-                    newEvent.startsAt = startsAt;
-                    newEvent.endsAt = endsAt;
-                    newEvent.scheduleId = scheduleId;
-                    academicEvents.put(newEvent.idAcademicEvent, newEvent);
-                }
-            }
-        }
-    }
-
-
-    /**
-     * Saves colloquium to database
-        */
-    /**
-     * Saves colloquium to database with notes
-     */
     private void saveColloquiumToDatabase(int scheduleId, int courseId, int professorId,
                                         String day, LocalDateTime startsAt, LocalDateTime endsAt,
                                         int roomId, String typeEnum, String notes) throws SQLException {
@@ -2592,15 +2375,11 @@ public class EventValidationService {
         }
     }
 
-    /**
-     * Checks for conflicts in specific schedule at specific date
-     * Used for exam/colloquium scheduling with date-based conflicts
-     */
-    private boolean hasConflictForDateInSchedule(int scheduleId, LocalDate date, 
-            int roomId, int professorId, LocalTime startTime, LocalTime endTime, int courseSemester, int idk) {
-        
+
+    private boolean hasConflictForDateInSchedule(int scheduleId, LocalDate date, int roomId, 
+                                                int professorId, LocalTime startTime, LocalTime endTime, 
+                                                int courseSemester) {
         for (AcademicEvent event : academicEvents.values()) {
-            
             // Only check events in SAME schedule
             if (event.scheduleId != scheduleId) continue;
             
@@ -2609,28 +2388,27 @@ public class EventValidationService {
             
             // Check time overlap
             if (event.startTime == null || event.endTime == null) continue;
+            
             boolean timeOverlap = startTime.isBefore(event.endTime) && endTime.isAfter(event.startTime);
             if (!timeOverlap) continue;
             
+            
             // Check room conflict
-            if (event.idRoom == roomId) {
-                return true;
-            }
+            if (event.idRoom == roomId) return true;
             
-            // Check professor conflict
-            if (event.idProfessor == professorId) {
-                return true;
-            }
+            // // Check professor conflict
+            // if (event.idProfessor == professorId) return true;
             
-            // Check semester conflict (students from same semester can't have overlapping events)
+            // Check semester conflict - students from same semester can't have overlapping events
             Course eventCourse = courses.get(event.idCourse);
             if (eventCourse != null && eventCourse.semester == courseSemester) {
                 return true;
             }
         }
         
-        return false;
+        return false; // No conflict
     }
+
 
     //endregion
 
@@ -3161,50 +2939,50 @@ public class EventValidationService {
     //     return hasConflictInSchedule(scheduleId, day, roomId, professorId, startTime, endTime, -1);
     // }
 
-    private boolean hasConflictForDateInSchedule(int scheduleId, LocalDate date, int roomId, int professorId,
-                                                 LocalTime startTime, LocalTime endTime, int courseSemester) {
-        for (AcademicEvent event : academicEvents.values()) {
-            if (event.scheduleId != scheduleId) {
-                continue;
-            }
+    // private boolean hasConflictForDateInSchedule(int scheduleId, LocalDate date, int roomId, int professorId,
+    //                                              LocalTime startTime, LocalTime endTime, int courseSemester) {
+    //     for (AcademicEvent event : academicEvents.values()) {
+    //         if (event.scheduleId != scheduleId) {
+    //             continue;
+    //         }
 
-            // Check timing conflict
-            boolean timeOverlap = false;
-            if (startTime != null && endTime != null && event.startTime != null && event.endTime != null) {
-                timeOverlap = startTime.isBefore(event.endTime) && endTime.isAfter(event.startTime);
-            }
-            if (!timeOverlap) continue;
+    //         // Check timing conflict
+    //         boolean timeOverlap = false;
+    //         if (startTime != null && endTime != null && event.startTime != null && event.endTime != null) {
+    //             timeOverlap = startTime.isBefore(event.endTime) && endTime.isAfter(event.startTime);
+    //         }
+    //         if (!timeOverlap) continue;
 
-            // Check date/day match
-            boolean conflictMatch = false;
+    //         // Check date/day match
+    //         boolean conflictMatch = false;
             
-            // If event is date-specific
-            if (event.date != null) {
-                if (event.date.equals(date)) {
-                    conflictMatch = true;
-                }
-            } 
-            // If event is recurring (no date, just day)
-            else if (event.day != null) {
-                 DayOfWeek eventDow = parseDayOfWeek(event.day);
-                 if (eventDow == date.getDayOfWeek()) {
-                     conflictMatch = true;
-                 }
-            }
+    //         // If event is date-specific
+    //         if (event.date != null) {
+    //             if (event.date.equals(date)) {
+    //                 conflictMatch = true;
+    //             }
+    //         } 
+    //         // If event is recurring (no date, just day)
+    //         else if (event.day != null) {
+    //              DayOfWeek eventDow = parseDayOfWeek(event.day);
+    //              if (eventDow == date.getDayOfWeek()) {
+    //                  conflictMatch = true;
+    //              }
+    //         }
 
-            if (conflictMatch) {
-                if (event.idRoom == roomId) return true;
-                if (event.idProfessor == professorId) return true;
+    //         if (conflictMatch) {
+    //             if (event.idRoom == roomId) return true;
+    //             if (event.idProfessor == professorId) return true;
                 
-                // Check semester conflict
-                Course eventCourse = courses.get(event.idCourse);
-                if (eventCourse != null && eventCourse.semester == courseSemester) {
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
+    //             // Check semester conflict
+    //             Course eventCourse = courses.get(event.idCourse);
+    //             if (eventCourse != null && eventCourse.semester == courseSemester) {
+    //                 return true;
+    //             }
+    //         }
+    //     }
+    //     return false;
+    // }
 
     private void addColloquiumToSchedule(int scheduleId, int courseId, int roomId, int professorId, 
                                         LocalDate date, LocalTime startTime, LocalTime endTime, String type) throws SQLException {
