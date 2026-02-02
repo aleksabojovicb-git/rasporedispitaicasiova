@@ -2615,7 +2615,7 @@ public class EventValidationService {
         }
 
         // ===== PHASE 4: EXAMS/COLLOQUIUMS =====
-        generateColloquiums(scheduleId, failedList);
+        // generateColloquiums(scheduleId, failedList);
 
         System.out.println("Total courses scheduled: " + totalScheduled);
         return scheduleId;

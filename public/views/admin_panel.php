@@ -89,7 +89,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'getschedule') {
             ];
         }
 
-        // Fetch EXAM events (raspored kolokvijuma) - Only for the first schedule in the set
+        // Fetch EXAM events (raspored kolokvijuma)
         $examScheduleId = $scheduleIds[0] ?? 0;
         $examStmt = $pdo->prepare("
             SELECT 
@@ -97,42 +97,134 @@ if (isset($_GET['action']) && $_GET['action'] === 'getschedule') {
                 ae.starts_at,
                 ae.ends_at,
                 c.name AS coursename,
-                r.code AS roomcode
+                r.code AS roomcode,
+                ae.type_enum,
+                c.semester
             FROM academic_event ae
             JOIN course c ON ae.course_id = c.id
             LEFT JOIN room r ON ae.room_id = r.id
-            WHERE ae.type_enum IN ('EXAM', 'COLLOQUIUM')
-              AND ae.schedule_id = ?
-            ORDER BY ae.starts_at
+            WHERE (ae.type_enum IN ('EXAM', 'COLLOQUIUM') AND ae.schedule_id = ?)
+               OR ae.type_enum IN ('COLLOQUIUM_1', 'COLLOQUIUM_2')
+            ORDER BY ae.starts_at ASC
         ");
         $examStmt->execute([$examScheduleId]);
         $examRows = $examStmt->fetchAll(PDO::FETCH_ASSOC);
 
         $data['exams'] = [];
         foreach ($examRows as $row) {
-            // Day for exam might be 'Subota' which is not int
-            // Frontend might expect int day (1-5) or handle string?
-            // buildSimpleScheduleTable uses `ev.day` directly?
-            // Let's check frontend logic later. For now pass raw or convert.
-            // If the Java code sets day='Subota', frontend might fail if it expects int.
-            
-            $d = $row['day']; // "Subota"
-            // If current frontend expects 1..5, we might have issue.
-            // But let's pass it.
-            
             $data['exams'][] = [
-                'day'    => $d,
+                'day'    => $row['day'],
                 'start'  => substr($row['starts_at'], 11, 5),
                 'end'    => substr($row['ends_at'],   11, 5),
                 'course' => $row['coursename'],
                 'room'   => $row['roomcode'],
-                'date'   => substr($row['starts_at'], 0, 10) // Adding date for display
+                'date'   => substr($row['starts_at'], 0, 10),
+                'type'   => $row['type_enum'],
+                'semester' => (int)$row['semester']
             ];
         }
 
         echo json_encode($data, JSON_UNESCAPED_UNICODE);
     } catch (PDOException $e) {
         echo json_encode(['error' => 'Greška pri čitanju rasporeda: ' . $e->getMessage()]);
+    }
+    exit;
+}
+
+if (isset($_GET['action']) && $_GET['action'] === 'generatecolloquiums') {
+    // Očisti sve output buffere da osiguramo čist JSON
+    while (ob_get_level()) {
+        ob_end_clean();
+    }
+    
+    header('Content-Type: application/json; charset=utf-8');
+    
+    // Provera da li je korisnik ADMIN
+    if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'ADMIN') {
+        echo json_encode(['status' => 'error', 'message' => 'Nemate dozvolu za ovu akciju.']);
+        exit;
+    }
+
+    try {
+        // Postavi working directory na root projekta
+        $projectRoot = dirname(__DIR__, 2);
+        if (!is_dir($projectRoot)) {
+            echo json_encode(['status' => 'error', 'message' => 'Root direktorijum projekta nije pronađen.']);
+            exit;
+        }
+        chdir($projectRoot);
+        
+        // Putanja do Java fajlova
+        $javaDir = $projectRoot . DIRECTORY_SEPARATOR . 'public' . DIRECTORY_SEPARATOR . 'java';
+        $jarFile = $javaDir . DIRECTORY_SEPARATOR . 'postgresql-42.7.8.jar';
+        
+        // Provera da li Java fajlovi postoje
+        if (!file_exists($javaDir . DIRECTORY_SEPARATOR . 'ValidacijaTermina.class')) {
+            echo json_encode(['status' => 'error', 'message' => 'Java klasa ValidacijaTermina nije pronađena u: ' . $javaDir]);
+            exit;
+        }
+        
+        if (!file_exists($jarFile)) {
+            echo json_encode(['status' => 'error', 'message' => 'PostgreSQL JDBC driver nije pronađen: ' . $jarFile]);
+            exit;
+        }
+        
+        // Formiranje Java komande
+        $separator = (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') ? ';' : ':';
+        $classpath = $javaDir . $separator . $jarFile;
+        
+        // Komanda za pokretanje Java programa - akcija generisiKolokvijume
+        $command = sprintf(
+            'java -cp "%s" ValidacijaTermina generisiKolokvijume 2>&1',
+            $classpath
+        );
+        
+        // Izvršavanje komande i hvatanje output-a
+        $outputString = shell_exec($command);
+        
+        // Ako shell_exec vrati null, pokušaj sa exec
+        if ($outputString === null) {
+            $output = [];
+            $returnCode = 0;
+            exec($command, $output, $returnCode);
+            $outputString = implode("\n", $output);
+        }
+        
+       // Funkcija za očišćavanje UTF-8 stringa
+       /* Already defined inside current file scope if in same execution, 
+          but here cleanUtf8 is locally defined inside the if block of generateschedule 
+          so proper way is to define it once or redefine safely?
+          Actually, PHP functions are global if not in namespace/class.
+          Wait, function cleanUtf8 inside an IF block is conditionally defined.
+          I should check provided context. The previous cleanUtf8 was inside `if (isset($_GET['action']) && $_GET['action'] === 'generateschedule')`.
+          If I am here, that block didn't run. So I should define it or reuse it if defined.
+          Safest is to check `function_exists`.
+       */
+       if (!function_exists('cleanUtf8')) {
+            function cleanUtf8($string) {
+                if (!mb_check_encoding($string, 'UTF-8')) {
+                    $string = mb_convert_encoding($string, 'UTF-8', mb_detect_encoding($string, 'UTF-8, ISO-8859-1, Windows-1252', true));
+                }
+                $string = mb_convert_encoding($string, 'UTF-8', 'UTF-8');
+                $string = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/u', '', $string);
+                return $string;
+            }
+       }
+        
+        $outputString = cleanUtf8($outputString ?? '');
+        
+        // Parsiranje output-a
+        $isSuccess = true; // Pretpostavljamo uspeh za kolokvijume osim ako ne vrati gresku
+        $message = trim($outputString);
+         
+        // Formatiranje poruke ako je JSON ili raw text
+        $message = str_replace(["\r", "\n"], " ", $message);
+        $message = preg_replace('/\s+/', ' ', $message);
+        
+        echo json_encode(['status' => 'success', 'message' => $message, 'output' => $outputString], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        
+    } catch (Exception $e) {
+        echo json_encode(['status' => 'error', 'message' => 'Greška: ' . $e->getMessage()]);
     }
     exit;
 }
@@ -1649,7 +1741,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         echo "<p>Odaberite opciju ispod da generišete raspored časova:</p>";
 
                    echo "<button id='generate-schedule' class='option-button'>Generiši raspored časova</button>";
+                   echo "<button id='generate-colloquiums' class='option-button' style='margin-left: 10px; background-color: #9333ea;'>Generiši kolokvijume</button>";
                     echo "<div id='schedule-status' style='margin-top:20px; display:none'></div>";
+
+                    // Colloquium Section
+                    echo "
+                    <div id='colloquium-section' style='display:none; margin-top:30px; border-top: 1px solid #444; padding-top: 20px;'>
+                        <h3 style='color: #ecc94b; margin-bottom: 15px;'>Raspored Kolokvijuma</h3>
+                        
+                        <div style='display:flex; gap: 20px; margin-bottom: 20px; flex-wrap: wrap;'>
+                            <div>
+                                <label style='display:block; margin-bottom:5px; color:#aaa;'>Tip Kolokvijuma:</label>
+                                <select id='coll-type-select' class='form-control' style='width: 200px; background: #333; color: white; border: 1px solid #555; padding: 8px; border-radius: 4px;'>
+                                    <option value='COLLOQUIUM_1'>Kolokvijum 1</option>
+                                    <option value='COLLOQUIUM_2'>Kolokvijum 2</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label style='display:block; margin-bottom:5px; color:#aaa;'>Semestar:</label>
+                                <select id='coll-sem-select' class='form-control' style='width: 200px; background: #333; color: white; border: 1px solid #555; padding: 8px; border-radius: 4px;'>
+                                    <option value='1'>Semestar 1</option>
+                                    <option value='2'>Semestar 2</option>
+                                    <option value='3'>Semestar 3</option>
+                                    <option value='4'>Semestar 4</option>
+                                    <option value='5'>Semestar 5</option>
+                                    <option value='6'>Semestar 6</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <div id='colloquium-container'></div>
+                    </div>
+                    ";
+
                     echo "<div id='schedule-container' style='margin-top:20px; display:none'></div>";
 
     ?>
@@ -1665,6 +1789,24 @@ const days = ['Ponedjeljak', 'Utorak', 'Srijeda', 'Četvrtak', 'Petak'];
 function renderScheduleData(data) {
     const statusDiv = document.getElementById('schedule-status');
     const container = document.getElementById('schedule-container');
+    const colSection = document.getElementById('colloquium-section');
+
+    // Store exams for filtering
+    window.allExams = data.exams || [];
+    
+    // Check for Colloquiums
+    const hasColloquiums = window.allExams.some(e => 
+        e.type === 'COLLOQUIUM_1' || e.type === 'COLLOQUIUM_2'
+    );
+    
+    if (colSection) {
+        if (hasColloquiums) {
+            colSection.style.display = 'block';
+            if (typeof renderColloquiums === 'function') renderColloquiums();
+        } else {
+            colSection.style.display = 'none';
+        }
+    }
 
     // clear previous
     container.innerHTML = '';
@@ -2781,6 +2923,179 @@ document.getElementById('generate-schedule').addEventListener('click', async () 
 
                             doc.save(`raspored_semestar_${semester}.pdf`);
                         }
+                    </script>
+                    <script>
+                        document.getElementById('generate-colloquiums').addEventListener('click', async () => {
+                            const button = document.getElementById('generate-colloquiums');
+                            const statusDiv = document.getElementById('schedule-status');
+                            const container = document.getElementById('schedule-container');
+
+                            // if(!confirm("Da li ste sigurni da želite generisati kolokvijume?")) return;
+
+                            button.disabled = true;
+                            const originalText = button.textContent;
+                            button.textContent = 'Generiše se...';
+
+                            statusDiv.style.display = 'block';
+                            statusDiv.innerHTML = '<p style="color: #9333ea;">Generisanje kolokvijuma u toku, molimo sačekajte...</p>';
+
+                            try {
+                                const res = await fetch('admin_panel.php?action=generatecolloquiums');
+                                if (!res.ok) throw new Error('HTTP error ' + res.status);
+                                
+                                const text = await res.text();
+                                let data;
+                                try {
+                                    data = JSON.parse(text);
+                                } catch(e) {
+                                    throw new Error('Invalid JSON: ' + text.substring(0, 100));
+                                }
+                                
+                                if (data.status === 'error') {
+                                    statusDiv.innerHTML = '<p style="color: #ef4444; padding: 12px; background: rgba(239, 68, 68, 0.1); border-radius: 8px; border: 1px solid #ef4444;">Greška: ' + data.message + '</p>';
+                                } else {
+                                    statusDiv.innerHTML = '<p style="color: #22c55e; padding: 12px; background: rgba(34, 197, 94, 0.1); border-radius: 8px; border: 1px solid #22c55e;">✓ ' + data.message + '</p>';
+                                    
+                                    // Refresh schedule
+                                    const schedRes = await fetch('admin_panel.php?action=getschedule');
+                                    const schedData = await schedRes.json();
+                                    if (schedData.error) {
+                                        statusDiv.innerHTML += '<p style="color: #ef4444;">Greška pri učitavanju rasporeda: ' + schedData.error + '</p>';
+                                    } else {
+                                        container.style.display = 'block';
+                                        if (typeof renderScheduleData === 'function') {
+                                            renderScheduleData(schedData);
+                                        } else {
+                                            console.error('renderScheduleData function not found');
+                                        }
+                                    }
+                                }
+                            } catch (e) {
+                                statusDiv.innerHTML = '<p style="color: #ef4444; padding: 12px; background: rgba(239, 68, 68, 0.1); border-radius: 8px; border: 1px solid #ef4444;">Greška: ' + e.message + '</p>';
+                                console.error(e);
+                            } finally {
+                                button.disabled = false;
+                                button.textContent = originalText;
+                            }
+                        });
+
+                        // COLLOQUIUM RENDERING LOGIC
+                        function renderColloquiums() {
+                            const container = document.getElementById('colloquium-container');
+                            const typeSelect = document.getElementById('coll-type-select');
+                            const semSelect = document.getElementById('coll-sem-select');
+                            
+                            if (!container || !window.allExams || !typeSelect || !semSelect) return;
+                            
+                            const type = typeSelect.value;
+                            const sem = parseInt(semSelect.value);
+                            
+                            // Filter events
+                            const filtered = window.allExams.filter(e => e.type === type && e.semester === sem);
+                            
+                            container.innerHTML = '';
+                            
+                            if (filtered.length === 0) {
+                                container.innerHTML = '<p style="color:#aaa; text-align:center; padding:20px;">Nema pronađenih kolokvijuma za odabrane kriterijume.</p>';
+                                return;
+                            }
+                            
+                            // Group by Week
+                            const getMonday = (d) => {
+                                d = new Date(d);
+                                const day = d.getDay(), diff = d.getDate() - day + (day == 0 ? -6:1);
+                                const m = new Date(d.setDate(diff));
+                                return m.toISOString().slice(0,10);
+                            };
+                            
+                            const groups = {};
+                            filtered.forEach(ev => {
+                                const mon = getMonday(ev.date);
+                                if (!groups[mon]) groups[mon] = [];
+                                groups[mon].push(ev);
+                            });
+                            
+                            const sortedWeeks = Object.keys(groups).sort();
+                            
+                            sortedWeeks.forEach((weekStart, idx) => {
+                                const events = groups[weekStart];
+                                const weekDiv = document.createElement('div');
+                                weekDiv.className = 'semester-wrapper';
+                                weekDiv.style.marginBottom = '30px';
+                                // Gold border override
+                                weekDiv.style.border = '2px solid #ecc94b'; 
+                                weekDiv.style.padding = '15px';
+                                weekDiv.style.borderRadius = '8px';
+                                weekDiv.style.background = '#1a1a1a';
+                                
+                                const h4 = document.createElement('h3');
+                                h4.style.textAlign = 'center';
+                                h4.style.color = '#ecc94b';
+                                h4.style.marginBottom = '15px';
+                                h4.innerHTML = `Sedmica ${idx+1} <small style='color:#ccc; font-weight:normal; font-size:0.7em;'>(Početak sedmice: ${weekStart})</small>`;
+                                weekDiv.appendChild(h4);
+                                
+                                // Build Grid Table
+                                const table = document.createElement('table');
+                                table.className = 'schedule-table';
+                                table.style.width = '100%';
+                                table.style.borderCollapse = 'collapse';
+                                
+                                // Header
+                                const thead = document.createElement('thead');
+                                const trH = document.createElement('tr');
+                                ['Vrijeme', 'Ponedjeljak', 'Utorak', 'Srijeda', 'Četvrtak', 'Petak', 'Subota'].forEach(h => {
+                                    const th = document.createElement('th');
+                                    th.textContent = h;
+                                    th.style.borderBottom = '1px solid #ecc94b';
+                                    trH.appendChild(th);
+                                });
+                                thead.appendChild(trH);
+                                table.appendChild(thead);
+                                
+                                // Body
+                                const tbody = document.createElement('tbody');
+                                // Get unique time slots for this week
+                                const slots = Array.from(new Set(events.map(e => e.start + '-' + e.end))).sort();
+                                
+                                slots.forEach(slot => {
+                                    const tr = document.createElement('tr');
+                                    const tdTime = document.createElement('td');
+                                    tdTime.textContent = slot;
+                                    tdTime.classList.add('no-drag');
+                                    tr.appendChild(tdTime);
+                                    
+                                    const getDayIdx = (dayStr) => {
+                                        const map = {'Ponedjeljak':1, 'Utorak':2, 'Srijeda':3, 'Četvrtak':4, 'Petak':5, 'Subota':6, 'Nedjelja':7};
+                                        return map[dayStr] || 0;
+                                    };
+                                    
+                                    for(let d=1; d<=6; d++) {
+                                        const td = document.createElement('td');
+                                        const cellEvs = events.filter(e => getDayIdx(e.day) === d && (e.start + '-' + e.end) === slot);
+                                        
+                                        if (cellEvs.length > 0) {
+                                            td.innerHTML = cellEvs.map(e => `<strong style="color:#ecc94b">${e.course}</strong><br>(${e.room})`).join('<br>'); // Highlight course
+                                            // Make cell border subtle but distinct
+                                            td.style.border = '1px solid #444'; 
+                                        }
+                                        tr.appendChild(td);
+                                    }
+                                    tbody.appendChild(tr);
+                                });
+                                
+                                table.appendChild(tbody);
+                                weekDiv.appendChild(table);
+                                container.appendChild(weekDiv);
+                            });
+                        }
+                        
+                        document.addEventListener('DOMContentLoaded', () => {
+                            const cType = document.getElementById('coll-type-select');
+                            const cSem = document.getElementById('coll-sem-select');
+                            if(cType) cType.addEventListener('change', renderColloquiums);
+                            if(cSem) cSem.addEventListener('change', renderColloquiums);
+                        });
                     </script>
                     <?php 
                     break; 

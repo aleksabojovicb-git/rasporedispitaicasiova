@@ -131,6 +131,10 @@ public class ValidacijaTermina {
                 ScheduleResult scheduleResult = service.generateSixSchedulesWithDifferentPriorities();
                 rezultat = scheduleResult.message;
 
+            } else if (akcija.equals("generisiKolokvijume")) {
+                ColloquiumService colService = new ColloquiumService();
+                rezultat = colService.generateColloquiums();
+
             } else {
                 System.out.println("GRESKA: Nepoznata akcija");
                 System.out.println("Dostupne akcije:");
