@@ -2113,6 +2113,7 @@ public class EventValidationService {
                         // Ovdje prekida kod error glitch fix
                         // Kolokvijumi sa vise grupa se dodaju kao dupli
                         int colloquiumsThisWeek = countTestsInWeek(scheduleId, candidateDate, course);
+                        System.out.println(" There's " + colloquiumsThisWeek + " quolloquiums ");
                         if (colloquiumsThisWeek >= 2) continue;
                         // Try same room as LAB/EXERCISE
                         Room slotRoom = rooms.get(slot.idRoom);
@@ -2292,11 +2293,12 @@ public class EventValidationService {
         
         int count = 0;
         List<Integer> couresIds = new ArrayList<Integer>();
+        
         for (AcademicEvent event : academicEvents.values()) {
             if (event.scheduleId == scheduleId && event.date != null) {
                 if (!event.date.isBefore(weekStart) && !event.date.isAfter(weekEnd)) {
                     if (event.typeEnum != null && (event.typeEnum.contains("COLLOQUIUM") || event.typeEnum.contains("EXAM"))) {
-
+                        if(event.idCourse == course.idCourse) continue;
                         if(couresIds.contains(event.idCourse)) continue;
                         couresIds.add(event.idCourse);
                         count++;                                  
