@@ -1741,12 +1741,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         echo "<p>Odaberite opciju ispod da generišete raspored časova:</p>";
 
                    echo "<button id='generate-schedule' class='option-button'>Generiši raspored časova</button>";
-                   echo "<button id='generate-colloquiums' class='option-button' style='margin-left: 10px; background-color: #9333ea;'>Generiši kolokvijume</button>";
+                   echo "<button id='generate-colloquiums' class='option-button' style='display:none; margin-left: 10px; background-color: #9333ea;'>Generiši kolokvijume</button>";
                     echo "<div id='schedule-status' style='margin-top:20px; display:none'></div>";
 
-                    // Colloquium Section
+                    // Colloquium Section (HIDDEN)
                     echo "
-                    <div id='colloquium-section' style='display:none; margin-top:30px; border-top: 1px solid #444; padding-top: 20px;'>
+                    <div id='colloquium-section' style='display:none !important; margin-top:30px; border-top: 1px solid #444; padding-top: 20px;'>
                         <h3 style='color: #ecc94b; margin-bottom: 15px;'>Raspored Kolokvijuma</h3>
                         
                         <div style='display:flex; gap: 20px; margin-bottom: 20px; flex-wrap: wrap;'>
@@ -1799,6 +1799,8 @@ function renderScheduleData(data) {
         e.type === 'COLLOQUIUM_1' || e.type === 'COLLOQUIUM_2'
     );
     
+    // HIDDEN: Colloquium section display logic disabled
+    /*
     if (colSection) {
         if (hasColloquiums) {
             colSection.style.display = 'block';
@@ -1807,6 +1809,7 @@ function renderScheduleData(data) {
             colSection.style.display = 'none';
         }
     }
+    */
 
     // clear previous
     container.innerHTML = '';
