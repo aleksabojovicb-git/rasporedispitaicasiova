@@ -1704,7 +1704,6 @@ public class EventValidationService {
         }
     }
 
-
     public ScheduleResult generateColloquiumScheduleForLockedCourses(int academicYear, int semester) {
         ScheduleResult result = new ScheduleResult();
         
@@ -1806,8 +1805,11 @@ public class EventValidationService {
             int weekdayColloquiums = 0;
             int saturdayColloquiums = 0;
             
-            System.out.println("PHASE 1: Scheduling Colloquium 1 (Week 4-6)...\n");
+            System.out.println("PHASE 1: Scheduling Colloquium 1 (Week 5-7)...\n");
+            
+           List<Course> semesterCoursesAdded = new ArrayList<>();
 
+            
             // fix this
             for (Course course : semesterCourses) {
                 if (course.colloquium1Week != null && course.colloquium1Week > 0) {
@@ -1818,9 +1820,15 @@ public class EventValidationService {
                         newScheduleId, course, professorId, colloquium1Weeks, 
                         "COLLOQUIUM_1", failedList, lockedEvents
                     );
+
+                    
+
                     
                     if (schedResult.success) {
-                        colloquium1Count++;
+                        if (!semesterCoursesAdded.contains(course)) {
+                            semesterCoursesAdded.add(course);
+                            colloquium1Count++;
+                        }
                         weekdayColloquiums += schedResult.weekdayCount;
                         saturdayColloquiums += schedResult.saturdayCount;
                     }
@@ -1835,7 +1843,8 @@ public class EventValidationService {
             weekdayColloquiums = 0;
             saturdayColloquiums = 0;
             
-            System.out.println("PHASE 2: Scheduling Colloquium 2 (Week 7-9)...\n");
+            semesterCoursesAdded.clear();
+            System.out.println("PHASE 2: Scheduling Colloquium 2 (Week 9-11)...\n");
             for (Course course : semesterCourses) {
                 if (course.colloquium2Week != null && course.colloquium2Week > 0) {
                     int professorId = findLectureProfessor(course.idCourse);
@@ -1847,7 +1856,10 @@ public class EventValidationService {
                     );
                     
                     if (schedResult.success) {
-                        colloquium2Count++;
+                        if (!semesterCoursesAdded.contains(course)) {
+                            semesterCoursesAdded.add(course);
+                            colloquium2Count++;
+                        }
                         weekdayColloquiums += schedResult.weekdayCount;
                         saturdayColloquiums += schedResult.saturdayCount;
                     }
@@ -1860,7 +1872,8 @@ public class EventValidationService {
             weekdayColloquiums = 0;
             saturdayColloquiums = 0;
             
-            System.out.println("PHASE 3: Scheduling Retake Colloquiums (Week 10-12)...\n");
+            semesterCoursesAdded.clear();
+            System.out.println("PHASE 3: Scheduling Retake Colloquiums (Week 12-14)...\n");
             for (Course course : semesterCourses) {
                 int professorId = findLectureProfessor(course.idCourse);
                 if (professorId == 0) continue;
@@ -1871,9 +1884,13 @@ public class EventValidationService {
                 );
                 
                 if (schedResult.success) {
-                    retakeColloquiumCount++;
+                    if (!semesterCoursesAdded.contains(course)) {
+                        semesterCoursesAdded.add(course);
+                        retakeColloquiumCount++;
+                    }
                     weekdayColloquiums += schedResult.weekdayCount;
                     saturdayColloquiums += schedResult.saturdayCount;
+                        
                 }
             }
             System.out.println("✓ Retake Colloquiums: " + retakeColloquiumCount + " courses (" + 
@@ -2017,11 +2034,13 @@ public class EventValidationService {
         boolean success;
         int weekdayCount;
         int saturdayCount;
+        Boolean moreThanOneGroup;
         
-        SchedulingResult(boolean success, int weekday, int saturday) {
+        SchedulingResult(boolean success, int weekday, int saturday, Boolean state) {
             this.success = success;
             this.weekdayCount = weekday;
             this.saturdayCount = saturday;
+            moreThanOneGroup = state;
         }
     }
 
@@ -2058,13 +2077,13 @@ public class EventValidationService {
                 failedList.add(new FailedCourse(course.idCourse, course.name, 
                     "No EXERCISE slots found in locked schedule", course.semester));
                 System.out.println("  ✗ " + course.name + ": No EXERCISE slots in locked schedule");
-                return new SchedulingResult(false, 0, 0);
+                return new SchedulingResult(false, 0, 0, true);
             }
             
             int successfullyScheduled = 0;
             int weekdayCount = 0;
             int saturdayCount = 0;
-            
+            Boolean alreadyAdded = false;
             // For each LAB/EXERCISE group, schedule colloquium at same time
             for (int groupIndex = 0; groupIndex < targetSlots.size(); groupIndex++) {
                 AcademicEvent slot = targetSlots.get(groupIndex);
@@ -2086,21 +2105,25 @@ public class EventValidationService {
                     for (DayOfWeek dow : daysOfWeek) {
                         LocalDate candidateDate = weekDate.with(TemporalAdjusters.nextOrSame(dow));
                         
-                        // Must be within week range
+                        // Must be within week range.
                         if (!isDateInWeekRange(candidateDate, availableWeeks)) continue;
                         if (isHoliday(candidateDate)) continue;
                         if (candidateDate.getDayOfWeek() == DayOfWeek.SUNDAY) continue;
-                        if (countTestsInWeek(scheduleId, candidateDate) >= 2) continue;
 
+                        // Ovdje prekida kod error glitch fix
+                        // Kolokvijumi sa vise grupa se dodaju kao dupli
+                        int colloquiumsThisWeek = countTestsInWeek(scheduleId, candidateDate, course);
+                        System.out.println(" There's " + colloquiumsThisWeek + " quolloquiums ");
+                        if (colloquiumsThisWeek >= 2) continue;
                         // Try same room as LAB/EXERCISE
                         Room slotRoom = rooms.get(slot.idRoom);
                         if (slotRoom != null && slotRoom.isActive) {
-                            if (!hasConflictForDateInSchedule(scheduleId, candidateDate, slotRoom.idRoom, 
-                                                            professorId, colloquiumStart, colloquiumEnd, 
-                                                            course.semester)) {
+                            if (!hasConflictForDateInSchedule(scheduleId, candidateDate, slotRoom.idRoom, professorId, colloquiumStart, colloquiumEnd, course))
+                            {
                                 colloquiumDate = candidateDate;
                                 selectedRoom = slotRoom;
-                                System.out.println("    ✓ Group " + (groupIndex + 1) + ": Same time/room as " + slotType + " on " + dow + " - " + colloquiumDate + " at " + colloquiumStart + " in room " + slotRoom.idRoom);
+            
+                                System.out.println("    ✓ Group " + (groupIndex + 1) + ": Same time/room as " + slotType + " on " + dow + " - " + colloquiumDate + " at " + colloquiumStart + " in room " + slotRoom.idRoom + " with course id: " + course.idCourse);
                                 break;
                             }
                         }
@@ -2110,7 +2133,7 @@ public class EventValidationService {
                         for (Room altRoom : alternativeRooms) {
                             if (!hasConflictForDateInSchedule(scheduleId, candidateDate, altRoom.idRoom, 
                                                             professorId, colloquiumStart, colloquiumEnd, 
-                                                            course.semester)) {
+                                                            course)) {
                                 colloquiumDate = candidateDate;
                                 selectedRoom = altRoom;
                                 System.out.println("    ✓ Group " + (groupIndex + 1) + ": Same time on " + dow + ", different room");
@@ -2135,7 +2158,7 @@ public class EventValidationService {
                             
                             if (!isDateInWeekRange(candidateDate, availableWeeks)) continue;
                             if (isHoliday(candidateDate)) continue;
-                            if (countTestsInWeek(scheduleId, candidateDate) >= 2) continue;
+                            if (countTestsInWeek(scheduleId, candidateDate, course) >= 2) continue;
                             
                             LocalTime[] timeSlots = {
                                 LocalTime.of(8, 0), LocalTime.of(8, 15), LocalTime.of(8, 30), LocalTime.of(8, 45),
@@ -2158,7 +2181,7 @@ public class EventValidationService {
                                 for (Room room : availableRooms) {
                                     if (!hasConflictForDateInSchedule(scheduleId, candidateDate, room.idRoom, 
                                                                     professorId, start, end, 
-                                                                    course.semester)) {
+                                                                    course)) {
                                         colloquiumDate = candidateDate;
                                         selectedRoom = room;
                                         colloquiumStart = start;
@@ -2183,13 +2206,13 @@ public class EventValidationService {
                         LocalDate saturday = weekDate.with(TemporalAdjusters.nextOrSame(DayOfWeek.SATURDAY));
                         
                         if (isHoliday(saturday)) continue;
-                        if (countTestsInWeek(scheduleId, saturday) >= 2) continue;
+                        if (countTestsInWeek(scheduleId, saturday, course) >= 2) continue;
                         
                         List<Room> availableRooms = getSuitableRooms(false, 20);
                         for (Room room : availableRooms) {
                             if (!hasConflictForDateInSchedule(scheduleId, saturday, room.idRoom, 
                                                             professorId, colloquiumStart, colloquiumEnd, 
-                                                            course.semester)) {
+                                                            course)) {
                                 colloquiumDate = saturday;
                                 selectedRoom = room;
                                 isSaturday = true;
@@ -2217,6 +2240,9 @@ public class EventValidationService {
                                         startsAt, endsAt, selectedRoom.idRoom, colloquiumType, notes);
                 
                 // Count this group (but we'll only count it as 1 course overall)
+                if(!alreadyAdded){
+                    alreadyAdded = true;
+                }
                 successfullyScheduled++;
                 if (isSaturday) {
                     saturdayCount++;
@@ -2229,17 +2255,17 @@ public class EventValidationService {
             if (successfullyScheduled == 0) {
                 failedList.add(new FailedCourse(course.idCourse, course.name, 
                     "Could not schedule any colloquium groups", course.semester));
-                return new SchedulingResult(false, 0, 0);
+                return new SchedulingResult(false, 0, 0, true);
             }
             
             // Return success=true for this COURSE (not per group)
             // But preserve the actual weekday/saturday counts (which may be > 1 if multiple groups)
-            return new SchedulingResult(true, weekdayCount, saturdayCount);
+            return new SchedulingResult(true, weekdayCount, saturdayCount, true);
             
         } catch (Exception e) {
             failedList.add(new FailedCourse(course.idCourse, course.name, 
                 "Exception: " + e.getMessage(), course.semester));
-            return new SchedulingResult(false, 0, 0);
+            return new SchedulingResult(false, 0, 0, false);
         }
     }
 
@@ -2261,24 +2287,28 @@ public class EventValidationService {
     }
 
 
-    private int countTestsInWeek(int scheduleId, LocalDate date) {
+    private int countTestsInWeek(int scheduleId, LocalDate date, Course course) {
         LocalDate weekStart = date.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
         LocalDate weekEnd = date.with(TemporalAdjusters.nextOrSame(DayOfWeek.SUNDAY));
         
         int count = 0;
+        List<Integer> couresIds = new ArrayList<Integer>();
+        
         for (AcademicEvent event : academicEvents.values()) {
             if (event.scheduleId == scheduleId && event.date != null) {
                 if (!event.date.isBefore(weekStart) && !event.date.isAfter(weekEnd)) {
-                    if (event.typeEnum != null && 
-                        (event.typeEnum.contains("COLLOQUIUM") || event.typeEnum.contains("EXAM"))) {
-                        count++;
+                    if (event.typeEnum != null && (event.typeEnum.contains("COLLOQUIUM") || event.typeEnum.contains("EXAM"))) {
+                        if(event.idCourse == course.idCourse) continue;
+                        if(couresIds.contains(event.idCourse)) continue;
+                        couresIds.add(event.idCourse);
+                        count++;                                  
                     }
                 }
             }
         }
-
         return count;
     }
+
 
 
     private void deleteSchedule(int scheduleId) throws SQLException {
@@ -2327,7 +2357,6 @@ public class EventValidationService {
         while (!current.isAfter(weekEnd)) {
             if (targetDays.contains(current.getDayOfWeek())) {
                 dates.add(current);
-                System.out.println("We added this day: " + current);
             }
             current = current.plusDays(1);
         }
@@ -2378,7 +2407,7 @@ public class EventValidationService {
 
     private boolean hasConflictForDateInSchedule(int scheduleId, LocalDate date, int roomId, 
                                                 int professorId, LocalTime startTime, LocalTime endTime, 
-                                                int courseSemester) {
+                                                Course course) {
         for (AcademicEvent event : academicEvents.values()) {
             // Only check events in SAME schedule
             if (event.scheduleId != scheduleId) continue;
@@ -2396,12 +2425,12 @@ public class EventValidationService {
             // Check room conflict
             if (event.idRoom == roomId) return true;
             
-            // // Check professor conflict
-            // if (event.idProfessor == professorId) return true;
+            // Check professor conflict
+            if (event.idProfessor == professorId) return true;
             
             // Check semester conflict - students from same semester can't have overlapping events
             Course eventCourse = courses.get(event.idCourse);
-            if (eventCourse != null && eventCourse.semester == courseSemester) {
+            if (eventCourse != null && eventCourse == course) {
                 return true;
             }
         }
@@ -2984,51 +3013,51 @@ public class EventValidationService {
     //     return false;
     // }
 
-    private void addColloquiumToSchedule(int scheduleId, int courseId, int roomId, int professorId, 
-                                        LocalDate date, LocalTime startTime, LocalTime endTime, String type) throws SQLException {
-        String insert = "INSERT INTO academic_event (course_id, created_by_professor, type_enum, " +
-                "starts_at, ends_at, room_id, is_published, locked_by_admin, schedule_id, day) " +
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+    // private void addColloquiumToSchedule(int scheduleId, int courseId, int roomId, int professorId, 
+    //                                     LocalDate date, LocalTime startTime, LocalTime endTime, String type) throws SQLException {
+    //     String insert = "INSERT INTO academic_event (course_id, created_by_professor, type_enum, " +
+    //             "starts_at, ends_at, room_id, is_published, locked_by_admin, schedule_id, day) " +
+    //             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         
-        try (PreparedStatement pstmt = conn.prepareStatement(insert, Statement.RETURN_GENERATED_KEYS)) {
-            LocalDateTime startsAt = LocalDateTime.of(date, startTime);
-            LocalDateTime endsAt = LocalDateTime.of(date, endTime);
+    //     try (PreparedStatement pstmt = conn.prepareStatement(insert, Statement.RETURN_GENERATED_KEYS)) {
+    //         LocalDateTime startsAt = LocalDateTime.of(date, startTime);
+    //         LocalDateTime endsAt = LocalDateTime.of(date, endTime);
             
-            String dayName = getCroatianDayName(date.getDayOfWeek());
+    //         String dayName = getCroatianDayName(date.getDayOfWeek());
 
-            pstmt.setInt(1, courseId);
-            pstmt.setLong(2, professorId);
-            pstmt.setString(3, type);
-            pstmt.setTimestamp(4, Timestamp.valueOf(startsAt));
-            pstmt.setTimestamp(5, Timestamp.valueOf(endsAt));
-            pstmt.setInt(6, roomId);
-            pstmt.setBoolean(7, true);
-            pstmt.setBoolean(8, false);
-            pstmt.setInt(9, scheduleId);
-            pstmt.setString(10, dayName);
-            pstmt.executeUpdate();
+    //         pstmt.setInt(1, courseId);
+    //         pstmt.setLong(2, professorId);
+    //         pstmt.setString(3, type);
+    //         pstmt.setTimestamp(4, Timestamp.valueOf(startsAt));
+    //         pstmt.setTimestamp(5, Timestamp.valueOf(endsAt));
+    //         pstmt.setInt(6, roomId);
+    //         pstmt.setBoolean(7, true);
+    //         pstmt.setBoolean(8, false);
+    //         pstmt.setInt(9, scheduleId);
+    //         pstmt.setString(10, dayName);
+    //         pstmt.executeUpdate();
             
-            try (ResultSet rs = pstmt.getGeneratedKeys()) {
-                if (rs.next()) {
-                    int id = rs.getInt(1);
-                    AcademicEvent newEvent = new AcademicEvent();
-                    newEvent.idAcademicEvent = id;
-                    newEvent.idCourse = courseId;
-                    newEvent.idRoom = roomId;
-                    newEvent.idProfessor = professorId;
-                    newEvent.typeEnum = type;
-                    newEvent.date = date;
-                    newEvent.day = dayName;
-                    newEvent.startTime = startTime;
-                    newEvent.endTime = endTime;
-                    newEvent.startsAt = startsAt;
-                    newEvent.endsAt = endsAt;
-                    newEvent.scheduleId = scheduleId;
-                    academicEvents.put(newEvent.idAcademicEvent, newEvent);
-                }
-            }
-        }
-    }
+    //         try (ResultSet rs = pstmt.getGeneratedKeys()) {
+    //             if (rs.next()) {
+    //                 int id = rs.getInt(1);
+    //                 AcademicEvent newEvent = new AcademicEvent();
+    //                 newEvent.idAcademicEvent = id;
+    //                 newEvent.idCourse = courseId;
+    //                 newEvent.idRoom = roomId;
+    //                 newEvent.idProfessor = professorId;
+    //                 newEvent.typeEnum = type;
+    //                 newEvent.date = date;
+    //                 newEvent.day = dayName;
+    //                 newEvent.startTime = startTime;
+    //                 newEvent.endTime = endTime;
+    //                 newEvent.startsAt = startsAt;
+    //                 newEvent.endsAt = endsAt;
+    //                 newEvent.scheduleId = scheduleId;
+    //                 academicEvents.put(newEvent.idAcademicEvent, newEvent);
+    //             }
+    //         }
+    //     }
+    // }
 
     private String getCroatianDayName(DayOfWeek dow) {
         switch (dow) {
@@ -3045,97 +3074,97 @@ public class EventValidationService {
     
     
 
-    private void generateColloquiums(int scheduleId, List<FailedCourse> failedList) {
-        System.out.println("Phase 4: Scheduling EXAMS/COLLOQUIUMS...");
-        System.out.println("Academic Year Check: Winter=" + winterStart + ", Summer=" + summerStart);
+    // private void generateColloquiums(int scheduleId, List<FailedCourse> failedList) {
+    //     System.out.println("Phase 4: Scheduling EXAMS/COLLOQUIUMS...");
+    //     System.out.println("Academic Year Check: Winter=" + winterStart + ", Summer=" + summerStart);
         
-        if (winterStart == null && summerStart == null) {
-            System.out.println("Skipping colloquiums: Semester dates not defined. Please define an active Academic Year in Admin Panel.");
-            return;
-        }
+    //     if (winterStart == null && summerStart == null) {
+    //         System.out.println("Skipping colloquiums: Semester dates not defined. Please define an active Academic Year in Admin Panel.");
+    //         return;
+    //     }
 
-        // Use larger rooms for exams
-        List<Room> examRooms = getSuitableRooms(false, 40); 
-        if (examRooms.isEmpty()) examRooms = getSuitableRooms(false, 20); // Fallback
+    //     // Use larger rooms for exams
+    //     List<Room> examRooms = getSuitableRooms(false, 40); 
+    //     if (examRooms.isEmpty()) examRooms = getSuitableRooms(false, 20); // Fallback
 
-        int colloquiumsScheduled = 0;
+    //     int colloquiumsScheduled = 0;
 
-        for (Course course : courses.values()) {
-            // Determine active semester start
-            // Odd semesters = Winter, Even = Summer
-            LocalDate semStart = (course.semester % 2 != 0) ? winterStart : summerStart;
+    //     for (Course course : courses.values()) {
+    //         // Determine active semester start
+    //         // Odd semesters = Winter, Even = Summer
+    //         LocalDate semStart = (course.semester % 2 != 0) ? winterStart : summerStart;
             
-            if (semStart == null) {
-                // System.out.println("Skipping course " + course.code + ": No start date for semester " + course.semester);
-                continue;
-            }
+    //         if (semStart == null) {
+    //             // System.out.println("Skipping course " + course.code + ": No start date for semester " + course.semester);
+    //             continue;
+    //         }
 
-            try {
-                int profId = findLectureProfessor(course.idCourse);
-                if (profId == 0) {
-                     // System.out.println("Skipping course " + course.code + ": No professor assigned.");
-                     continue; 
-                }
+    //         try {
+    //             int profId = findLectureProfessor(course.idCourse);
+    //             if (profId == 0) {
+    //                  // System.out.println("Skipping course " + course.code + ": No professor assigned.");
+    //                  continue; 
+    //             }
 
-                // Schedule Colloquium 1
-                if (course.colloquium1Week != null && course.colloquium1Week > 0) {
-                     boolean success = scheduleColloquium(scheduleId, course, 1, course.colloquium1Week, semStart, profId, examRooms, failedList);
-                     if (success) colloquiumsScheduled++;
-                } else {
-                    // System.out.println("Course " + course.code + " has no Colloquium 1 week set.");
-                }
+    //             // Schedule Colloquium 1
+    //             if (course.colloquium1Week != null && course.colloquium1Week > 0) {
+    //                  boolean success = scheduleColloquium(scheduleId, course, 1, course.colloquium1Week, semStart, profId, examRooms, failedList);
+    //                  if (success) colloquiumsScheduled++;
+    //             } else {
+    //                 // System.out.println("Course " + course.code + " has no Colloquium 1 week set.");
+    //             }
 
-                // Schedule Colloquium 2
-                if (course.colloquium2Week != null && course.colloquium2Week > 0) {
-                     boolean success = scheduleColloquium(scheduleId, course, 2, course.colloquium2Week, semStart, profId, examRooms, failedList);
-                     if (success) colloquiumsScheduled++;
-                }
+    //             // Schedule Colloquium 2
+    //             if (course.colloquium2Week != null && course.colloquium2Week > 0) {
+    //                  boolean success = scheduleColloquium(scheduleId, course, 2, course.colloquium2Week, semStart, profId, examRooms, failedList);
+    //                  if (success) colloquiumsScheduled++;
+    //             }
 
-            } catch(Exception e) {
-                System.out.println("Error scheduling colloquiums for course " + course.idCourse + ": " + e.getMessage());
-            }
-        }
-        System.out.println("Total Colloquiums Scheduled: " + colloquiumsScheduled);
-    }
+    //         } catch(Exception e) {
+    //             System.out.println("Error scheduling colloquiums for course " + course.idCourse + ": " + e.getMessage());
+    //         }
+    //     }
+    //     System.out.println("Total Colloquiums Scheduled: " + colloquiumsScheduled);
+    // // }
 
-    private boolean scheduleColloquium(int scheduleId, Course course, int colNum, int week, LocalDate semStart, 
-                                   int profId, List<Room> rooms, List<FailedCourse> failedList) throws SQLException {
-        // Calculate week start
-        LocalDate weekStartDate = semStart.plusWeeks(week - 1);
-        // Try Saturday of that week
-        LocalDate targetDate = weekStartDate.with(TemporalAdjusters.nextOrSame(DayOfWeek.SATURDAY));
+    // private boolean scheduleColloquium(int scheduleId, Course course, int colNum, int week, LocalDate semStart, 
+    //                                int profId, List<Room> rooms, List<FailedCourse> failedList) throws SQLException {
+    //     // Calculate week start
+    //     LocalDate weekStartDate = semStart.plusWeeks(week - 1);
+    //     // Try Saturday of that week
+    //     LocalDate targetDate = weekStartDate.with(TemporalAdjusters.nextOrSame(DayOfWeek.SATURDAY));
         
-        // Check if date is a holiday
-        for (Holiday holiday : holidays) {
-            if (holiday.date.equals(targetDate)) {
-                 System.out.println("Skipping colloquium for " + course.name + " on " + targetDate + " due to holiday: " + holiday.name);
-                 return false;
-            }
-        }
+    //     // Check if date is a holiday
+    //     for (Holiday holiday : holidays) {
+    //         if (holiday.date.equals(targetDate)) {
+    //              System.out.println("Skipping colloquium for " + course.name + " on " + targetDate + " due to holiday: " + holiday.name);
+    //              return false;
+    //         }
+    //     }
 
-        // Times to try
-        LocalTime[] starts = { LocalTime.of(9, 0), LocalTime.of(12, 0), LocalTime.of(15, 0), LocalTime.of(8,0), LocalTime.of(16,0) };
-        boolean scheduled = false;
+    //     // Times to try
+    //     LocalTime[] starts = { LocalTime.of(9, 0), LocalTime.of(12, 0), LocalTime.of(15, 0), LocalTime.of(8,0), LocalTime.of(16,0) };
+    //     boolean scheduled = false;
 
-        for (LocalTime start : starts) {
-            LocalTime end = start.plusHours(3); // 3 hours duration
+    //     for (LocalTime start : starts) {
+    //         LocalTime end = start.plusHours(3); // 3 hours duration
             
-            for (Room room : rooms) {
-                if (!hasConflictForDateInSchedule(scheduleId, targetDate, room.idRoom, profId, start, end, course.semester)) {
-                    addColloquiumToSchedule(scheduleId, course.idCourse, room.idRoom, profId, 
-                                          targetDate, start, end, "COLLOQUIUM"); 
-                    scheduled = true;
-                    break;
-                }
-            }
-            if (scheduled) break;
-        }
+    //         for (Room room : rooms) {
+    //             if (!hasConflictForDateInSchedule(scheduleId, targetDate, room.idRoom, profId, start, end, course.semester)) {
+    //                 addColloquiumToSchedule(scheduleId, course.idCourse, room.idRoom, profId, 
+    //                                       targetDate, start, end, "COLLOQUIUM"); 
+    //                 scheduled = true;
+    //                 break;
+    //             }
+    //         }
+    //         if (scheduled) break;
+    //     }
         
-        if (!scheduled) {
-             System.out.println("Failed to schedule Colloquium " + colNum + " for Course " + course.name + " (" + course.code + ") Week " + week + " at " + targetDate);
-        }
-        return scheduled;
-    }
+    //     if (!scheduled) {
+    //          System.out.println("Failed to schedule Colloquium " + colNum + " for Course " + course.name + " (" + course.code + ") Week " + week + " at " + targetDate);
+    //     }
+    //     return scheduled;
+    // }
 }
 
 
