@@ -2430,7 +2430,7 @@ public class EventValidationService {
             
             // Check semester conflict - students from same semester can't have overlapping events
             Course eventCourse = courses.get(event.idCourse);
-            if (eventCourse != null && eventCourse == course) {
+            if (eventCourse != null && eventCourse.semester == course.semester) {
                 return true;
             }
         }

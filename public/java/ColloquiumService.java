@@ -6,6 +6,9 @@ import java.util.stream.Collectors;
 
 public class ColloquiumService {
 
+    private static final String SE_MAJOR = "Softverski inženjering";
+    private static final String ICT_MAJOR = "Informaciono komunikacione tehnologije";
+
     private static class Course {
         int id;
         String name;
@@ -99,8 +102,7 @@ public class ColloquiumService {
                 }
 
                 try {
-                    processSemesterList(col1List, semester);
-                    processSemesterList(col2List, semester);
+                    processSemester(col1List, col2List, semester);
                 } catch (Exception e) {
                     return "GRESKA: " + e.getMessage();
                 }
@@ -115,10 +117,22 @@ public class ColloquiumService {
                 }
             }
 
-            deleteOldColloquiums(conn);
-            insertNewColloquiums(conn, finalProposals);
+            // Delete and insert must stand or fall together - a failure halfway through
+            // used to leave the old colloquiums deleted and no new ones in their place.
+            boolean previousAutoCommit = conn.getAutoCommit();
+            conn.setAutoCommit(false);
+            try {
+                deleteOldColloquiums(conn);
+                insertNewColloquiums(conn, finalProposals);
+                conn.commit();
+            } catch (SQLException e) {
+                conn.rollback();
+                throw e;
+            } finally {
+                conn.setAutoCommit(previousAutoCommit);
+            }
 
-            return "OK"; 
+            return "OK";
 
         } catch (Exception e) {
             e.printStackTrace();
@@ -128,75 +142,177 @@ public class ColloquiumService {
         }
     }
 
-    private void processSemesterList(List<ProposedColloquium> proposals, int semester) throws Exception {
-        if (proposals.isEmpty()) return;
-
-        // Apply special rules for 4th, 5th and 6th semester
-        if (semester == 4 || semester == 5 || semester == 6) {
-            processSpecialSemester(proposals, semester);
-        } else {
-            processStandardSemester(proposals, semester);
-        }
+    private void processSemester(List<ProposedColloquium> col1, List<ProposedColloquium> col2, int semester)
+            throws Exception {
+        // Both rounds share one occupancy map, so the weekly limits count colloquium 1
+        // and colloquium 2 together instead of each round filling a week on its own.
+        Map<Integer, WeekStatus> schedule = new TreeMap<>();
+        placeRound(col1, semester, schedule);
+        placeRound(col2, semester, schedule);
     }
 
-    private void processSpecialSemester(List<ProposedColloquium> proposals, int semester) throws Exception {
+    private void placeRound(List<ProposedColloquium> proposals, int semester, Map<Integer, WeekStatus> schedule)
+            throws Exception {
+        if (proposals.isEmpty()) return;
+
         // Sort proposals by requested week to respect original preferences where possible
         proposals.sort(Comparator.comparingInt(p -> p.week));
 
-        Map<Integer, WeekStatus> schedule = new TreeMap<>();
-        
+        // Remember the requested weeks so a failed attempt can be rolled back
+        List<Integer> requested = new ArrayList<>();
         for (ProposedColloquium p : proposals) {
-            int currentWeek = p.week;
-            boolean placed = false;
-            
-            // Try subsequent weeks until a slot is found
-            while (!placed) {
-                // Safety break to prevent infinite loops (e.g., if we go way beyond semester bounds)
-                if (currentWeek > p.week + 15) {
-                    throw new Exception("Nemoguće rasporediti kolokvijume za semestar " + semester + 
+            requested.add(p.week);
+        }
+
+        // Each colloquium may be balanced across this many weeks starting from the one
+        // the professor asked for. Without it every colloquium lands in the first week
+        // that still has a free place, which fills the early weeks up to the limit and
+        // leaves the later ones empty.
+        int spread = balancedSpread(proposals, semester);
+
+        Map<Integer, WeekStatus> attempt = copyOf(schedule);
+        try {
+            fillWeeks(proposals, semester, attempt, spread);
+            validateSpan(proposals, semester);
+        } catch (Exception balancingFailed) {
+            // Spreading can push a lower semester over its 3 week limit. Pack the weeks
+            // tightly instead of refusing a round that could still be scheduled.
+            for (int i = 0; i < proposals.size(); i++) {
+                proposals.get(i).week = requested.get(i);
+            }
+            attempt = copyOf(schedule);
+            fillWeeks(proposals, semester, attempt, 1);
+            validateSpan(proposals, semester);
+        }
+
+        schedule.clear();
+        schedule.putAll(attempt);
+    }
+
+    private void fillWeeks(List<ProposedColloquium> proposals, int semester,
+            Map<Integer, WeekStatus> schedule, int spread) throws Exception {
+        int capacity = weeklyCapacity(semester);
+        boolean majorRules = usesMajorRules(semester);
+
+        for (ProposedColloquium p : proposals) {
+            int requested = p.week;
+            int limit = requested + spread - 1;
+            Integer chosen = leastLoadedWeek(p, requested, limit, schedule, capacity, majorRules);
+
+            // Look further ahead only when the balanced window has no legal slot left
+            while (chosen == null) {
+                if (limit > requested + 15) {
+                    throw new Exception("Nemoguće rasporediti kolokvijume za semestar " + semester +
                         " (Previše konflikata za predmet " + p.course.name + ")");
                 }
+                limit++;
+                chosen = leastLoadedWeek(p, requested, limit, schedule, capacity, majorRules);
+            }
 
-                WeekStatus status = schedule.computeIfAbsent(currentWeek, k -> new WeekStatus());
-                
-                boolean isCommon = (p.course.major == null);
-                boolean isSE = "Softverski inženjering".equals(p.course.major);
-                boolean isICT = "Informaciono komunikacione tehnologije".equals(p.course.major);
-                
-                // RULES:
-                // 1. Max 3 colloquiums per week
-                if (status.count >= 3) {
-                    currentWeek++;
-                    continue;
-                }
-                
-                // 2. Common courses MUST be in different weeks
-                if (isCommon && status.hasCommon) {
-                    currentWeek++;
-                    continue;
-                }
-                
-                // 3. Two courses of the same major CANNOT be in the same week
-                if (isSE && status.hasSE) {
-                    currentWeek++;
-                    continue;
-                }
-                
-                if (isICT && status.hasICT) {
-                    currentWeek++;
-                    continue;
-                }
+            p.week = chosen;
+            occupy(schedule, chosen, p);
+        }
+    }
 
-                // If all checks pass, place the colloquium here
-                p.week = currentWeek;
-                status.count++;
-                if (isCommon) status.hasCommon = true;
-                if (isSE) status.hasSE = true;
-                if (isICT) status.hasICT = true;
-                
-                placed = true;
+    // Fewest weeks this round can occupy without breaking a rule - spreading the load
+    // over exactly that many weeks keeps the peak per week as low as possible.
+    private int balancedSpread(List<ProposedColloquium> proposals, int semester) {
+        int needed = (int) Math.ceil(proposals.size() / (double) weeklyCapacity(semester));
+        if (usesMajorRules(semester)) {
+            needed = Math.max(needed, maxMajorCount(proposals));
+        }
+        return Math.max(1, needed);
+    }
+
+    private Map<Integer, WeekStatus> copyOf(Map<Integer, WeekStatus> schedule) {
+        Map<Integer, WeekStatus> copy = new TreeMap<>();
+        for (Map.Entry<Integer, WeekStatus> entry : schedule.entrySet()) {
+            copy.put(entry.getKey(), new WeekStatus(entry.getValue()));
+        }
+        return copy;
+    }
+
+    // Returns the emptiest week in [fromWeek, toWeek] that accepts this colloquium.
+    // Ties go to the earliest week, so a proposal only moves past its requested week
+    // when a later one is genuinely less loaded.
+    private Integer leastLoadedWeek(ProposedColloquium p, int fromWeek, int toWeek,
+            Map<Integer, WeekStatus> schedule, int capacity, boolean majorRules) {
+        Integer best = null;
+        int bestLoad = Integer.MAX_VALUE;
+        for (int w = fromWeek; w <= toWeek; w++) {
+            WeekStatus status = schedule.get(w);
+            if (!fits(p, status, capacity, majorRules)) continue;
+            int load = (status == null) ? 0 : status.count;
+            if (load < bestLoad) {
+                bestLoad = load;
+                best = w;
             }
         }
+        return best;
+    }
+
+    private boolean fits(ProposedColloquium p, WeekStatus status, int capacity, boolean majorRules) {
+        if (status == null) return true;
+
+        // 1. Max colloquiums per week
+        if (status.count >= capacity) return false;
+
+        // 2. One course never holds both colloquiums in the same week - they reuse the
+        // same exercise slot, so they would end up on the very same date and time.
+        if (status.courseIds.contains(p.course.id)) return false;
+
+        if (!majorRules) return true;
+
+        // 3. Common courses MUST be in different weeks
+        if (p.course.major == null) return !status.hasCommon;
+
+        // 4. Two courses of the same major CANNOT be in the same week
+        if (SE_MAJOR.equals(p.course.major)) return !status.hasSE;
+        if (ICT_MAJOR.equals(p.course.major)) return !status.hasICT;
+        return true;
+    }
+
+    private void occupy(Map<Integer, WeekStatus> schedule, int week, ProposedColloquium p) {
+        WeekStatus status = schedule.computeIfAbsent(week, k -> new WeekStatus());
+        status.count++;
+        status.courseIds.add(p.course.id);
+        if (p.course.major == null) status.hasCommon = true;
+        else if (SE_MAJOR.equals(p.course.major)) status.hasSE = true;
+        else if (ICT_MAJOR.equals(p.course.major)) status.hasICT = true;
+    }
+
+    // A week holds at most one course per major, so a round can never be shorter
+    // than the biggest single major group.
+    private int maxMajorCount(List<ProposedColloquium> proposals) {
+        int common = 0, se = 0, ict = 0;
+        for (ProposedColloquium p : proposals) {
+            if (p.course.major == null) common++;
+            else if (SE_MAJOR.equals(p.course.major)) se++;
+            else if (ICT_MAJOR.equals(p.course.major)) ict++;
+        }
+        return Math.max(common, Math.max(se, ict));
+    }
+
+    private void validateSpan(List<ProposedColloquium> proposals, int semester) throws Exception {
+        if (usesMajorRules(semester)) return;
+
+        Set<Integer> weeksUsed = new HashSet<>();
+        for (ProposedColloquium p : proposals) {
+            weeksUsed.add(p.week);
+        }
+
+        if (weeksUsed.size() > 3) {
+            throw new Exception("Kolokvijumi za semestar " + semester + " se rasprostiru na vise od 3 sedmice.");
+        }
+    }
+
+    private int weeklyCapacity(int semester) {
+        return usesMajorRules(semester) ? 3 : 2;
+    }
+
+    // Special rules apply to 4th, 5th and 6th semester, where courses split by major
+    private boolean usesMajorRules(int semester) {
+        return semester == 4 || semester == 5 || semester == 6;
     }
 
     private static class WeekStatus {
@@ -204,50 +320,17 @@ public class ColloquiumService {
         boolean hasCommon = false;
         boolean hasSE = false;
         boolean hasICT = false;
-    }
+        final Set<Integer> courseIds = new HashSet<>();
 
-    private void processStandardSemester(List<ProposedColloquium> proposals, int semester) throws Exception {
-        if (proposals.isEmpty()) return;
-
-        TreeMap<Integer, List<ProposedColloquium>> byWeek = new TreeMap<>();
-        for (ProposedColloquium p : proposals) {
-            byWeek.computeIfAbsent(p.week, k -> new ArrayList<>()).add(p);
+        WeekStatus() {
         }
 
-        if (byWeek.isEmpty()) return;
-
-        int minWeek = byWeek.firstKey();
-        int maxWeek = byWeek.lastKey(); 
-        
-        for (int w = minWeek; w <= maxWeek + 10; w++) { 
-            List<ProposedColloquium> list = byWeek.get(w);
-            if (list == null || list.size() <= 2) {
-                 if (w > maxWeek && (list == null || list.isEmpty())) break;
-                 continue;
-            }
-
-            List<ProposedColloquium> keep = new ArrayList<>(list.subList(0, 2));
-            List<ProposedColloquium> move = new ArrayList<>(list.subList(2, list.size()));
-
-            byWeek.put(w, keep);
-
-            int nextW = w + 1;
-            for (ProposedColloquium p : move) {
-                p.week = nextW;
-            }
-            byWeek.computeIfAbsent(nextW, k -> new ArrayList<>()).addAll(move);
-            if (nextW > maxWeek) maxWeek = nextW;
-        }
-
-        Set<Integer> weeksUsed = new HashSet<>();
-        for (Map.Entry<Integer, List<ProposedColloquium>> entry : byWeek.entrySet()) {
-            if (!entry.getValue().isEmpty()) {
-                weeksUsed.add(entry.getKey());
-            }
-        }
-        
-        if (weeksUsed.size() > 3) {
-             throw new Exception("Kolokvijumi za semestar " + semester + " se rasprostiru na vise od 3 sedmice.");
+        WeekStatus(WeekStatus other) {
+            this.count = other.count;
+            this.hasCommon = other.hasCommon;
+            this.hasSE = other.hasSE;
+            this.hasICT = other.hasICT;
+            this.courseIds.addAll(other.courseIds);
         }
     }
 
@@ -341,7 +424,11 @@ public class ColloquiumService {
     }
 
     private void deleteOldColloquiums(Connection conn) throws SQLException {
-        String sql = "DELETE FROM academic_event WHERE type_enum IN ('COLLOQUIUM', 'COLLOQUIUM_1', 'COLLOQUIUM_2')";
+        // Only wipe what a previous run of this generator produced. Colloquiums a
+        // professor entered by hand carry no 'generated' note and must survive.
+        String sql = "DELETE FROM academic_event " +
+                "WHERE type_enum IN ('COLLOQUIUM', 'COLLOQUIUM_1', 'COLLOQUIUM_2') " +
+                "AND notes = 'generated'";
         try (Statement stmt = conn.createStatement()) {
             stmt.executeUpdate(sql);
         }

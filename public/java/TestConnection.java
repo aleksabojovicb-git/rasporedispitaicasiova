@@ -18,8 +18,8 @@ public class TestConnection {
 
             // Test učitavanja podataka
             System.out.println("\n=== Test učitavanja podataka sa novim klasama ===");
-            EventValidationService service = new EventValidationService(conn);
-            System.out.println("✔ EventValidationService inicijalizovan uspješno!");
+            // EventValidationService service = new EventValidationService(conn);
+            // System.out.println("✔ EventValidationService inicijalizovan uspješno!");
 
             stmt.close();
 
