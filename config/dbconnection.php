@@ -1,10 +1,39 @@
 <?php
+// short English comment: PHP's parse_ini_file() chokes on characters like "!" even inside quotes,
+// so parse .env by hand instead of relying on INI syntax
+function load_dotenv($path) {
+    $result = [];
+    if (!is_readable($path)) {
+        return $result;
+    }
+    $lines = file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    foreach ($lines as $line) {
+        $line = trim($line);
+        if ($line === '' || $line[0] === '#' || $line[0] === ';') {
+            continue;
+        }
+        $pos = strpos($line, '=');
+        if ($pos === false) {
+            continue;
+        }
+        $key = trim(substr($line, 0, $pos));
+        $value = trim(substr($line, $pos + 1));
+        // short English comment: strip one layer of matching surrounding quotes, if present
+        if (strlen($value) >= 2) {
+            $first = $value[0];
+            $last = $value[strlen($value) - 1];
+            if (($first === '"' && $last === '"') || ($first === "'" && $last === "'")) {
+                $value = substr($value, 1, -1);
+            }
+        }
+        $result[$key] = $value;
+    }
+    return $result;
+}
+
 // short English comment: load .env locally if present, otherwise fall back to real env vars (Render, etc.)
 $envFile = __DIR__ . '/../.env';
-$fileEnv = is_readable($envFile) ? parse_ini_file($envFile) : false;
-if ($fileEnv === false) {
-    $fileEnv = [];
-}
+$fileEnv = load_dotenv($envFile);
 
 // short English comment: getenv()/$_ENV take priority only when the .env file didn't provide a key
 function env_val($fileEnv, $key) {
