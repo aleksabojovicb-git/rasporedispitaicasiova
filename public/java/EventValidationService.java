@@ -260,7 +260,8 @@ public class EventValidationService {
         String insert = "INSERT INTO academic_event " +
                 "(course_id, created_by_professor, type_enum, starts_at, ends_at, " +
                 "room_id, notes, is_published, locked_by_admin, schedule_id, day) " +
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id";
+        int eventId = 0;
         try (PreparedStatement pstmt = conn.prepareStatement(insert)) {
             pstmt.setInt(1, courseId);
             pstmt.setLong(2, professorId);
@@ -273,7 +274,54 @@ public class EventValidationService {
             pstmt.setBoolean(9, false);
             pstmt.setInt(10, scheduleId);
             pstmt.setString(11, day);
-            pstmt.executeUpdate();
+            try (ResultSet rs = pstmt.executeQuery()) {
+                if (rs.next()) {
+                    eventId = rs.getInt(1);
+                }
+            }
+        }
+
+        // Predmet može imati više od jednog predavača/asistenta (npr. 2-3 profesora
+        // na istom predmetu) - poveži SVE njih sa generisanim terminom preko
+        // event_professor, ne samo onog čija je dostupnost korišćena za pronalazak
+        // termina, inače ostali "nestanu" iz svog "Moj raspored" prikaza.
+        if (eventId > 0) {
+            boolean isAssistantRole = "EXERCISE".equals(typeEnum) || "LAB".equals(typeEnum);
+            linkAllCourseProfessorsToEvent(eventId, courseId, professorId, isAssistantRole);
+        }
+    }
+
+    /**
+     * Poveže sve profesore/asistente dodijeljene predmetu (course_professor) sa
+     * generisanim terminom preko event_professor, tako da svi vide termin u
+     * svom rasporedu (ne samo profesor čija je dostupnost korišćena za
+     * pronalazak termina).
+     */
+    private void linkAllCourseProfessorsToEvent(int eventId, int courseId, int primaryProfessorId,
+            boolean isAssistantRole) throws SQLException {
+        List<Integer> professorIds = new ArrayList<>();
+        String query = "SELECT professor_id FROM course_professor WHERE course_id = ? AND is_assistant = ?";
+        try (PreparedStatement ps = conn.prepareStatement(query)) {
+            ps.setInt(1, courseId);
+            ps.setBoolean(2, isAssistantRole);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    professorIds.add(rs.getInt("professor_id"));
+                }
+            }
+        }
+        if (!professorIds.contains(primaryProfessorId)) {
+            professorIds.add(primaryProfessorId);
+        }
+
+        String insertLink = "INSERT INTO event_professor (event_id, professor_id) VALUES (?, ?)";
+        try (PreparedStatement ps = conn.prepareStatement(insertLink)) {
+            for (int pid : professorIds) {
+                ps.setInt(1, eventId);
+                ps.setInt(2, pid);
+                ps.addBatch();
+            }
+            ps.executeBatch();
         }
     }
 
@@ -1157,9 +1205,10 @@ public class EventValidationService {
                 ps.setInt(1, professorId);
                 try (ResultSet rs = ps.executeQuery()) {
                     while (rs.next()) {
-                        String weekday = rs.getString("weekday");
-                        if (weekday != null)
-                            days.add(weekday);
+                        // weekday je u bazi int 1..5 (professor_api.php save_availability), ne ime dana
+                        String dayName = weekdayIntToName(rs.getInt("weekday"));
+                        if (dayName != null && !days.contains(dayName))
+                            days.add(dayName);
                     }
                 }
             }
@@ -1167,6 +1216,21 @@ public class EventValidationService {
             System.err.println("Error getting preferred days: " + e.getMessage());
         }
         return days;
+    }
+
+    /**
+     * Mapira weekday int (1=ponedeljak ... 5=petak) iz professor_availability
+     * na ime dana koje ostatak koda (parseDayOfWeek i dr.) očekuje.
+     */
+    private String weekdayIntToName(int weekday) {
+        switch (weekday) {
+            case 1: return "ponedeljak";
+            case 2: return "utorak";
+            case 3: return "srijeda";
+            case 4: return "cetvrtak";
+            case 5: return "petak";
+            default: return null;
+        }
     }
 
     /**

@@ -51,16 +51,30 @@ switch ($action) {
     case 'get_professor_schedule':
 
         try {
+            // Prefer the most recently locked/published schedule (the one the admin
+            // actually approved); fall back to the latest generated one if nothing
+            // has been locked yet, so professors still see a preview.
             $scheduleStmt = $pdo->prepare("
             SELECT DISTINCT schedule_id
             FROM academic_event
-            WHERE schedule_id IS NOT NULL
+            WHERE schedule_id IS NOT NULL AND locked_by_admin = TRUE
             ORDER BY schedule_id DESC
-            LIMIT 6
+            LIMIT 1
         ");
             $scheduleStmt->execute();
             $scheduleIds = $scheduleStmt->fetchAll(PDO::FETCH_COLUMN);
-            $scheduleIds = array_reverse($scheduleIds);
+
+            if (!$scheduleIds) {
+                $scheduleStmt = $pdo->prepare("
+                SELECT DISTINCT schedule_id
+                FROM academic_event
+                WHERE schedule_id IS NOT NULL
+                ORDER BY schedule_id DESC
+                LIMIT 1
+            ");
+                $scheduleStmt->execute();
+                $scheduleIds = $scheduleStmt->fetchAll(PDO::FETCH_COLUMN);
+            }
 
             if (!$scheduleIds) {
                 echo json_encode([
@@ -80,10 +94,15 @@ switch ($action) {
                 ae.ends_at,
                 c.name AS coursename,
                 r.code AS roomcode,
-                c.semester
+                c.semester,
+                ae.type_enum,
+                COALESCE(string_agg(DISTINCT p.full_name, ', ') FILTER (WHERE cp.is_assistant = FALSE), '') AS professors,
+                COALESCE(string_agg(DISTINCT p.full_name, ', ') FILTER (WHERE cp.is_assistant = TRUE), '') AS assistants
             FROM academic_event ae
             JOIN course c ON ae.course_id = c.id
             LEFT JOIN room r ON ae.room_id = r.id
+            LEFT JOIN course_professor cp ON cp.course_id = c.id
+            LEFT JOIN professor p ON p.id = cp.professor_id
             WHERE (ae.created_by_professor = ?
                OR EXISTS (
                    SELECT 1 FROM event_professor ep
@@ -92,6 +111,7 @@ switch ($action) {
                ))
               AND ae.type_enum IN ('LECTURE','EXERCISE','LAB')
               AND ae.schedule_id IN ($in)
+            GROUP BY ae.id, ae.schedule_id, ae.day, ae.starts_at, ae.ends_at, c.name, r.code, c.semester, ae.type_enum
             ORDER BY ae.schedule_id, c.semester, ae.day, ae.starts_at
         ");
 
@@ -108,6 +128,8 @@ switch ($action) {
                 $data['schedules'][$sid] = [];
             }
 
+            $typeLabels = ['LECTURE' => 'Predavanje', 'EXERCISE' => 'Vježbe', 'LAB' => 'Lab'];
+
             foreach ($rows as $row) {
                 $sid = (int)$row['schedule_id'];
                 $sem = (int)$row['semester'];
@@ -116,12 +138,19 @@ switch ($action) {
                     $data['schedules'][$sid][$sem] = [];
                 }
 
+                $lecturerName = $row['type_enum'] === 'EXERCISE' || $row['type_enum'] === 'LAB'
+                    ? ($row['assistants'] !== '' ? $row['assistants'] : $row['professors'])
+                    : ($row['professors'] !== '' ? $row['professors'] : $row['assistants']);
+
                 $data['schedules'][$sid][$sem][] = [
                     'day' => (int)$row['day'],
                     'start' => substr($row['starts_at'], 11, 5),
                     'end' => substr($row['ends_at'], 11, 5),
                     'course' => $row['coursename'],
-                    'room' => $row['roomcode']
+                    'room' => $row['roomcode'],
+                    'type' => $row['type_enum'],
+                    'type_label' => $typeLabels[$row['type_enum']] ?? $row['type_enum'],
+                    'professor' => $lecturerName
                 ];
             }
 
@@ -142,8 +171,13 @@ switch ($action) {
     case 'get_holidays':
 
         try {
-            $stmt = $pdo->query("SELECT date, name FROM holiday");
-            echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC));
+            $stmt = $pdo->query("SELECT date, name, is_working_day FROM holiday");
+            $holidays = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            foreach ($holidays as &$h) {
+                $h['is_working_day'] = (int)$h['is_working_day'] === 1;
+            }
+            unset($h);
+            echo json_encode($holidays);
         } catch (PDOException $e) {
             echo json_encode([]);
         }

@@ -326,7 +326,8 @@ CREATE TABLE public.room (
     code character varying(50) NOT NULL,
     capacity integer DEFAULT 30 NOT NULL,
     is_computer_lab boolean DEFAULT false NOT NULL,
-    is_active boolean DEFAULT true NOT NULL
+    is_active boolean DEFAULT true NOT NULL,
+    faculty_code character varying(20)
 );
 
 
