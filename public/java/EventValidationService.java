@@ -16,6 +16,29 @@ public class EventValidationService {
     private LocalDate summerStart;
     private int activeAcademicYearId;
 
+    // Keš popunjen jednim upitom po tabeli u preloadStaticLookups() umjesto
+    // ponovljenih pojedinačnih SELECT-ova po predmetu/času - vidi taj metod.
+    private Map<String, List<Integer>> courseProfessorsByCourseAndRole;
+    private Map<Integer, List<int[]>> availabilityByProfessor; // profesor -> [courseId ili -1, weekday]
+    private boolean staticLookupsLoaded = false;
+
+    // Prati se samo radi ScheduleProgress izvještaja (koji je od 6 rasporeda i
+    // koji predmet po redu se trenutno obrađuje) - ne utiče na logiku raspoređivanja.
+    private int currentScheduleIndex = 0;
+    private int currentCourseCounter = 0;
+
+    // academicEvents (učitan u konstruktoru) sadrži SVE istorijske termine iz
+    // baze, bez WHERE-a - to su hiljade redova koji rastu sa svakim generisanjem.
+    // hasConflictInSchedule/getSemesterHoursOnDay/isAlreadyScheduledInSchedule
+    // filtriraju po scheduleId, pa im istorijski termini iz DRUGIH rasporeda
+    // nikad nisu relevantni - skeniranje cijele mape na svaki poziv (a poziva se
+    // hiljadama puta po generisanju) je bio glavni uzrok usporavanja koje raste
+    // sa svakim novim generisanim rasporedom. Ovaj indeks drži SAMO termine
+    // dodane TOKOM tekućeg pokretanja (populiše ga addEventToCache), grupisane
+    // po scheduleId, tako da ta tri metoda skeniraju desetine/stotine umjesto
+    // desetina hiljada termina.
+    private Map<Integer, List<AcademicEvent>> eventsByScheduleIdThisRun = new HashMap<>();
+
     public EventValidationService(Connection connection) {
         this.conn = connection;
         this.courses = new HashMap<>();
@@ -24,7 +47,51 @@ public class EventValidationService {
         this.academicEvents = new HashMap<>();
         this.holidays = new ArrayList<>();
         this.roomOccupancy = new ArrayList<>();
+        this.courseProfessorsByCourseAndRole = new HashMap<>();
+        this.availabilityByProfessor = new HashMap<>();
         loadDataFromDatabase();
+    }
+
+    /**
+     * Učitava course_professor i professor_availability JEDNIM upitom po tabeli
+     * (umjesto po-predmet/po-profesor upita koji se ponavljaju identično za
+     * svih 6 generisanih rasporeda). Poziva se jednom na početku
+     * generateSixSchedulesWithDifferentPriorities(); bezopasno je pozvati je
+     * više puta (drugi poziv je no-op).
+     */
+    private void preloadStaticLookups() throws SQLException {
+        if (staticLookupsLoaded) {
+            return;
+        }
+
+        String cpQuery = "SELECT course_id, professor_id, is_assistant FROM course_professor ORDER BY id";
+        try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery(cpQuery)) {
+            while (rs.next()) {
+                String key = rs.getInt("course_id") + "_" + rs.getBoolean("is_assistant");
+                courseProfessorsByCourseAndRole
+                        .computeIfAbsent(key, k -> new ArrayList<>())
+                        .add(rs.getInt("professor_id"));
+            }
+        }
+
+        String availQuery = "SELECT professor_id, course_id, weekday FROM professor_availability";
+        try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery(availQuery)) {
+            while (rs.next()) {
+                int profId = rs.getInt("professor_id");
+                int courseId = rs.getInt("course_id");
+                if (rs.wasNull()) {
+                    courseId = -1;
+                }
+                int weekday = rs.getInt("weekday");
+                availabilityByProfessor
+                        .computeIfAbsent(profId, k -> new ArrayList<>())
+                        .add(new int[] { courseId, weekday });
+            }
+        }
+
+        staticLookupsLoaded = true;
+        System.out.println("Preloaded static lookups: " + courseProfessorsByCourseAndRole.size()
+                + " course/role grupa, " + availabilityByProfessor.size() + " profesora sa dostupnošću");
     }
 
     //region DataLoading
@@ -378,17 +445,8 @@ public class EventValidationService {
      */
     private void linkAllCourseProfessorsToEvent(int eventId, int courseId, int primaryProfessorId,
             boolean isAssistantRole) throws SQLException {
-        List<Integer> professorIds = new ArrayList<>();
-        String query = "SELECT professor_id FROM course_professor WHERE course_id = ? AND is_assistant = ?";
-        try (PreparedStatement ps = conn.prepareStatement(query)) {
-            ps.setInt(1, courseId);
-            ps.setBoolean(2, isAssistantRole);
-            try (ResultSet rs = ps.executeQuery()) {
-                while (rs.next()) {
-                    professorIds.add(rs.getInt("professor_id"));
-                }
-            }
-        }
+        List<Integer> cached = courseProfessorsByCourseAndRole.get(courseId + "_" + isAssistantRole);
+        List<Integer> professorIds = new ArrayList<>(cached != null ? cached : Collections.emptyList());
         if (!professorIds.contains(primaryProfessorId)) {
             professorIds.add(primaryProfessorId);
         }
@@ -1271,6 +1329,7 @@ public class EventValidationService {
         newEvent.scheduleId = scheduleId;
         newEvent.date = convertDayToDate(day, start).toLocalDate();
         academicEvents.put(newEvent.hashCode(), newEvent);
+        eventsByScheduleIdThisRun.computeIfAbsent(scheduleId, k -> new ArrayList<>()).add(newEvent);
     }
 
     /**
@@ -1278,21 +1337,14 @@ public class EventValidationService {
      */
     private List<String> getPreferredDays(int professorId) {
         List<String> days = new ArrayList<>();
-        try {
-            String query = "SELECT DISTINCT weekday FROM professor_availability WHERE professor_id = ?";
-            try (PreparedStatement ps = conn.prepareStatement(query)) {
-                ps.setInt(1, professorId);
-                try (ResultSet rs = ps.executeQuery()) {
-                    while (rs.next()) {
-                        // weekday je u bazi int 1..5 (professor_api.php save_availability), ne ime dana
-                        String dayName = weekdayIntToName(rs.getInt("weekday"));
-                        if (dayName != null && !days.contains(dayName))
-                            days.add(dayName);
-                    }
-                }
+        List<int[]> rows = availabilityByProfessor.get(professorId);
+        if (rows != null) {
+            for (int[] row : rows) {
+                // weekday je u bazi int 1..5 (professor_api.php save_availability), ne ime dana
+                String dayName = weekdayIntToName(row[1]);
+                if (dayName != null && !days.contains(dayName))
+                    days.add(dayName);
             }
-        } catch (SQLException e) {
-            System.err.println("Error getting preferred days: " + e.getMessage());
         }
         return days;
     }
@@ -1305,22 +1357,15 @@ public class EventValidationService {
      */
     private List<String> getPreferredDaysForCourse(int professorId, int courseId) {
         List<String> days = new ArrayList<>();
-        try {
-            String query = "SELECT DISTINCT weekday FROM professor_availability " +
-                    "WHERE professor_id = ? AND course_id = ?";
-            try (PreparedStatement ps = conn.prepareStatement(query)) {
-                ps.setInt(1, professorId);
-                ps.setInt(2, courseId);
-                try (ResultSet rs = ps.executeQuery()) {
-                    while (rs.next()) {
-                        String dayName = weekdayIntToName(rs.getInt("weekday"));
-                        if (dayName != null && !days.contains(dayName))
-                            days.add(dayName);
-                    }
-                }
+        List<int[]> rows = availabilityByProfessor.get(professorId);
+        if (rows != null) {
+            for (int[] row : rows) {
+                if (row[0] != courseId)
+                    continue;
+                String dayName = weekdayIntToName(row[1]);
+                if (dayName != null && !days.contains(dayName))
+                    days.add(dayName);
             }
-        } catch (SQLException e) {
-            System.err.println("Error getting course-specific preferred days: " + e.getMessage());
         }
         if (!days.isEmpty()) {
             return days;
@@ -1362,30 +1407,16 @@ public class EventValidationService {
      * Pronalazi profesora za predavanja
      */
     private int findLectureProfessor(int courseId) throws SQLException {
-        String query = "SELECT professor_id FROM course_professor WHERE course_id = ? AND is_assistant = false";
-        try (PreparedStatement ps = conn.prepareStatement(query)) {
-            ps.setInt(1, courseId);
-            try (ResultSet rs = ps.executeQuery()) {
-                if (rs.next())
-                    return rs.getInt("professor_id");
-            }
-        }
-        return 0;
+        List<Integer> profs = courseProfessorsByCourseAndRole.get(courseId + "_false");
+        return (profs != null && !profs.isEmpty()) ? profs.get(0) : 0;
     }
 
     /**
      * Pronalazi asistenta za vježbe
      */
     private int findExerciseProfessor(int courseId) throws SQLException {
-        String query = "SELECT professor_id FROM course_professor WHERE course_id = ? AND is_assistant = true";
-        try (PreparedStatement ps = conn.prepareStatement(query)) {
-            ps.setInt(1, courseId);
-            try (ResultSet rs = ps.executeQuery()) {
-                if (rs.next())
-                    return rs.getInt("professor_id");
-            }
-        }
-        return 0;
+        List<Integer> profs = courseProfessorsByCourseAndRole.get(courseId + "_true");
+        return (profs != null && !profs.isEmpty()) ? profs.get(0) : 0;
     }
 
     private Map<Integer, Double> analyzeProfessorFlexibility() {
@@ -2624,6 +2655,17 @@ public class EventValidationService {
         try {
             System.out.println("=== GENERATING 6 SCHEDULES WITH DIFFERENT YEAR PRIORITIES ===\n");
 
+            // Popuni keševe (course_professor, professor_availability) JEDNOM za svih
+            // 6 rasporeda umjesto ponovljenih upita po predmetu - vidi preloadStaticLookups().
+            preloadStaticLookups();
+            eventsByScheduleIdThisRun = new HashMap<>();
+            ScheduleProgress.write(0, 6, 0, courses.size(), "Priprema generisanja...", false, null, null);
+
+            // Cijelo generisanje (svih 6 rasporeda) u JEDNOJ transakciji umjesto
+            // implicitnog auto-commit-a po pojedinačnom INSERT-u - drastično manje
+            // network round-trip + commit latencije ka udaljenoj bazi.
+            conn.setAutoCommit(false);
+
             // Define the 6 different priority orders
             int[][] priorityOrders = {
                     { 1, 2, 3 }, // Schedule 1
@@ -2647,6 +2689,11 @@ public class EventValidationService {
                 System.out.println("Priority Order: Year " + priorityOrder[0] + " → Year " +
                         priorityOrder[1] + " → Year " + priorityOrder[2]);
                 System.out.println("─".repeat(50));
+
+                currentScheduleIndex = i + 1;
+                currentCourseCounter = 0;
+                ScheduleProgress.write(currentScheduleIndex, 6, 0, courses.size(),
+                        "Raspored " + currentScheduleIndex + "/6 u toku...", false, null, null);
 
                 int scheduleId = generateScheduleWithYearPriority(priorityOrder, allFailedCourses);
                 if (scheduleId > 0) {
@@ -2685,19 +2732,35 @@ public class EventValidationService {
             result.success = (failCount == 0);
             
             if (failCount > 0) {
-                result.message = "WARNING: Generated " + successCount + "/6 schedules. " + 
+                result.message = "WARNING: Generated " + successCount + "/6 schedules. " +
                             allFailedCourses.size() + " courses failed";
             } else {
                 result.message = "Ispravno generisani svi rasporedi";
             }
+
+            conn.commit();
+            ScheduleProgress.write(6, 6, courses.size(), courses.size(), result.message, true, result.success, null);
             return result;
-            
+
         } catch (Exception e) {
+            try {
+                conn.rollback();
+            } catch (SQLException rollbackEx) {
+                System.err.println("Greska pri rollback-u: " + rollbackEx.getMessage());
+            }
             result.success = false;
             result.message = "ERROR: " + e.getMessage();
             e.printStackTrace();
+            ScheduleProgress.write(currentScheduleIndex, 6, currentCourseCounter, courses.size(),
+                    result.message, true, false, e.getMessage());
             return result;
-    }
+        } finally {
+            try {
+                conn.setAutoCommit(true);
+            } catch (SQLException autoCommitEx) {
+                System.err.println("Greska pri vracanju autoCommit: " + autoCommitEx.getMessage());
+            }
+        }
     }
 
     /**
@@ -2828,8 +2891,12 @@ public class EventValidationService {
      * Checks if a course is already scheduled in this schedule
      */
     private boolean isAlreadyScheduledInSchedule(int scheduleId, int courseId) {
-        for (AcademicEvent event : academicEvents.values()) {
-            if (event.scheduleId == scheduleId && event.idCourse == courseId) {
+        List<AcademicEvent> events = eventsByScheduleIdThisRun.get(scheduleId);
+        if (events == null) {
+            return false;
+        }
+        for (AcademicEvent event : events) {
+            if (event.idCourse == courseId) {
                 return true;
             }
         }
@@ -2848,6 +2915,10 @@ public class EventValidationService {
                 failedList.add(new FailedCourse(0, "Unknown", "Course is null", 0));
                 return "SKIP";
             }
+
+            currentCourseCounter++;
+            ScheduleProgress.write(currentScheduleIndex, 6, currentCourseCounter, courses.size(),
+                    "Raspored " + currentScheduleIndex + "/6 • Predmet: " + course.name, false, null, null);
 
             // Predmet može upasti u više od jedne faze u generateScheduleWithYearPriority
             // (npr. labsPerWeek > 0 I is_online = true istovremeno), pa bi bez ove provjere
@@ -2951,18 +3022,8 @@ public class EventValidationService {
      * (is_assistant = true/false), po redoslijedu dodavanja.
      */
     private List<Integer> getAllProfessorsForRole(int courseId, boolean isAssistant) throws SQLException {
-        List<Integer> result = new ArrayList<>();
-        String query = "SELECT professor_id FROM course_professor WHERE course_id = ? AND is_assistant = ? ORDER BY id";
-        try (PreparedStatement ps = conn.prepareStatement(query)) {
-            ps.setInt(1, courseId);
-            ps.setBoolean(2, isAssistant);
-            try (ResultSet rs = ps.executeQuery()) {
-                while (rs.next()) {
-                    result.add(rs.getInt("professor_id"));
-                }
-            }
-        }
-        return result;
+        List<Integer> profs = courseProfessorsByCourseAndRole.get(courseId + "_" + isAssistant);
+        return profs != null ? new ArrayList<>(profs) : new ArrayList<>();
     }
 
     /**
@@ -2975,8 +3036,8 @@ public class EventValidationService {
      */
     private boolean hasRoomOrProfessorConflictInSchedule(int scheduleId, String day, int roomId,
             int professorId, LocalTime startTime, LocalTime endTime) {
-        for (AcademicEvent event : academicEvents.values()) {
-            if (event.scheduleId != scheduleId) continue;
+        List<AcademicEvent> scheduleEvents = eventsByScheduleIdThisRun.getOrDefault(scheduleId, Collections.emptyList());
+        for (AcademicEvent event : scheduleEvents) {
             if (day == null || event.day == null || !event.day.equals(day)) continue;
             if (startTime == null || endTime == null || event.startTime == null || event.endTime == null) continue;
 
@@ -3002,8 +3063,8 @@ public class EventValidationService {
 
         // Termini grupe 1 za ovaj predmet u ovom rasporedu, grupisani po (dan, tip)
         Map<String, List<AcademicEvent>> blocks = new LinkedHashMap<>();
-        for (AcademicEvent e : academicEvents.values()) {
-            if (e.scheduleId == scheduleId && e.idCourse == course.idCourse) {
+        for (AcademicEvent e : eventsByScheduleIdThisRun.getOrDefault(scheduleId, Collections.emptyList())) {
+            if (e.idCourse == course.idCourse) {
                 String key = e.day + "|" + e.typeEnum;
                 blocks.computeIfAbsent(key, k -> new ArrayList<>()).add(e);
             }
@@ -3082,8 +3143,8 @@ public class EventValidationService {
      */
     private int getSemesterHoursOnDay(int scheduleId, int semester, String day) {
         List<LocalTime[]> intervals = new ArrayList<>();
-        for (AcademicEvent event : academicEvents.values()) {
-            if (event.scheduleId != scheduleId) continue;
+        List<AcademicEvent> scheduleEvents = eventsByScheduleIdThisRun.getOrDefault(scheduleId, Collections.emptyList());
+        for (AcademicEvent event : scheduleEvents) {
             if (day == null || event.day == null || !event.day.equals(day)) continue;
             if (event.startTime == null || event.endTime == null) continue;
             Course c = courses.get(event.idCourse);
@@ -3332,12 +3393,8 @@ public class EventValidationService {
      */
     private boolean hasConflictInSchedule(int scheduleId, String day, int roomId, int professorId,
             LocalTime startTime, LocalTime endTime, int courseSemester) {
-        for (AcademicEvent event : academicEvents.values()) {
-            // Only check events in the SAME schedule
-            if (event.scheduleId != scheduleId) {
-                continue;
-            }
-
+        List<AcademicEvent> scheduleEvents = eventsByScheduleIdThisRun.getOrDefault(scheduleId, Collections.emptyList());
+        for (AcademicEvent event : scheduleEvents) {
             // Check day match
             boolean dayMatch = (day != null && event.day != null && event.day.equals(day));
             if (!dayMatch) {
