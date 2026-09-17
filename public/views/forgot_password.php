@@ -154,7 +154,7 @@ if (isset($_SESSION['professor_id'])) {
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    const API_URL = '../../src/api/password_reset.php';
+    const API_URL = '../api/password_reset.php';
 
     // Step elements
     const step1 = document.getElementById('step1');

@@ -148,6 +148,9 @@ CREATE TABLE public.course (
     major character varying(100),
     colloquium_1_week integer,
     colloquium_2_week integer,
+    requires_computer_lab boolean DEFAULT false,
+    expected_students integer,
+    parallel_groups integer DEFAULT 1,
     CONSTRAINT course_semester_chk CHECK (((semester >= 1) AND (semester <= 6)))
 );
 
@@ -285,6 +288,9 @@ CREATE TABLE public.professor_availability (
     weekday smallint NOT NULL,
     start_time time without time zone NOT NULL,
     end_time time without time zone NOT NULL,
+    requires_computer_lab boolean DEFAULT false,
+    preferred_room_id bigint,
+    course_id bigint,
     CONSTRAINT professor_availability_weekday_chk CHECK (((weekday >= 1) AND (weekday <= 7)))
 );
 
@@ -326,7 +332,8 @@ CREATE TABLE public.room (
     code character varying(50) NOT NULL,
     capacity integer DEFAULT 30 NOT NULL,
     is_computer_lab boolean DEFAULT false NOT NULL,
-    is_active boolean DEFAULT true NOT NULL
+    is_active boolean DEFAULT true NOT NULL,
+    faculty_code character varying(20)
 );
 
 
@@ -1620,6 +1627,12 @@ ALTER TABLE ONLY public.notes
 
 ALTER TABLE ONLY public.professor_availability
     ADD CONSTRAINT professor_availability_professor_id_fkey FOREIGN KEY (professor_id) REFERENCES public.professor(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.professor_availability
+    ADD CONSTRAINT professor_availability_preferred_room_id_fkey FOREIGN KEY (preferred_room_id) REFERENCES public.room(id);
+
+ALTER TABLE ONLY public.professor_availability
+    ADD CONSTRAINT professor_availability_course_id_fkey FOREIGN KEY (course_id) REFERENCES public.course(id);
 
 
 -- Name: room_occupancy room_occupancy_academic_year_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -

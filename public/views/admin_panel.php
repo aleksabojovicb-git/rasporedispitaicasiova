@@ -2,7 +2,45 @@
 session_start();
 require_once __DIR__ . '/../../config/dbconnection.php';
 require_once __DIR__ . '/../../src/services/OccupancyService.php';
+require_once __DIR__ . '/../../vendor/autoload.php';
+
+use PHPMailer\PHPMailer\PHPMailer;
+use PHPMailer\PHPMailer\SMTP;
+use PHPMailer\PHPMailer\Exception as PHPMailerException;
+
 $occupancyService = new OccupancyService($pdo);
+
+// short English comment: e-mails the freshly created account's login credentials to the user
+function sendAccountCredentialsEmail($emailAddress, $username, $plainPassword) {
+    $mail = new PHPMailer(true);
+    try {
+        $mail->SMTPDebug = SMTP::DEBUG_OFF;
+        $mail->isSMTP();
+        $mail->Host = 'smtp-relay.brevo.com';
+        $mail->SMTPAuth = true;
+        $mail->Username = 'a22987001@smtp-brevo.com';
+        $mail->Password = 'G6xQXvBk3F5RcPKp';
+        $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+        $mail->Port = 587;
+
+        $mail->setFrom('luka.dragicevic2004@gmail.com', 'FIT Sistem');
+        $mail->addAddress($emailAddress);
+
+        $mail->isHTML(false);
+        $mail->Subject = 'Vaš nalog za Raspored je kreiran';
+        $mail->Body =
+            "Za Vas je kreiran nalog u sistemu za raspored.\n\n" .
+            "Korisničko ime: $username\n" .
+            "Lozinka: $plainPassword\n\n" .
+            "Preporučujemo da lozinku promijenite nakon prve prijave.";
+
+        $mail->send();
+        return true;
+    } catch (PHPMailerException $e) {
+        error_log('sendAccountCredentialsEmail failed: ' . $e->getMessage());
+        return false;
+    }
+}
 try {
     $pdo->exec("
         CREATE TABLE IF NOT EXISTS academic_year (
@@ -13,6 +51,20 @@ try {
             is_active boolean DEFAULT true
         )
     ");
+    // Kojem fakultetu sala prioritetno pripada (npr. "FIT"); prazno = dijeljena/na zahtjev
+    $pdo->exec("ALTER TABLE room ADD COLUMN IF NOT EXISTS faculty_code VARCHAR(20)");
+    // Dodatni uslovi predmeta za generisanje rasporeda (prije generisanja):
+    // da li zahtijeva računarsku salu (nezavisno od labs_per_week), očekivani broj
+    // studenata (poredi se sa kapacitetom sale), i broj paralelnih grupa u isto vrijeme.
+    $pdo->exec("ALTER TABLE course ADD COLUMN IF NOT EXISTS requires_computer_lab BOOLEAN DEFAULT FALSE");
+    $pdo->exec("ALTER TABLE course ADD COLUMN IF NOT EXISTS expected_students INTEGER");
+    $pdo->exec("ALTER TABLE course ADD COLUMN IF NOT EXISTS parallel_groups INTEGER DEFAULT 1");
+    // Dodatni zahtjevi profesora uz svaki termin raspoloživosti: da li im je za taj
+    // termin neophodna računarska sala, izbor konkretne sale, i vezivanje termina za
+    // konkretan predmet (npr. "ovaj predmet želim baš utorkom").
+    $pdo->exec("ALTER TABLE professor_availability ADD COLUMN IF NOT EXISTS requires_computer_lab BOOLEAN DEFAULT FALSE");
+    $pdo->exec("ALTER TABLE professor_availability ADD COLUMN IF NOT EXISTS preferred_room_id BIGINT REFERENCES room(id)");
+    $pdo->exec("ALTER TABLE professor_availability ADD COLUMN IF NOT EXISTS course_id BIGINT REFERENCES course(id)");
 // Ensure room_occupancy table exists
     try {
         // Moved to OccupancyService logic
@@ -449,11 +501,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $lectures_per_week = isset($_POST['lectures_per_week']) ? (int)$_POST['lectures_per_week'] : 0;
                 $exercises_per_week = isset($_POST['exercises_per_week']) ? (int)$_POST['exercises_per_week'] : 0;
                 $labs_per_week = isset($_POST['labs_per_week']) ? (int)$_POST['labs_per_week'] : 0;
+                $is_online = isset($_POST['is_online']) ? 1 : 0;
+                $requires_computer_lab = isset($_POST['requires_computer_lab']) ? 1 : 0;
+                $expected_students = (isset($_POST['expected_students']) && $_POST['expected_students'] !== '')
+                    ? (int)$_POST['expected_students'] : null;
+                $parallel_groups = isset($_POST['parallel_groups']) && (int)$_POST['parallel_groups'] > 0
+                    ? (int)$_POST['parallel_groups'] : 1;
 
                 try {
-                    $stmt = $pdo->prepare("INSERT INTO course (name, semester, code, is_optional, lectures_per_week, exercises_per_week, labs_per_week, is_active) 
-                                          VALUES (?, ?, ?, ?, ?, ?, ?, TRUE)");
-                    $stmt->execute([$name, $semester, $code, $is_optional, $lectures_per_week, $exercises_per_week, $labs_per_week]);
+                    $stmt = $pdo->prepare("INSERT INTO course (name, semester, code, is_optional, lectures_per_week, exercises_per_week, labs_per_week, is_online, requires_computer_lab, expected_students, parallel_groups, is_active)
+                                          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE)");
+                    $stmt->execute([$name, $semester, $code, $is_optional, $lectures_per_week, $exercises_per_week, $labs_per_week, $is_online, $requires_computer_lab, $expected_students, $parallel_groups]);
                     header("Location: ?page=predmeti&success=1&message=" . urlencode("Predmet je uspješno dodat."));
                     exit;
                 } catch (PDOException $e) {
@@ -465,11 +523,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $code = $_POST['code'];
                 $capacity = $_POST['capacity'];
                 $is_computer_lab = isset($_POST['is_computer_lab']) ? 1 : 0;
+                $faculty_code = trim($_POST['faculty_code'] ?? '') !== '' ? trim($_POST['faculty_code']) : null;
 
                 try {
-                    $stmt = $pdo->prepare("INSERT INTO room (code, capacity, is_computer_lab, is_active) 
-                                          VALUES (?, ?, ?, TRUE)");
-                    $stmt->execute([$code, $capacity, $is_computer_lab]);
+                    $stmt = $pdo->prepare("INSERT INTO room (code, capacity, is_computer_lab, faculty_code, is_active)
+                                          VALUES (?, ?, ?, ?, TRUE)");
+                    $stmt->execute([$code, $capacity, $is_computer_lab, $faculty_code]);
                     header("Location: ?page=sale&success=1&message=" . urlencode("Sala je uspješno dodata."));
                     exit;
                 } catch (PDOException $e) {
@@ -568,6 +627,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 break;
 
+            case 'hard_delete_professor':
+                if (isset($_POST['id']) && is_numeric($_POST['id'])) {
+                    $id = (int)$_POST['id'];
+
+                    try {
+                        $stmt = $pdo->prepare("DELETE FROM professor WHERE id = ?");
+                        $stmt->execute([$id]);
+
+                        header("Location: ?page=profesori&success=1&message=" . urlencode("Profesor je trajno obrisan."));
+                        exit;
+                    } catch (PDOException $e) {
+                        $error = "Ne možete trajno obrisati ovog profesora jer postoje podaci vezani za njega (predmeti, raspored, nalog...). Probajte ga deaktivirati.";
+                    }
+                }
+                break;
+
             case 'activate_professor':
                 if (isset($_POST['id']) && is_numeric($_POST['id'])) {
                     $id = (int)$_POST['id'];
@@ -616,6 +691,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 break;
 
+            case 'hard_delete_predmet':
+                if (isset($_POST['id']) && is_numeric($_POST['id'])) {
+                    $id = (int)$_POST['id'];
+
+                    try {
+                        $pdo->beginTransaction();
+                        // course_professor veze ne blokiraju brisanje predmeta - obriši ih prvo
+                        $pdo->prepare("DELETE FROM course_professor WHERE course_id = ?")->execute([$id]);
+                        $stmt = $pdo->prepare("DELETE FROM course WHERE id = ?");
+                        $stmt->execute([$id]);
+                        $pdo->commit();
+
+                        header("Location: ?page=predmeti&success=1&message=" . urlencode("Predmet je trajno obrisan."));
+                        exit;
+                    } catch (PDOException $e) {
+                        if ($pdo->inTransaction()) $pdo->rollBack();
+                        $error = "Ne možete trajno obrisati ovaj predmet jer postoje podaci vezani za njega (raspored, kolokvijumi...). Probajte ga deaktivirati.";
+                    }
+                }
+                break;
+
             case 'activate_sala':
                 if (isset($_POST['id']) && is_numeric($_POST['id'])) {
                     $id = (int)$_POST['id'];
@@ -644,6 +740,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         exit;
                     } catch (PDOException $e) {
                         $error = "Greška pri deaktiviranju sale: " . $e->getMessage();
+                    }
+                }
+                break;
+
+            case 'hard_delete_sala':
+                if (isset($_POST['id']) && is_numeric($_POST['id'])) {
+                    $id = (int)$_POST['id'];
+
+                    try {
+                        $stmt = $pdo->prepare("DELETE FROM room WHERE id = ?");
+                        $stmt->execute([$id]);
+
+                        header("Location: ?page=sale&success=1&message=" . urlencode("Sala je trajno obrisana."));
+                        exit;
+                    } catch (PDOException $e) {
+                        $error = "Ne možete trajno obrisati ovu salu jer postoje podaci vezani za nju (raspored, zauzetost...). Probajte je deaktivirati.";
                     }
                 }
                 break;
@@ -806,10 +918,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $fields[] = "labs_per_week = ?";
                     $params[] = (int)$_POST['labs_per_week'];
                 }
+                if (isset($_POST['expected_students'])) {
+                    $fields[] = "expected_students = ?";
+                    $params[] = $_POST['expected_students'] !== '' ? (int)$_POST['expected_students'] : null;
+                }
+                if (isset($_POST['parallel_groups'])) {
+                    $fields[] = "parallel_groups = ?";
+                    $params[] = (int)$_POST['parallel_groups'] > 0 ? (int)$_POST['parallel_groups'] : 1;
+                }
 
-                // Uvijek ažuriramo checkbox jer HTML forme ne šalju unchecked vrijednosti
+                // Uvijek ažuriramo checkbox-ove jer HTML forme ne šalju unchecked vrijednosti
                 $fields[] = "is_optional = ?";
                 $params[] = isset($_POST['is_optional']) ? 1 : 0;
+                $fields[] = "is_online = ?";
+                $params[] = isset($_POST['is_online']) ? 1 : 0;
+                $fields[] = "requires_computer_lab = ?";
+                $params[] = isset($_POST['requires_computer_lab']) ? 1 : 0;
 
                 if (!isset($_POST['course_id'])) {
                     throw new Exception("Course ID nije validan.");
@@ -884,6 +1008,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // Uvijek ažuriramo checkbox jer HTML forme ne šalju unchecked vrijednosti
                 $fields[] = "is_computer_lab = ?";
                 $params[] = isset($_POST['is_computer_lab']) ? 1 : 0;
+
+                if (isset($_POST['faculty_code'])) {
+                    $fields[] = "faculty_code = ?";
+                    $params[] = trim($_POST['faculty_code']) !== '' ? trim($_POST['faculty_code']) : null;
+                }
 
                 if (!isset($_POST['sala_id'])) {
                     throw new Exception("Sala ID nije validan.");
@@ -1043,7 +1172,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $stmt = $pdo->prepare("INSERT INTO user_account (username, password_hash, role_enum, is_active, professor_id) VALUES (?, ?, ?, TRUE, ?)");
                     $stmt->execute([$username, $password_hash, $role, $professor_id]);
 
-                    header("Location: ?page=account&success=1&message=" . urlencode("Korisnik je uspješno dodat."));
+                    // Pošalji inicijalnu lozinku korisniku na email povezanog profesora (ako postoji)
+                    $mailSent = null;
+                    if ($professor_id) {
+                        $profStmt = $pdo->prepare("SELECT email FROM professor WHERE id = ?");
+                        $profStmt->execute([$professor_id]);
+                        $profEmail = $profStmt->fetchColumn();
+                        if ($profEmail) {
+                            $mailSent = sendAccountCredentialsEmail($profEmail, $username, $password);
+                        }
+                    }
+
+                    $successMsg = "Korisnik je uspješno dodat.";
+                    if ($mailSent === true) {
+                        $successMsg .= " Podaci za prijavu su poslani na email.";
+                    } elseif ($mailSent === false) {
+                        $successMsg .= " Napomena: slanje emaila sa lozinkom nije uspjelo — prenesite lozinku korisniku ručno.";
+                    }
+
+                    header("Location: ?page=account&success=1&message=" . urlencode($successMsg));
                     exit;
                 } catch (PDOException $e) {
                     $error = 'Greška pri dodavanju korisnika: ' . $e->getMessage();
@@ -1121,6 +1268,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         exit;
                     } catch (PDOException $e) {
                         $error = 'Greška pri aktiviranju korisnika: ' . $e->getMessage();
+                    }
+                }
+                break;
+
+            case 'hard_delete_account':
+                if (isset($_POST['id']) && is_numeric($_POST['id'])) {
+                    $id = (int)$_POST['id'];
+                    try {
+                        $stmt = $pdo->prepare("DELETE FROM user_account WHERE id = ?");
+                        $stmt->execute([$id]);
+                        header("Location: ?page=account&success=1&message=" . urlencode("Nalog je trajno obrisan."));
+                        exit;
+                    } catch (PDOException $e) {
+                        $error = 'Ne možete trajno obrisati ovaj nalog jer postoje podaci vezani za njega. Probajte ga deaktivirati.';
                     }
                 }
                 break;
@@ -1277,6 +1438,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </form>
         </div>
 
+        <form method="get" style="margin: 15px 0;">
+            <input type="hidden" name="page" value="profesori">
+            <input type="text" name="q" placeholder="Pretraga po imenu ili emailu..." value="<?= htmlspecialchars($_GET['q'] ?? '') ?>" style="padding:6px; min-width:250px;">
+            <button type="submit" class="action-button">Pretraži</button>
+            <?php if (!empty($_GET['q'])): ?>
+                <a href="?page=profesori" class="action-button" style="text-decoration:none; display:inline-block;">Poništi</a>
+            <?php endif; ?>
+        </form>
 
         <table border="1" cellpadding="5">
             <tr>
@@ -1288,7 +1457,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <?php
 
             try {
-                $stmt = $pdo->query("SELECT * FROM professor ORDER BY full_name");
+                $profSearch = trim($_GET['q'] ?? '');
+                if ($profSearch !== '') {
+                    $stmt = $pdo->prepare("SELECT * FROM professor WHERE full_name ILIKE ? OR email ILIKE ? ORDER BY full_name");
+                    $like = '%' . $profSearch . '%';
+                    $stmt->execute([$like, $like]);
+                } else {
+                    $stmt = $pdo->query("SELECT * FROM professor ORDER BY full_name");
+                }
                 while ($row = $stmt->fetch()) {
                     echo "<tr>";
                     echo "<td>" . htmlspecialchars($row['full_name']) . "</td>";
@@ -1311,6 +1487,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </form>";
                     }
 
+                    echo "<form id='harddelete-profesor-{$row['id']}' style='display:inline' method='post' action='{$_SERVER['PHP_SELF']}'>
+                        <input type='hidden' name='action' value='hard_delete_professor'>
+                        <input type='hidden' name='id' value='{$row['id']}'>
+                        <button type='button' class='action-button delete-button' onclick=\"if(confirm('Trajno obrisati ovog profesora? Ova akcija se ne može poništiti.')) submitDeleteForm({$row['id']}, 'hard_delete_professor', 'profesor')\">Obriši trajno</button>
+                    </form>";
+
                     echo "</td>";
                     echo "</tr>";
                 }
@@ -1332,6 +1514,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <button class="action-button add-button" onclick="toggleForm('assignForm')">
                     + Pridruži Profesora
                 </button>
+
+                <form method="get" style="margin: 15px 0;">
+                    <input type="hidden" name="page" value="predmeti">
+                    <input type="text" name="q" placeholder="Pretraga po nazivu ili šifri predmeta..." value="<?= htmlspecialchars($_GET['q'] ?? '') ?>" style="padding:6px; min-width:250px;">
+                    <button type="submit" class="action-button">Pretraži</button>
+                    <?php if (!empty($_GET['q'])): ?>
+                        <a href="?page=predmeti" class="action-button" style="text-decoration:none; display:inline-block;">Poništi</a>
+                    <?php endif; ?>
+                </form>
 
                 <!-- ===== Pridruži profesora ===== -->
                 <div id="assignForm" class="form-container" style="display:none">
@@ -1397,8 +1588,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <label>Fond časova - lab (sedmično):</label>
                         <input type="number" name="labs_per_week" min="0" step="1" value="0" required>
 
+                        <label>Očekivan broj studenata (za poređenje sa kapacitetom sale, opciono):</label>
+                        <input type="number" name="expected_students" min="0" step="1" placeholder="npr. 35">
+
+                        <label>Broj paralelnih grupa istovremeno (1 = jedna grupa):</label>
+                        <input type="number" name="parallel_groups" min="1" step="1" value="1">
+
                         <label>
                             <input type="checkbox" name="is_optional"> Izborni
+                        </label>
+
+                        <label>
+                            <input type="checkbox" name="is_online"> Ne zahtijeva salu (onlajn nastava)
+                        </label>
+
+                        <label>
+                            <input type="checkbox" name="requires_computer_lab"> Zahtijeva računarsku salu
                         </label>
 
                         <button type="submit">Sačuvaj</button>
@@ -1406,8 +1611,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
 
                 <?php
-                $stmt = $pdo->query("
-    SELECT 
+                $predmetSearch = trim($_GET['q'] ?? '');
+                $predmetSql = "
+    SELECT
         c.id AS course_id,
         c.name,
         c.code,
@@ -1416,6 +1622,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         c.lectures_per_week,
         c.exercises_per_week,
         c.labs_per_week,
+        c.is_online,
+        c.requires_computer_lab,
+        c.expected_students,
+        c.parallel_groups,
         c.is_active,
         cp.professor_id,
         cp.is_assistant,
@@ -1423,8 +1633,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     FROM course c
     LEFT JOIN course_professor cp ON cp.course_id = c.id
     LEFT JOIN professor p ON p.id = cp.professor_id
+    " . ($predmetSearch !== '' ? "WHERE c.name ILIKE ? OR c.code ILIKE ?" : "") . "
     ORDER BY c.name ASC, c.id ASC
-");
+";
+                $stmt = $pdo->prepare($predmetSql);
+                if ($predmetSearch !== '') {
+                    $like = '%' . $predmetSearch . '%';
+                    $stmt->execute([$like, $like]);
+                } else {
+                    $stmt->execute();
+                }
 
                 $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
                 $courses = [];
@@ -1441,6 +1659,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             'lectures_per_week' => (int)$r['lectures_per_week'],
                             'exercises_per_week' => (int)$r['exercises_per_week'],
                             'labs_per_week' => (int)$r['labs_per_week'],
+                            'is_online' => (int)$r['is_online'],
+                            'requires_computer_lab' => (int)$r['requires_computer_lab'],
+                            'expected_students' => $r['expected_students'],
+                            'parallel_groups' => (int)($r['parallel_groups'] ?: 1),
                             'is_active' => (int)$r['is_active'],
                             'professors' => []
                         ];
@@ -1466,6 +1688,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <th>Predavanja</th>
                         <th>Vježbe</th>
                         <th>Lab</th>
+                        <th>Uslovi</th>
                         <th>Profesori</th>
                         <th>Status</th>
                         <th>Akcije</th>
@@ -1481,6 +1704,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <td><?= $c['lectures_per_week'] ?></td>
                             <td><?= $c['exercises_per_week'] ?></td>
                             <td><?= $c['labs_per_week'] ?></td>
+
+                            <td>
+                                <?php
+                                    $uslovi = [];
+                                    if ($c['is_online']) $uslovi[] = 'onlajn';
+                                    if ($c['requires_computer_lab']) $uslovi[] = 'rač. sala';
+                                    if ($c['expected_students']) $uslovi[] = (int)$c['expected_students'] . ' stud.';
+                                    if ($c['parallel_groups'] > 1) $uslovi[] = $c['parallel_groups'] . ' paral. grupe';
+                                    echo $uslovi ? htmlspecialchars(implode(', ', $uslovi)) : '<em>—</em>';
+                                ?>
+                            </td>
 
                             <td>
                                 <?= $c['professors']
@@ -1504,6 +1738,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                         data-lectures_per_week="<?= $c['lectures_per_week'] ?>"
                                         data-exercises_per_week="<?= $c['exercises_per_week'] ?>"
                                         data-labs_per_week="<?= $c['labs_per_week'] ?>"
+                                        data-is_online="<?= $c['is_online'] ?>"
+                                        data-requires_computer_lab="<?= $c['requires_computer_lab'] ?>"
+                                        data-expected_students="<?= htmlspecialchars($c['expected_students'] ?? '') ?>"
+                                        data-parallel_groups="<?= $c['parallel_groups'] ?>"
                                         data-professors="<?= htmlspecialchars(json_encode($c['professors'])) ?>">
                                     Uredi
                                 </button>
@@ -1520,6 +1758,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                         <button class="action-button activation-button">Aktiviraj</button>
                                     </form>
                                 <?php endif; ?>
+                                <form method="post" style="display:inline" onsubmit="return confirm('Trajno obrisati ovaj predmet? Ova akcija se ne može poništiti.');">
+                                    <input type="hidden" name="action" value="hard_delete_predmet">
+                                    <input type="hidden" name="id" value="<?= $c['id'] ?>">
+                                    <button class="action-button delete-button">Obriši trajno</button>
+                                </form>
                             </td>
                         </tr>
                     <?php endforeach; ?>
@@ -1555,31 +1798,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <label for="is_computer_lab">Računarska sala:</label>
                     <input type="checkbox" id="is_computer_lab" name="is_computer_lab">
 
+                    <label for="faculty_code">Kome sala prioritetno pripada (npr. FIT), prazno = dijeljena/na zahtjev:</label>
+                    <input type="text" id="faculty_code" name="faculty_code" maxlength="20" placeholder="npr. FIT">
+
                     <button type="submit">Sačuvaj</button>
                 </form>
             </div>
+
+            <form method="get" style="margin: 15px 0;">
+                <input type="hidden" name="page" value="sale">
+                <input type="text" name="q" placeholder="Pretraga po oznaci sale..." value="<?= htmlspecialchars($_GET['q'] ?? '') ?>" style="padding:6px; min-width:250px;">
+                <button type="submit" class="action-button">Pretraži</button>
+                <?php if (!empty($_GET['q'])): ?>
+                    <a href="?page=sale" class="action-button" style="text-decoration:none; display:inline-block;">Poništi</a>
+                <?php endif; ?>
+            </form>
 
             <table border="1" cellpadding="5">
                 <tr>
                     <th>Oznaka</th>
                     <th>Kapacitet</th>
                     <th>Tip</th>
+                    <th>Pripada</th>
                     <th>Status</th>
                     <th>Akcije</th>
                 </tr>
                 <?php
 
                 try {
-                    $stmt = $pdo->query("SELECT * FROM room ORDER BY code");
+                    $salaSearch = trim($_GET['q'] ?? '');
+                    if ($salaSearch !== '') {
+                        $stmt = $pdo->prepare("SELECT * FROM room WHERE code ILIKE ? ORDER BY code");
+                        $stmt->execute(['%' . $salaSearch . '%']);
+                    } else {
+                        $stmt = $pdo->query("SELECT * FROM room ORDER BY code");
+                    }
                     while ($row = $stmt->fetch()) {
                         echo "<tr>";
 
                         echo "<td>" . htmlspecialchars($row['code']) . "</td>";
                         echo "<td>" . htmlspecialchars($row['capacity']) . "</td>";
                         echo "<td>" . ($row['is_computer_lab'] ? 'Računarska' : 'Standardna') . "</td>";
+                        echo "<td>" . ($row['faculty_code'] ? htmlspecialchars($row['faculty_code']) : '<em>Dijeljena / na zahtjev</em>') . "</td>";
                         echo "<td>" . ($row['is_active'] ? 'Aktivna' : 'Neaktivna') . "</td>";
                         echo "<td>";
-                        echo "<button class='action-button edit-button' data-entity='sala' data-id='" . $row['id'] . "' data-code='" . htmlspecialchars($row['code'], ENT_QUOTES) . "' data-capacity='" . htmlspecialchars($row['capacity'], ENT_QUOTES) . "' data-is_computer_lab='" . ($row['is_computer_lab'] ? '1' : '0') . "'>Uredi</button>";
+                        echo "<button class='action-button edit-button' data-entity='sala' data-id='" . $row['id'] . "' data-code='" . htmlspecialchars($row['code'], ENT_QUOTES) . "' data-capacity='" . htmlspecialchars($row['capacity'], ENT_QUOTES) . "' data-is_computer_lab='" . ($row['is_computer_lab'] ? '1' : '0') . "' data-faculty_code='" . htmlspecialchars($row['faculty_code'] ?? '', ENT_QUOTES) . "'>Uredi</button>";
 
                         // Ako je sala neaktivna ne moze imati deaktiviraj dugme
                         if ($row['is_active']) {
@@ -1595,6 +1858,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <button type='button' class='action-button activation-button' onclick=\"submitDeleteForm({$row['id']}, 'activate_sala', 'salu')\">Aktiviraj</button>
                         </form>";
                         }
+
+                        echo "<form id='harddelete-sala-{$row['id']}' style='display:inline' method='post' action='{$_SERVER['PHP_SELF']}'>
+                            <input type='hidden' name='action' value='hard_delete_sala'>
+                            <input type='hidden' name='id' value='{$row['id']}'>
+                            <button type='button' class='action-button delete-button' onclick=\"if(confirm('Trajno obrisati ovu salu? Ova akcija se ne može poništiti.')) submitDeleteForm({$row['id']}, 'hard_delete_sala', 'salu')\">Obriši trajno</button>
+                        </form>";
 
                         echo "</td>";
                         echo "</tr>";
@@ -1646,6 +1915,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </form>
                     </div>
 
+                    <form method="get" style="margin: 15px 0;">
+                        <input type="hidden" name="page" value="account">
+                        <input type="text" name="q" placeholder="Pretraga po imenu ili korisničkom imenu..." value="<?= htmlspecialchars($_GET['q'] ?? '') ?>" style="padding:6px; min-width:250px;">
+                        <button type="submit" class="action-button">Pretraži</button>
+                        <?php if (!empty($_GET['q'])): ?>
+                            <a href="?page=account" class="action-button" style="text-decoration:none; display:inline-block;">Poništi</a>
+                        <?php endif; ?>
+                    </form>
+
                     <table border="1" cellpadding="5">
                         <tr>
                             <th>Username</th>
@@ -1657,7 +1935,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <?php
                         try {
                             // Sada takođe biramo email povezane profesorke
-                            $stmt = $pdo->query("SELECT ua.*, p.full_name as professor_name, p.email as professor_email FROM user_account ua LEFT JOIN professor p ON ua.professor_id = p.id ORDER BY ua.username");
+                            // Sortirano po imenu (profesor.full_name, uz username kao fallback za admin naloge bez profesora)
+                            $accSearch = trim($_GET['q'] ?? '');
+                            if ($accSearch !== '') {
+                                $stmt = $pdo->prepare("SELECT ua.*, p.full_name as professor_name, p.email as professor_email FROM user_account ua LEFT JOIN professor p ON ua.professor_id = p.id WHERE ua.username ILIKE ? OR p.full_name ILIKE ? ORDER BY COALESCE(p.full_name, ua.username)");
+                                $like = '%' . $accSearch . '%';
+                                $stmt->execute([$like, $like]);
+                            } else {
+                                $stmt = $pdo->query("SELECT ua.*, p.full_name as professor_name, p.email as professor_email FROM user_account ua LEFT JOIN professor p ON ua.professor_id = p.id ORDER BY COALESCE(p.full_name, ua.username)");
+                            }
 
                             
                             while ($row = $stmt->fetch()) {
@@ -1690,6 +1976,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     echo " <button type='button' class='action-button activation-button' onclick=\"submitDeleteForm({$row['id']}, 'activate_account', 'nalog')\">Aktiviraj</button>";
                                     echo "</form>";
                                 }
+
+                                echo "<form method='post' style='display:inline-block; margin-left:2px;' action='{$_SERVER['PHP_SELF']}'>";
+                                echo "<input type='hidden' name='action' value='hard_delete_account'>";
+                                echo "<input type='hidden' name='id' value='" . $row['id'] . "'>";
+                                echo "<button type='button' class='action-button delete-button' onclick=\"if(confirm('Trajno obrisati ovaj nalog? Ova akcija se ne može poništiti.')) submitDeleteForm({$row['id']}, 'hard_delete_account', 'nalog')\">Obriši trajno</button>";
+                                echo "</form>";
 
                                 echo "</td>";
                                 echo "</tr>";
@@ -1788,9 +2080,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                         <?php
                         try {
-                            $stmt = $pdo->query("SELECT pa.professor_id, pa.weekday, pa.start_time, pa.end_time, p.full_name
+                            $stmt = $pdo->query("SELECT pa.professor_id, pa.weekday, pa.start_time, pa.end_time,
+                                                    pa.requires_computer_lab, pa.preferred_room_id, pa.course_id,
+                                                    p.full_name, r.code AS preferred_room_code, c.name AS course_name
                                                 FROM professor_availability pa
                                                 JOIN professor p ON p.id = pa.professor_id
+                                                LEFT JOIN room r ON r.id = pa.preferred_room_id
+                                                LEFT JOIN course c ON c.id = pa.course_id
                                                 ORDER BY p.full_name, pa.weekday, pa.start_time");
                             $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -1822,7 +2118,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     echo "<summary style='cursor: pointer; font-weight: 600;'>" . htmlspecialchars($prof['name']) . "</summary>";
                                     echo "<table border='1' cellpadding='5' style='margin-top: 10px; width: 100%; border-collapse: collapse; background: #242a31;'>";
                                     echo "<tr style='background: #f4f4f4; color: #333;'>";
-                                    echo "<th>Dan</th><th>Od</th><th>Do</th>";
+                                    echo "<th>Dan</th><th>Od</th><th>Do</th><th>Dodatni zahtjevi</th>";
                                     echo "</tr>";
 
                                     foreach ($prof['items'] as $row) {
@@ -1830,10 +2126,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                         $startTime = $row['start_time'] ? substr($row['start_time'], 0, 5) : '';
                                         $endTime = $row['end_time'] ? substr($row['end_time'], 0, 5) : '';
 
+                                        $requests = [];
+                                        if ($row['requires_computer_lab']) $requests[] = 'neophodna rač. sala';
+                                        if ($row['preferred_room_code']) $requests[] = 'sala: ' . $row['preferred_room_code'];
+                                        if ($row['course_name']) $requests[] = 'predmet: ' . $row['course_name'];
+                                        $requestsLabel = $requests ? implode(', ', $requests) : '—';
+
                                         echo '<tr>';
                                         echo '<td>' . htmlspecialchars($dayLabel) . '</td>';
                                         echo '<td>' . htmlspecialchars($startTime) . '</td>';
                                         echo '<td>' . htmlspecialchars($endTime) . '</td>';
+                                        echo '<td>' . htmlspecialchars($requestsLabel) . '</td>';
                                         echo '</tr>';
                                     }
 
@@ -1952,12 +2255,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     echo "<p>Odaberite opciju ispod da generišete raspored časova:</p>";
 
                     echo "<button id='generate-schedule' class='option-button'>Generiši raspored časova</button>";
-                    echo "<button id='generate-colloquiums' class='option-button' style='display:none; margin-left: 10px; background-color: #9333ea;'>Generiši kolokvijume</button>";
+                    echo "<button id='generate-colloquiums' class='option-button' style='margin-left: 10px; background-color: #9333ea;'>Generiši kolokvijume</button>";
                     echo "<div id='schedule-status' style='margin-top:20px; display:none'></div>";
 
-                    // Colloquium Section (HIDDEN)
+                    // Colloquium Section (prikazuje se automatski kad učitani raspored ima kolokvijume - vidi renderScheduleData)
                     echo "
-                    <div id='colloquium-section' style='display:none !important; margin-top:30px; border-top: 1px solid #444; padding-top: 20px;'>
+                    <div id='colloquium-section' style='display:none; margin-top:30px; border-top: 1px solid #444; padding-top: 20px;'>
                         <h3 style='color: #ecc94b; margin-bottom: 15px;'>Raspored Kolokvijuma</h3>
                         
                         <div style='display:flex; gap: 20px; margin-bottom: 20px; flex-wrap: wrap;'>
@@ -2025,8 +2328,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 e.type === 'COLLOQUIUM_1' || e.type === 'COLLOQUIUM_2'
                             );
 
-                            // HIDDEN: Colloquium section display logic disabled
-                            /*
                             if (colSection) {
                                 if (hasColloquiums) {
                                     colSection.style.display = 'block';
@@ -2035,7 +2336,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     colSection.style.display = 'none';
                                 }
                             }
-                            */
 
                             // clear previous
                             container.innerHTML = '';

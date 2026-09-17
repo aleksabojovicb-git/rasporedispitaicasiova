@@ -458,7 +458,7 @@ function handleForgotPassword(e) {
     formData.append('action', 'send_reset_code');
     formData.append('email', email);
     
-    fetch('../../src/api/password_reset.php', {
+    fetch('../api/password_reset.php', {
         method: 'POST',
         body: formData
     })
