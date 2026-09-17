@@ -53,6 +53,18 @@ try {
     ");
     // Kojem fakultetu sala prioritetno pripada (npr. "FIT"); prazno = dijeljena/na zahtjev
     $pdo->exec("ALTER TABLE room ADD COLUMN IF NOT EXISTS faculty_code VARCHAR(20)");
+    // Dodatni uslovi predmeta za generisanje rasporeda (prije generisanja):
+    // da li zahtijeva računarsku salu (nezavisno od labs_per_week), očekivani broj
+    // studenata (poredi se sa kapacitetom sale), i broj paralelnih grupa u isto vrijeme.
+    $pdo->exec("ALTER TABLE course ADD COLUMN IF NOT EXISTS requires_computer_lab BOOLEAN DEFAULT FALSE");
+    $pdo->exec("ALTER TABLE course ADD COLUMN IF NOT EXISTS expected_students INTEGER");
+    $pdo->exec("ALTER TABLE course ADD COLUMN IF NOT EXISTS parallel_groups INTEGER DEFAULT 1");
+    // Dodatni zahtjevi profesora uz svaki termin raspoloživosti: da li im je za taj
+    // termin neophodna računarska sala, izbor konkretne sale, i vezivanje termina za
+    // konkretan predmet (npr. "ovaj predmet želim baš utorkom").
+    $pdo->exec("ALTER TABLE professor_availability ADD COLUMN IF NOT EXISTS requires_computer_lab BOOLEAN DEFAULT FALSE");
+    $pdo->exec("ALTER TABLE professor_availability ADD COLUMN IF NOT EXISTS preferred_room_id BIGINT REFERENCES room(id)");
+    $pdo->exec("ALTER TABLE professor_availability ADD COLUMN IF NOT EXISTS course_id BIGINT REFERENCES course(id)");
 // Ensure room_occupancy table exists
     try {
         // Moved to OccupancyService logic
@@ -489,11 +501,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $lectures_per_week = isset($_POST['lectures_per_week']) ? (int)$_POST['lectures_per_week'] : 0;
                 $exercises_per_week = isset($_POST['exercises_per_week']) ? (int)$_POST['exercises_per_week'] : 0;
                 $labs_per_week = isset($_POST['labs_per_week']) ? (int)$_POST['labs_per_week'] : 0;
+                $is_online = isset($_POST['is_online']) ? 1 : 0;
+                $requires_computer_lab = isset($_POST['requires_computer_lab']) ? 1 : 0;
+                $expected_students = (isset($_POST['expected_students']) && $_POST['expected_students'] !== '')
+                    ? (int)$_POST['expected_students'] : null;
+                $parallel_groups = isset($_POST['parallel_groups']) && (int)$_POST['parallel_groups'] > 0
+                    ? (int)$_POST['parallel_groups'] : 1;
 
                 try {
-                    $stmt = $pdo->prepare("INSERT INTO course (name, semester, code, is_optional, lectures_per_week, exercises_per_week, labs_per_week, is_active) 
-                                          VALUES (?, ?, ?, ?, ?, ?, ?, TRUE)");
-                    $stmt->execute([$name, $semester, $code, $is_optional, $lectures_per_week, $exercises_per_week, $labs_per_week]);
+                    $stmt = $pdo->prepare("INSERT INTO course (name, semester, code, is_optional, lectures_per_week, exercises_per_week, labs_per_week, is_online, requires_computer_lab, expected_students, parallel_groups, is_active)
+                                          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE)");
+                    $stmt->execute([$name, $semester, $code, $is_optional, $lectures_per_week, $exercises_per_week, $labs_per_week, $is_online, $requires_computer_lab, $expected_students, $parallel_groups]);
                     header("Location: ?page=predmeti&success=1&message=" . urlencode("Predmet je uspješno dodat."));
                     exit;
                 } catch (PDOException $e) {
@@ -900,10 +918,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $fields[] = "labs_per_week = ?";
                     $params[] = (int)$_POST['labs_per_week'];
                 }
+                if (isset($_POST['expected_students'])) {
+                    $fields[] = "expected_students = ?";
+                    $params[] = $_POST['expected_students'] !== '' ? (int)$_POST['expected_students'] : null;
+                }
+                if (isset($_POST['parallel_groups'])) {
+                    $fields[] = "parallel_groups = ?";
+                    $params[] = (int)$_POST['parallel_groups'] > 0 ? (int)$_POST['parallel_groups'] : 1;
+                }
 
-                // Uvijek ažuriramo checkbox jer HTML forme ne šalju unchecked vrijednosti
+                // Uvijek ažuriramo checkbox-ove jer HTML forme ne šalju unchecked vrijednosti
                 $fields[] = "is_optional = ?";
                 $params[] = isset($_POST['is_optional']) ? 1 : 0;
+                $fields[] = "is_online = ?";
+                $params[] = isset($_POST['is_online']) ? 1 : 0;
+                $fields[] = "requires_computer_lab = ?";
+                $params[] = isset($_POST['requires_computer_lab']) ? 1 : 0;
 
                 if (!isset($_POST['course_id'])) {
                     throw new Exception("Course ID nije validan.");
@@ -1558,8 +1588,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <label>Fond časova - lab (sedmično):</label>
                         <input type="number" name="labs_per_week" min="0" step="1" value="0" required>
 
+                        <label>Očekivan broj studenata (za poređenje sa kapacitetom sale, opciono):</label>
+                        <input type="number" name="expected_students" min="0" step="1" placeholder="npr. 35">
+
+                        <label>Broj paralelnih grupa istovremeno (1 = jedna grupa):</label>
+                        <input type="number" name="parallel_groups" min="1" step="1" value="1">
+
                         <label>
                             <input type="checkbox" name="is_optional"> Izborni
+                        </label>
+
+                        <label>
+                            <input type="checkbox" name="is_online"> Ne zahtijeva salu (onlajn nastava)
+                        </label>
+
+                        <label>
+                            <input type="checkbox" name="requires_computer_lab"> Zahtijeva računarsku salu
                         </label>
 
                         <button type="submit">Sačuvaj</button>
@@ -1578,6 +1622,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         c.lectures_per_week,
         c.exercises_per_week,
         c.labs_per_week,
+        c.is_online,
+        c.requires_computer_lab,
+        c.expected_students,
+        c.parallel_groups,
         c.is_active,
         cp.professor_id,
         cp.is_assistant,
@@ -1611,6 +1659,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             'lectures_per_week' => (int)$r['lectures_per_week'],
                             'exercises_per_week' => (int)$r['exercises_per_week'],
                             'labs_per_week' => (int)$r['labs_per_week'],
+                            'is_online' => (int)$r['is_online'],
+                            'requires_computer_lab' => (int)$r['requires_computer_lab'],
+                            'expected_students' => $r['expected_students'],
+                            'parallel_groups' => (int)($r['parallel_groups'] ?: 1),
                             'is_active' => (int)$r['is_active'],
                             'professors' => []
                         ];
@@ -1636,6 +1688,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <th>Predavanja</th>
                         <th>Vježbe</th>
                         <th>Lab</th>
+                        <th>Uslovi</th>
                         <th>Profesori</th>
                         <th>Status</th>
                         <th>Akcije</th>
@@ -1651,6 +1704,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <td><?= $c['lectures_per_week'] ?></td>
                             <td><?= $c['exercises_per_week'] ?></td>
                             <td><?= $c['labs_per_week'] ?></td>
+
+                            <td>
+                                <?php
+                                    $uslovi = [];
+                                    if ($c['is_online']) $uslovi[] = 'onlajn';
+                                    if ($c['requires_computer_lab']) $uslovi[] = 'rač. sala';
+                                    if ($c['expected_students']) $uslovi[] = (int)$c['expected_students'] . ' stud.';
+                                    if ($c['parallel_groups'] > 1) $uslovi[] = $c['parallel_groups'] . ' paral. grupe';
+                                    echo $uslovi ? htmlspecialchars(implode(', ', $uslovi)) : '<em>—</em>';
+                                ?>
+                            </td>
 
                             <td>
                                 <?= $c['professors']
@@ -1674,6 +1738,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                         data-lectures_per_week="<?= $c['lectures_per_week'] ?>"
                                         data-exercises_per_week="<?= $c['exercises_per_week'] ?>"
                                         data-labs_per_week="<?= $c['labs_per_week'] ?>"
+                                        data-is_online="<?= $c['is_online'] ?>"
+                                        data-requires_computer_lab="<?= $c['requires_computer_lab'] ?>"
+                                        data-expected_students="<?= htmlspecialchars($c['expected_students'] ?? '') ?>"
+                                        data-parallel_groups="<?= $c['parallel_groups'] ?>"
                                         data-professors="<?= htmlspecialchars(json_encode($c['professors'])) ?>">
                                     Uredi
                                 </button>
@@ -2012,9 +2080,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                         <?php
                         try {
-                            $stmt = $pdo->query("SELECT pa.professor_id, pa.weekday, pa.start_time, pa.end_time, p.full_name
+                            $stmt = $pdo->query("SELECT pa.professor_id, pa.weekday, pa.start_time, pa.end_time,
+                                                    pa.requires_computer_lab, pa.preferred_room_id, pa.course_id,
+                                                    p.full_name, r.code AS preferred_room_code, c.name AS course_name
                                                 FROM professor_availability pa
                                                 JOIN professor p ON p.id = pa.professor_id
+                                                LEFT JOIN room r ON r.id = pa.preferred_room_id
+                                                LEFT JOIN course c ON c.id = pa.course_id
                                                 ORDER BY p.full_name, pa.weekday, pa.start_time");
                             $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -2046,7 +2118,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     echo "<summary style='cursor: pointer; font-weight: 600;'>" . htmlspecialchars($prof['name']) . "</summary>";
                                     echo "<table border='1' cellpadding='5' style='margin-top: 10px; width: 100%; border-collapse: collapse; background: #242a31;'>";
                                     echo "<tr style='background: #f4f4f4; color: #333;'>";
-                                    echo "<th>Dan</th><th>Od</th><th>Do</th>";
+                                    echo "<th>Dan</th><th>Od</th><th>Do</th><th>Dodatni zahtjevi</th>";
                                     echo "</tr>";
 
                                     foreach ($prof['items'] as $row) {
@@ -2054,10 +2126,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                         $startTime = $row['start_time'] ? substr($row['start_time'], 0, 5) : '';
                                         $endTime = $row['end_time'] ? substr($row['end_time'], 0, 5) : '';
 
+                                        $requests = [];
+                                        if ($row['requires_computer_lab']) $requests[] = 'neophodna rač. sala';
+                                        if ($row['preferred_room_code']) $requests[] = 'sala: ' . $row['preferred_room_code'];
+                                        if ($row['course_name']) $requests[] = 'predmet: ' . $row['course_name'];
+                                        $requestsLabel = $requests ? implode(', ', $requests) : '—';
+
                                         echo '<tr>';
                                         echo '<td>' . htmlspecialchars($dayLabel) . '</td>';
                                         echo '<td>' . htmlspecialchars($startTime) . '</td>';
                                         echo '<td>' . htmlspecialchars($endTime) . '</td>';
+                                        echo '<td>' . htmlspecialchars($requestsLabel) . '</td>';
                                         echo '</tr>';
                                     }
 
@@ -2176,12 +2255,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     echo "<p>Odaberite opciju ispod da generišete raspored časova:</p>";
 
                     echo "<button id='generate-schedule' class='option-button'>Generiši raspored časova</button>";
-                    echo "<button id='generate-colloquiums' class='option-button' style='display:none; margin-left: 10px; background-color: #9333ea;'>Generiši kolokvijume</button>";
+                    echo "<button id='generate-colloquiums' class='option-button' style='margin-left: 10px; background-color: #9333ea;'>Generiši kolokvijume</button>";
                     echo "<div id='schedule-status' style='margin-top:20px; display:none'></div>";
 
-                    // Colloquium Section (HIDDEN)
+                    // Colloquium Section (prikazuje se automatski kad učitani raspored ima kolokvijume - vidi renderScheduleData)
                     echo "
-                    <div id='colloquium-section' style='display:none !important; margin-top:30px; border-top: 1px solid #444; padding-top: 20px;'>
+                    <div id='colloquium-section' style='display:none; margin-top:30px; border-top: 1px solid #444; padding-top: 20px;'>
                         <h3 style='color: #ecc94b; margin-bottom: 15px;'>Raspored Kolokvijuma</h3>
                         
                         <div style='display:flex; gap: 20px; margin-bottom: 20px; flex-wrap: wrap;'>
@@ -2249,8 +2328,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 e.type === 'COLLOQUIUM_1' || e.type === 'COLLOQUIUM_2'
                             );
 
-                            // HIDDEN: Colloquium section display logic disabled
-                            /*
                             if (colSection) {
                                 if (hasColloquiums) {
                                     colSection.style.display = 'block';
@@ -2259,7 +2336,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     colSection.style.display = 'none';
                                 }
                             }
-                            */
 
                             // clear previous
                             container.innerHTML = '';

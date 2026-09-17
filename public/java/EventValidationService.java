@@ -60,6 +60,9 @@ public class EventValidationService {
                 "COALESCE(exercises_per_week, 2) as exercises_per_week, " +
                 "COALESCE(labs_per_week, 0) as labs_per_week, " +
                 "COALESCE(is_online, FALSE) as is_online, " +
+                "COALESCE(requires_computer_lab, FALSE) as requires_computer_lab, " +
+                "expected_students, " +
+                "COALESCE(parallel_groups, 1) as parallel_groups, " +
                 "colloquium_1_week, colloquium_2_week " +
                 "FROM course";
         try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery(query)) {
@@ -74,7 +77,12 @@ public class EventValidationService {
                 course.exercisesPerWeek = rs.getInt("exercises_per_week");
                 course.labsPerWeek = rs.getInt("labs_per_week");
                 course.isOnline = rs.getBoolean("is_online");
-                
+                course.requiresComputerLab = rs.getBoolean("requires_computer_lab");
+                int expStudents = rs.getInt("expected_students");
+                course.expectedStudents = rs.wasNull() ? null : expStudents;
+                int parGroups = rs.getInt("parallel_groups");
+                course.parallelGroups = parGroups > 0 ? parGroups : 1;
+
                 // Load colloquium weeks
                 int col1 = rs.getInt("colloquium_1_week");
                 if (!rs.wasNull() && col1 > 0) {
@@ -268,7 +276,12 @@ public class EventValidationService {
             pstmt.setString(3, typeEnum);
             pstmt.setTimestamp(4, Timestamp.valueOf(startsAt));
             pstmt.setTimestamp(5, Timestamp.valueOf(endsAt));
-            pstmt.setInt(6, roomId);
+            // roomId <= 0 je "sentinel" za "nije potrebna sala" (npr. onlajn predmet)
+            if (roomId > 0) {
+                pstmt.setInt(6, roomId);
+            } else {
+                pstmt.setNull(6, java.sql.Types.BIGINT);
+            }
             pstmt.setNull(7, java.sql.Types.VARCHAR);
             pstmt.setBoolean(8, true);
             pstmt.setBoolean(9, false);
@@ -1216,6 +1229,37 @@ public class EventValidationService {
             System.err.println("Error getting preferred days: " + e.getMessage());
         }
         return days;
+    }
+
+    /**
+     * Kao getPreferredDays(), ali ako profesor ima termine raspoloživosti koje je
+     * eksplicitno vezao za OVAJ predmet (professor_availability.course_id), vraća
+     * SAMO te dane (profesor je tražio da baš taj predmet ide baš tim danima).
+     * Ako nema takvih termina, ponaša se identično kao getPreferredDays().
+     */
+    private List<String> getPreferredDaysForCourse(int professorId, int courseId) {
+        List<String> days = new ArrayList<>();
+        try {
+            String query = "SELECT DISTINCT weekday FROM professor_availability " +
+                    "WHERE professor_id = ? AND course_id = ?";
+            try (PreparedStatement ps = conn.prepareStatement(query)) {
+                ps.setInt(1, professorId);
+                ps.setInt(2, courseId);
+                try (ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) {
+                        String dayName = weekdayIntToName(rs.getInt("weekday"));
+                        if (dayName != null && !days.contains(dayName))
+                            days.add(dayName);
+                    }
+                }
+            }
+        } catch (SQLException e) {
+            System.err.println("Error getting course-specific preferred days: " + e.getMessage());
+        }
+        if (!days.isEmpty()) {
+            return days;
+        }
+        return getPreferredDays(professorId);
     }
 
     /**
@@ -2738,7 +2782,16 @@ public class EventValidationService {
                 failedList.add(new FailedCourse(0, "Unknown", "Course is null", 0));
                 return "SKIP";
             }
-            
+
+            // Predmet može upasti u više od jedne faze u generateScheduleWithYearPriority
+            // (npr. labsPerWeek > 0 I is_online = true istovremeno), pa bi bez ove provjere
+            // svaka faza nezavisno rasporedila iste časove predmeta - rezultat su duplirani
+            // termini "razbacani" po više dana (fond časova izgleda razbijen iako
+            // lectures_per_week/exercises_per_week/labs_per_week nisu problem).
+            if (isAlreadyScheduledInSchedule(scheduleId, course.idCourse)) {
+                return "ALREADY_SCHEDULED";
+            }
+
             int totalHours = course.getTotalHoursPerWeek();
             if (totalHours < 4 || totalHours > 6) {
                 failedList.add(new FailedCourse(course.idCourse, course.name,
@@ -2759,22 +2812,44 @@ public class EventValidationService {
                 exerciseProfId = lectureProfId;
             }
 
-            // Get available days for lecture professor
-            List<String> availableDays = getPreferredDays(lectureProfId);
+            // Get available days for lecture professor (poštuje i eventualni zahtjev
+            // "ovaj predmet baš tim danima" - vidi getPreferredDaysForCourse)
+            List<String> availableDays = getPreferredDaysForCourse(lectureProfId, course.idCourse);
             if (availableDays.isEmpty()) {
                 availableDays.addAll(Arrays.asList("ponedeljak", "utorak", "srijeda", "cetvrtak", "petak"));
             }
 
-            // Get suitable rooms
-            List<Room> lectureRooms = getSuitableRooms(false, 30);
-            List<Room> labRooms = getSuitableRooms(true, 20);
+            // Get suitable rooms. requiresComputerLab primjenjuje se na predavanja isto
+            // kao i na vježbe/lab (nezavisno od labsPerWeek); expectedStudents, kad je
+            // postavljen, zamjenjuje default minimalni kapacitet sale.
+            int lectureMinCapacity = (course.expectedStudents != null && course.expectedStudents > 0)
+                    ? course.expectedStudents : 30;
+            int labMinCapacity = (course.expectedStudents != null && course.expectedStudents > 0)
+                    ? Math.min(course.expectedStudents, 20) : 20;
+            List<Room> lectureRooms = getSuitableRooms(course.requiresComputerLab, lectureMinCapacity);
+            List<Room> labRooms = getSuitableRooms(true, labMinCapacity);
 
-            if (lectureRooms.isEmpty()) {
+            if (!course.isOnline && lectureRooms.isEmpty()) {
                 return "SKIP: No lecture rooms available";
             }
 
             if (course.labsPerWeek > 0 && labRooms.isEmpty()) {
                 labRooms = lectureRooms;
+            }
+
+            // Onlajn predmet ne zahtijeva fizičku salu: zamijeni liste sala jednim
+            // "virtuelnim" mjestom (idRoom = 0) tako da se dan/sat i dalje traže po
+            // dostupnosti profesora, ali se pri upisu termina room_id upisuje kao NULL
+            // i termin nikad ne "zauzima" niti sukobljava stvarnu salu.
+            if (course.isOnline) {
+                Room virtualRoom = new Room();
+                virtualRoom.idRoom = 0;
+                virtualRoom.code = "ONLINE";
+                virtualRoom.capacity = Integer.MAX_VALUE;
+                virtualRoom.isComputerLab = true;
+                virtualRoom.isActive = true;
+                lectureRooms = new ArrayList<>(List.of(virtualRoom));
+                labRooms = new ArrayList<>(List.of(virtualRoom));
             }
 
             // Try to schedule as two days (preferred for 5-6 hours, optimal for 4)
@@ -2789,9 +2864,12 @@ public class EventValidationService {
             }
 
             if (addedTerms > 0) {
+                if (course.parallelGroups > 1) {
+                    scheduleParallelGroups(scheduleId, course, lectureRooms, labRooms);
+                }
                 return "OK";
             }
-            
+
             failedList.add(new FailedCourse(course.idCourse, course.name,
                 "Could not find suitable time slots", course.semester));
             return "FAILED";
@@ -2799,6 +2877,130 @@ public class EventValidationService {
 
         } catch (SQLException e) {
             return "ERROR: " + e.getMessage();
+        }
+    }
+
+    /**
+     * Vraća SVE profesore/asistente dodijeljene predmetu za datu ulogu
+     * (is_assistant = true/false), po redoslijedu dodavanja.
+     */
+    private List<Integer> getAllProfessorsForRole(int courseId, boolean isAssistant) throws SQLException {
+        List<Integer> result = new ArrayList<>();
+        String query = "SELECT professor_id FROM course_professor WHERE course_id = ? AND is_assistant = ? ORDER BY id";
+        try (PreparedStatement ps = conn.prepareStatement(query)) {
+            ps.setInt(1, courseId);
+            ps.setBoolean(2, isAssistant);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    result.add(rs.getInt("professor_id"));
+                }
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Provjerava sukob sale/profesora, BEZ provjere sukoba semestra - koristi se
+     * isključivo za smještanje paralelnih grupa ISTOG predmeta u isti termin kao
+     * grupa 1. hasConflictInSchedule() bi tu uvijek prijavio "sukob semestra" jer
+     * bi upoređivao termin grupe 2 sa terminom grupe 1 istog predmeta/semestra -
+     * što je namjerno dozvoljeno (to je definicija paralelne grupe), pa se ovdje
+     * provjerava samo da druga grupa ne dijeli istu salu ili istog profesora.
+     */
+    private boolean hasRoomOrProfessorConflictInSchedule(int scheduleId, String day, int roomId,
+            int professorId, LocalTime startTime, LocalTime endTime) {
+        for (AcademicEvent event : academicEvents.values()) {
+            if (event.scheduleId != scheduleId) continue;
+            if (day == null || event.day == null || !event.day.equals(day)) continue;
+            if (startTime == null || endTime == null || event.startTime == null || event.endTime == null) continue;
+
+            boolean overlap = startTime.isBefore(event.endTime) && endTime.isAfter(event.startTime);
+            if (!overlap) continue;
+
+            if (roomId > 0 && event.idRoom == roomId) return true;
+            if (event.idProfessor == professorId) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Za predmete sa parallel_groups > 1: replicira termine koje je grupa 1 upravo
+     * dobila (isti dan/vrijeme/tip) za svaku dodatnu grupu, tražeći drugu slobodnu
+     * salu i, ako je dostupan, drugog predavača/asistenta (course_professor može
+     * imati više od jednog po ulozi). Ako za neku grupu/blok ne postoji slobodna
+     * sala ili sukobljen je jedini dostupan predavač, ta se grupa jednostavno
+     * preskače (best-effort, ne ruši generisanje ostatka rasporeda).
+     */
+    private void scheduleParallelGroups(int scheduleId, Course course,
+            List<Room> lectureRooms, List<Room> labRooms) throws SQLException {
+
+        // Termini grupe 1 za ovaj predmet u ovom rasporedu, grupisani po (dan, tip)
+        Map<String, List<AcademicEvent>> blocks = new LinkedHashMap<>();
+        for (AcademicEvent e : academicEvents.values()) {
+            if (e.scheduleId == scheduleId && e.idCourse == course.idCourse) {
+                String key = e.day + "|" + e.typeEnum;
+                blocks.computeIfAbsent(key, k -> new ArrayList<>()).add(e);
+            }
+        }
+        if (blocks.isEmpty()) {
+            return;
+        }
+
+        List<Integer> lectureProfs = getAllProfessorsForRole(course.idCourse, false);
+        List<Integer> assistantProfs = getAllProfessorsForRole(course.idCourse, true);
+
+        for (int group = 2; group <= course.parallelGroups; group++) {
+            for (List<AcademicEvent> blockEvents : blocks.values()) {
+                blockEvents.sort((a, b) -> a.startTime.compareTo(b.startTime));
+                AcademicEvent first = blockEvents.get(0);
+                boolean isAssistantRole = "EXERCISE".equals(first.typeEnum) || "LAB".equals(first.typeEnum);
+
+                List<Integer> candidateProfs = isAssistantRole ? assistantProfs : lectureProfs;
+                if (candidateProfs.isEmpty()) {
+                    candidateProfs = isAssistantRole ? lectureProfs : assistantProfs;
+                }
+                if (candidateProfs.isEmpty()) {
+                    continue; // nema uopšte dodijeljenih profesora za ovu ulogu
+                }
+                int altProfId = candidateProfs.get((group - 1) % candidateProfs.size());
+
+                List<Room> candidateRooms = "LECTURE".equals(first.typeEnum)
+                        ? lectureRooms
+                        : (course.labsPerWeek > 0 ? labRooms : lectureRooms);
+
+                // Nađi sobu koja je slobodna za SVE sate ovog bloka, za odabranog profesora
+                // (candidateRooms je jedan virtuelni "idRoom=0" unos za onlajn predmete,
+                // pa se u tom slučaju u praksi provjerava samo dostupnost profesora)
+                Room chosenRoom = null;
+                for (Room candidate : candidateRooms) {
+                    boolean ok = true;
+                    for (AcademicEvent ev : blockEvents) {
+                        if (hasRoomOrProfessorConflictInSchedule(scheduleId, ev.day, candidate.idRoom, altProfId,
+                                ev.startTime, ev.endTime)) {
+                            ok = false;
+                            break;
+                        }
+                    }
+                    if (ok) {
+                        chosenRoom = candidate;
+                        break;
+                    }
+                }
+
+                if (chosenRoom == null) {
+                    continue; // nema slobodne sale (ili slobodnog profesorskog termina) za ovu grupu u ovom bloku
+                }
+
+                int roomIdToUse = chosenRoom.idRoom;
+                for (AcademicEvent ev : blockEvents) {
+                    LocalDateTime startsAt = convertDayToDate(ev.day, ev.startTime);
+                    LocalDateTime endsAt = convertDayToDate(ev.day, ev.endTime);
+                    saveToAcademicEvent(scheduleId, course.idCourse, altProfId, ev.day, startsAt, endsAt,
+                            roomIdToUse, ev.typeEnum);
+                    addEventToCache(course.idCourse, roomIdToUse, altProfId, ev.day, ev.startTime, ev.endTime,
+                            ev.typeEnum, scheduleId);
+                }
+            }
         }
     }
 
@@ -3004,8 +3206,9 @@ public class EventValidationService {
                 continue;
             }
 
-            // Check room conflict
-            if (event.idRoom == roomId) {
+            // Check room conflict (roomId <= 0 znači "nije potrebna sala", npr. onlajn predmet -
+            // takav termin nikad ne "zauzima" niti sukobljava salu)
+            if (roomId > 0 && event.idRoom == roomId) {
                 return true; // Room conflict
             }
 
@@ -3242,6 +3445,9 @@ class Course {
     public int exercisesPerWeek; // broj sati vježbi (V)
     public int labsPerWeek; // broj sati laboratorijskih vježbi (L)
     public boolean isOnline;
+    public boolean requiresComputerLab; // zahtijeva rač. salu nezavisno od labsPerWeek
+    public Integer expectedStudents; // očekivan broj studenata (poredi se sa kapacitetom sale)
+    public int parallelGroups = 1; // broj paralelnih grupa u isto vrijeme (1 = jedna grupa)
     public Integer colloquium1Week;
     public Integer colloquium2Week;
 

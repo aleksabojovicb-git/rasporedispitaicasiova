@@ -9,6 +9,16 @@ require_once __DIR__ . '/../../../config/dbconnection.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
+// Osiguraj da dodatna polja za zahtjeve raspoloživosti postoje (idempotentno; ista
+// šema kao u admin_panel.php, ali profesor može stići ovdje prvi u svježoj instanci).
+try {
+    $pdo->exec("ALTER TABLE professor_availability ADD COLUMN IF NOT EXISTS requires_computer_lab BOOLEAN DEFAULT FALSE");
+    $pdo->exec("ALTER TABLE professor_availability ADD COLUMN IF NOT EXISTS preferred_room_id BIGINT REFERENCES room(id)");
+    $pdo->exec("ALTER TABLE professor_availability ADD COLUMN IF NOT EXISTS course_id BIGINT REFERENCES course(id)");
+} catch (PDOException $e) {
+    // Ignoriši - kolone već postoje ili nema dozvole da se doda (npr. druga sesija upravo radi isto)
+}
+
 if (!isset($_SESSION['professor_id'])) {
     echo json_encode(['error' => 'Not authenticated']);
     exit;
@@ -344,8 +354,8 @@ switch ($action) {
 
             $stmt = $pdo->prepare("
             INSERT INTO professor_availability
-            (professor_id, weekday, start_time, end_time)
-            VALUES (?, ?, ?, ?)
+            (professor_id, weekday, start_time, end_time, requires_computer_lab, preferred_room_id, course_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
         ");
 
             $count = 0;
@@ -354,11 +364,22 @@ switch ($action) {
                 $day = (int)$slot['day'];
                 if ($day < 1 || $day > 5) continue;
 
+                // Dodatni (opcioni) zahtjevi uz termin: neophodna rač. sala, izbor
+                // konkretne sale, i vezivanje termina za konkretan predmet.
+                $requiresComputerLab = !empty($slot['requires_computer_lab']) ? true : false;
+                $preferredRoomId = (isset($slot['preferred_room_id']) && (int)$slot['preferred_room_id'] > 0)
+                    ? (int)$slot['preferred_room_id'] : null;
+                $courseId = (isset($slot['course_id']) && (int)$slot['course_id'] > 0)
+                    ? (int)$slot['course_id'] : null;
+
                 $stmt->execute([
                     $professorId,
                     $day,
                     $slot['from'],
-                    $slot['to']
+                    $slot['to'],
+                    $requiresComputerLab,
+                    $preferredRoomId,
+                    $courseId
                 ]);
                 $count++;
             }
