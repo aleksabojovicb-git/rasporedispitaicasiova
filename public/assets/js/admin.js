@@ -353,12 +353,32 @@ function openEditModal(entity, data) {
         const inpLabs = document.createElement('input'); inpLabs.type = 'number'; inpLabs.name = 'labs_per_week'; inpLabs.min = 0; inpLabs.step = 1; inpLabs.required = true; inpLabs.value = data.labs_per_week || 0;
         form.appendChild(lblLabs); form.appendChild(inpLabs);
 
+        const lblStudents = document.createElement('label'); lblStudents.textContent = 'Očekivan broj studenata (za poređenje sa kapacitetom sale, opciono):';
+        const inpStudents = document.createElement('input'); inpStudents.type = 'number'; inpStudents.name = 'expected_students'; inpStudents.min = 0; inpStudents.step = 1; inpStudents.placeholder = 'npr. 35'; inpStudents.value = data.expected_students || '';
+        form.appendChild(lblStudents); form.appendChild(inpStudents);
+
+        const lblParallel = document.createElement('label'); lblParallel.textContent = 'Broj paralelnih grupa istovremeno (1 = jedna grupa):';
+        const inpParallel = document.createElement('input'); inpParallel.type = 'number'; inpParallel.name = 'parallel_groups'; inpParallel.min = 1; inpParallel.step = 1; inpParallel.value = data.parallel_groups || 1;
+        form.appendChild(lblParallel); form.appendChild(inpParallel);
+
         // checkbox row for proper alignment
         const cbRow = document.createElement('div'); cbRow.className = 'checkbox-row';
         const inpOptional = document.createElement('input'); inpOptional.type = 'checkbox'; inpOptional.name = 'is_optional'; inpOptional.checked = (data.is_optional === '1' || data.is_optional === 'true' || data.is_optional === 'on');
         const txt = document.createTextNode(' Izborni predmet');
         cbRow.appendChild(inpOptional); cbRow.appendChild(txt);
         form.appendChild(cbRow);
+
+        const cbRowOnline = document.createElement('div'); cbRowOnline.className = 'checkbox-row';
+        const inpOnline = document.createElement('input'); inpOnline.type = 'checkbox'; inpOnline.name = 'is_online'; inpOnline.checked = (data.is_online === '1' || data.is_online === 'true' || data.is_online === 'on');
+        const txtOnline = document.createTextNode(' Ne zahtijeva salu (onlajn nastava)');
+        cbRowOnline.appendChild(inpOnline); cbRowOnline.appendChild(txtOnline);
+        form.appendChild(cbRowOnline);
+
+        const cbRowLab = document.createElement('div'); cbRowLab.className = 'checkbox-row';
+        const inpReqLab = document.createElement('input'); inpReqLab.type = 'checkbox'; inpReqLab.name = 'requires_computer_lab'; inpReqLab.checked = (data.requires_computer_lab === '1' || data.requires_computer_lab === 'true' || data.requires_computer_lab === 'on');
+        const txtReqLab = document.createTextNode(' Zahtijeva računarsku salu');
+        cbRowLab.appendChild(inpReqLab); cbRowLab.appendChild(txtReqLab);
+        form.appendChild(cbRowLab);
 
         // --- PROFESSOR MANAGEMENT SECTION ---
         const profSection = document.createElement('div');
@@ -531,6 +551,10 @@ function openEditModal(entity, data) {
         const inpLab = document.createElement('input'); inpLab.type = 'checkbox'; inpLab.name = 'is_computer_lab'; inpLab.checked = (data.is_computer_lab === '1' || data.is_computer_lab === 'true' || data.is_computer_lab === 'on');
         cbLab.appendChild(inpLab); cbLab.appendChild(document.createTextNode(' Računarska sala'));
         form.appendChild(cbLab);
+
+        const lblFaculty = document.createElement('label'); lblFaculty.textContent = 'Kome sala prioritetno pripada (npr. FIT), prazno = dijeljena/na zahtjev:';
+        const inpFaculty = document.createElement('input'); inpFaculty.type = 'text'; inpFaculty.name = 'faculty_code'; inpFaculty.maxLength = 20; inpFaculty.placeholder = 'npr. FIT'; inpFaculty.value = data.faculty_code || '';
+        form.appendChild(lblFaculty); form.appendChild(inpFaculty);
     }
 
     // account editing form

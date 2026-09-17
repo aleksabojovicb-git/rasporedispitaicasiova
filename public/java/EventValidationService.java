@@ -11,8 +11,10 @@ public class EventValidationService {
     private Map<Integer, Professor> professors;
     private Map<Integer, AcademicEvent> academicEvents;
     private List<Holiday> holidays;
+    private List<RoomOccupancySlot> roomOccupancy;
     private LocalDate winterStart;
     private LocalDate summerStart;
+    private int activeAcademicYearId;
 
     public EventValidationService(Connection connection) {
         this.conn = connection;
@@ -21,6 +23,7 @@ public class EventValidationService {
         this.professors = new HashMap<>();
         this.academicEvents = new HashMap<>();
         this.holidays = new ArrayList<>();
+        this.roomOccupancy = new ArrayList<>();
         loadDataFromDatabase();
     }
 
@@ -37,12 +40,16 @@ public class EventValidationService {
         } catch (SQLException e) {
             System.err.println("Error loading data: " + e.getMessage());
         }
+        // Odvojeno od gornjeg try/catch - zauzetost sala je opcioni/noviji podatak i ne
+        // treba da prekine učitavanje ostatka ako tabela iz nekog razloga ne postoji.
+        loadRoomOccupancy();
     }
 
     private void loadAcademicYear() throws SQLException {
-        String query = "SELECT winter_semester_start, summer_semester_start FROM academic_year WHERE is_active = TRUE LIMIT 1";
+        String query = "SELECT id, winter_semester_start, summer_semester_start FROM academic_year WHERE is_active = TRUE LIMIT 1";
         try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery(query)) {
             if (rs.next()) {
+                this.activeAcademicYearId = rs.getInt("id");
                 java.sql.Date wStart = rs.getDate("winter_semester_start");
                 java.sql.Date sStart = rs.getDate("summer_semester_start");
                 if (wStart != null) this.winterStart = wStart.toLocalDate();
@@ -52,6 +59,65 @@ public class EventValidationService {
                 System.out.println("WARNING: No active academic year found. Colloquium dates cannot be calculated.");
             }
         }
+    }
+
+    // Fakultet za koji ova instanca generiše raspored - njegova sopstvena zauzetost
+    // ne treba da blokira njegov sopstveni algoritam (vidi napomenu u loadRoomOccupancy).
+    private static final String OWN_FACULTY_CODE = "FIT";
+
+    /**
+     * Učitava ručno unesenu zauzetost sala (Zauzetost sala - druge fakultete i sl.)
+     * za AKTIVNU akademsku godinu, da bi algoritam za generisanje rasporeda
+     * izbjegavao sale koje su već zauzete od strane DRUGIH fakulteta. Redovi gdje
+     * je faculty_code = OWN_FACULTY_CODE se namjerno preskaču - to je FIT-ova
+     * sopstvena (najčešće automatski generisana) zauzetost, pa ne treba da blokira
+     * FIT-ov sopstveni algoritam da koristi svoje sale (inače bi npr. cio radni dan
+     * u skoro svim salama ispao "zauzet" i ne bi ostalo ništa za raspoređivanje).
+     * Namjerno odvojen try/catch: ako tabela ne postoji (starija instanca prije nego
+     * je ova funkcionalnost dodata) ili nema aktivne akademske godine, samo se
+     * nastavlja bez te provjere.
+     */
+    private void loadRoomOccupancy() {
+        if (activeAcademicYearId <= 0) {
+            return;
+        }
+        String query = "SELECT room_id, weekday, start_time, end_time FROM room_occupancy " +
+                "WHERE academic_year_id = ? AND is_active = TRUE " +
+                "AND (faculty_code IS NULL OR UPPER(faculty_code) != UPPER(?))";
+        try (PreparedStatement ps = conn.prepareStatement(query)) {
+            ps.setInt(1, activeAcademicYearId);
+            ps.setString(2, OWN_FACULTY_CODE);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    String dayName = weekdayIntToName(rs.getInt("weekday"));
+                    if (dayName == null) continue;
+                    RoomOccupancySlot slot = new RoomOccupancySlot();
+                    slot.roomId = rs.getInt("room_id");
+                    slot.day = dayName;
+                    slot.start = rs.getTime("start_time").toLocalTime();
+                    slot.end = rs.getTime("end_time").toLocalTime();
+                    roomOccupancy.add(slot);
+                }
+            }
+            System.out.println("Loaded room occupancy slots: " + roomOccupancy.size());
+        } catch (SQLException e) {
+            System.out.println("Napomena: zauzetost sala nije učitana (" + e.getMessage() + ") - nastavlja se bez te provjere.");
+        }
+    }
+
+    /**
+     * Da li je sala u datom terminu zauzeta preko ručno unešene "Zauzetosti sala"
+     * (npr. drugi fakultet je već rezervisao tu salu za taj termin).
+     */
+    private boolean isRoomOccupiedExternally(int roomId, String day, LocalTime start, LocalTime end) {
+        for (RoomOccupancySlot slot : roomOccupancy) {
+            if (slot.roomId != roomId) continue;
+            if (day == null || !day.equals(slot.day)) continue;
+            if (start.isBefore(slot.end) && end.isAfter(slot.start)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void loadCourses() throws SQLException {
@@ -2976,7 +3042,8 @@ public class EventValidationService {
                     boolean ok = true;
                     for (AcademicEvent ev : blockEvents) {
                         if (hasRoomOrProfessorConflictInSchedule(scheduleId, ev.day, candidate.idRoom, altProfId,
-                                ev.startTime, ev.endTime)) {
+                                ev.startTime, ev.endTime)
+                                || isRoomOccupiedExternally(candidate.idRoom, ev.day, ev.startTime, ev.endTime)) {
                             ok = false;
                             break;
                         }
@@ -3004,6 +3071,70 @@ public class EventValidationService {
         }
     }
 
+    private static final int MAX_DAILY_HOURS_PER_SEMESTER = 6;
+
+    /**
+     * Vraća ukupan broj (spojenih, ne-preklapajućih) sati nastave za dati
+     * semestar/godinu na dati dan u okviru ovog rasporeda - preko SVIH predmeta te
+     * godine kombinovano, ne samo jednog predmeta. Preklapajući/susjedni termini
+     * (npr. dvije paralelne grupe istog predmeta u isto vrijeme) se broje samo
+     * jednom, da ne bi vještački naduvali dnevni fond.
+     */
+    private int getSemesterHoursOnDay(int scheduleId, int semester, String day) {
+        List<LocalTime[]> intervals = new ArrayList<>();
+        for (AcademicEvent event : academicEvents.values()) {
+            if (event.scheduleId != scheduleId) continue;
+            if (day == null || event.day == null || !event.day.equals(day)) continue;
+            if (event.startTime == null || event.endTime == null) continue;
+            Course c = courses.get(event.idCourse);
+            if (c == null || c.semester != semester) continue;
+            intervals.add(new LocalTime[]{event.startTime, event.endTime});
+        }
+        if (intervals.isEmpty()) {
+            return 0;
+        }
+        intervals.sort((a, b) -> a[0].compareTo(b[0]));
+        long totalMinutes = 0;
+        LocalTime curStart = intervals.get(0)[0];
+        LocalTime curEnd = intervals.get(0)[1];
+        for (int i = 1; i < intervals.size(); i++) {
+            LocalTime[] iv = intervals.get(i);
+            if (!iv[0].isAfter(curEnd)) {
+                if (iv[1].isAfter(curEnd)) curEnd = iv[1];
+            } else {
+                totalMinutes += Duration.between(curStart, curEnd).toMinutes();
+                curStart = iv[0];
+                curEnd = iv[1];
+            }
+        }
+        totalMinutes += Duration.between(curStart, curEnd).toMinutes();
+        return (int) Math.round(totalMinutes / 60.0);
+    }
+
+    /**
+     * Da li bi dodavanje bloka od blockHours sati na dati dan/semestar prešlo
+     * dnevni limit od MAX_DAILY_HOURS_PER_SEMESTER časova za tu godinu/semestar
+     * (profesorka je više puta naglasila da dnevni fond ne smije preći 6 časova).
+     */
+    private boolean wouldExceedDailyCap(int scheduleId, int semester, String day, int blockHours) {
+        return getSemesterHoursOnDay(scheduleId, semester, day) + blockHours > MAX_DAILY_HOURS_PER_SEMESTER;
+    }
+
+    /**
+     * Sortira dane po trenutno već zauzetom fondu (rastuće) za dati semestar/godinu
+     * u ovom rasporedu - tako da se PRVO probaju dani koji su najmanje popunjeni.
+     * Bez ovoga bi pohlepni algoritam (bez povratka/backtracking-a) sistematski prvo
+     * pretrpavao isti (prvi u listi) dan do dnevnog limita od 6h, ostavljajući druge
+     * dane prazne, pa bi kasniji predmeti tog semestra mnogo češće ostajali
+     * neraspoređeni nego što je stvarno neophodno - dnevni fond od 6h je dovoljan za
+     * cijelu sedmicu samo ako se ravnomjerno rasporedi po danima.
+     */
+    private List<String> sortDaysByLoad(int scheduleId, int semester, List<String> days) {
+        List<String> sorted = new ArrayList<>(days);
+        sorted.sort(Comparator.comparingInt(d -> getSemesterHoursOnDay(scheduleId, semester, d)));
+        return sorted;
+    }
+
     /**
      * Schedules course as two days (Lectures on day1, Exercises+Labs on day2)
      * Only checks conflicts WITHIN the same schedule
@@ -3019,15 +3150,23 @@ public class EventValidationService {
         LocalTime lectureStart = null;
         LocalTime exerciseStart = null;
 
+        // Probaj prvo najmanje popunjene dane (vidi sortDaysByLoad) da bi se dnevni
+        // fond od 6h ravnomjerno iskoristio kroz cijelu sedmicu, ne samo prvi dan.
+        List<String> daysByLoad = sortDaysByLoad(scheduleId, course.semester, days);
+
         // Day 1: Find free slot for lectures
-        for (String day : days) {
+        for (String day : daysByLoad) {
+            if (wouldExceedDailyCap(scheduleId, course.semester, day, course.lecturesPerWeek)) {
+                continue; // ta godina/semestar bi tog dana prešla 6h - probaj drugi dan
+            }
             for (Room room : lectureRooms) {
                 for (int hour = 8; hour <= 17 - course.lecturesPerWeek; hour++) {
                     LocalTime start = LocalTime.of(hour, 0);
                     LocalTime end = start.plusHours(course.lecturesPerWeek);
 
                     if (!hasConflictInSchedule(scheduleId, day, room.idRoom, lectureProfId, start, end,
-                            course.semester)) {
+                            course.semester)
+                            && !isRoomOccupiedExternally(room.idRoom, day, start, end)) {
                         lectureDay = day;
                         lectureRoom = room;
                         lectureStart = start;
@@ -3049,9 +3188,12 @@ public class EventValidationService {
         int exerciseHours = course.exercisesPerWeek + course.labsPerWeek;
         List<Room> exerciseRoomList = course.labsPerWeek > 0 ? labRooms : lectureRooms;
 
-        for (String day : days) {
+        for (String day : daysByLoad) {
             if (day.equals(lectureDay))
                 continue; // Must be different day
+            if (wouldExceedDailyCap(scheduleId, course.semester, day, exerciseHours)) {
+                continue; // ta godina/semestar bi tog dana prešla 6h - probaj drugi dan
+            }
 
             for (Room room : exerciseRoomList) {
                 for (int hour = 8; hour <= 17 - exerciseHours; hour++) {
@@ -3059,7 +3201,8 @@ public class EventValidationService {
                     LocalTime end = start.plusHours(exerciseHours);
 
                     if (!hasConflictInSchedule(scheduleId, day, room.idRoom, exerciseProfId, start, end,
-                            course.semester)) {
+                            course.semester)
+                            && !isRoomOccupiedExternally(room.idRoom, day, start, end)) {
                         exerciseDay = day;
                         exerciseRoom = room;
                         exerciseStart = start;
@@ -3122,15 +3265,20 @@ public class EventValidationService {
     private int scheduleAsOneBlockWithinSchedule(int scheduleId, Course course, int professorId,
             List<String> days, List<Room> rooms) throws SQLException {
         int totalHours = course.getTotalHoursPerWeek();
+        List<String> daysByLoad = sortDaysByLoad(scheduleId, course.semester, days);
 
-        for (String day : days) {
+        for (String day : daysByLoad) {
+            if (wouldExceedDailyCap(scheduleId, course.semester, day, totalHours)) {
+                continue; // ta godina/semestar bi tog dana prešla 6h - probaj drugi dan
+            }
             for (Room room : rooms) {
                 for (int hour = 8; hour <= 17 - totalHours; hour++) {
                     LocalTime startTime = LocalTime.of(hour, 0);
                     LocalTime endTime = startTime.plusHours(totalHours);
 
                     if (!hasConflictInSchedule(scheduleId, day, room.idRoom, professorId, startTime, endTime,
-                            course.semester)) {
+                            course.semester)
+                            && !isRoomOccupiedExternally(room.idRoom, day, startTime, endTime)) {
                         // Save each hour separately
                         LocalTime currentTime = startTime;
 
@@ -3475,6 +3623,14 @@ class Room {
     public int capacity;
     public boolean isComputerLab;
     public boolean isActive;
+}
+
+/** Jedan ručno unešeni termin zauzetosti sale (npr. od strane drugog fakulteta). */
+class RoomOccupancySlot {
+    public int roomId;
+    public String day;
+    public LocalTime start;
+    public LocalTime end;
 }
 
 class AcademicEvent {

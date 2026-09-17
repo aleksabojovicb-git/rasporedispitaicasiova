@@ -9,6 +9,68 @@ Legenda: `[x]` = urađeno, `[ ]` = nije urađeno (backlog), ~~precrtano~~ = zavr
 
 ---
 
+## Treća runda — odgovor na konkretnu primjedbu klijentkinje (email)
+
+Nakon druge runde, profesorka je poslala konkretnu povratnu informaciju sa 4 primjedbe. Evo
+statusa svake, i šta je urađeno po tom osnovu:
+
+1. **"Poslije izmjene raspoloživosti, ništa se ne mijenja u rasporedu"** — glavni uzrok je bio
+   weekday bug iz prve runde (već popravljen). Provjereno: algoritam i dalje čita samo DAN iz
+   raspoloživosti, ne i VRIJEME (`start_time`/`end_time` se ne koriste u generisanju) - ostaje
+   kao poznato ograničenje, nije dodatno rađeno ove runde.
+2. **"Nastavnik nije u konačnom rasporedu"** — nije bilo moguće potvrditi bez konkretnog imena;
+   najvjerovatnije objašnjenje je da je raspored zaključan PRIJE nego što je taj nastavnik dobio
+   predmet, pa treba ponovo generisati i zaključati.
+3. [x] ~~"Nastava 8-17h, dnevni fond ne smije preći 6 časova"~~ — **URAĐENO**: dodat tvrdi limit
+   od 6 sati dnevno po godini/semestru (preko SVIH predmeta te godine kombinovano, ne po
+   predmetu) u Java algoritmu. Prvi test je otkrio da pohlepni algoritam (bez povratka) bez
+   ravnomjerne raspodjele po danima ima znatno veći procenat neuspješno raspoređenih predmeta
+   pod ovim novim ograničenjem (u jednom poretku prioriteta palo je sa 24/30 na 15/30) — popravljeno
+   dodavanjem sortiranja dana po trenutnoj popunjenosti (najmanje popunjen dan se prvi probava),
+   čime se uspješnost vratila na normalan nivo (23/30) uz i dalje potpuno poštovanje limita.
+   Potvrđeno na 6 svježih punih generisanja - nula prekoračenja.
+4. [x] ~~"Ne može se provjeriti raspoređivanje po salama, čudna zauzetost FIT-a"~~ — **URAĐENO**:
+   Java algoritam sada čita `room_occupancy` (ista tabela koju koristi "Zauzetost sala" stranica)
+   i izbjegava sale koje su zauzete od strane DRUGIH fakulteta pri biranju termina. Usput je
+   otkriven i uzrok "čudne zauzetosti FIT-a": u bazi postoji ~193 reda gdje je "FIT" označen kao
+   zauzimalac skoro svake sale, skoro cijeli radni dan (8-17h), svih 5 dana - što izgleda kao
+   test/probni podatak, ne stvarna tuđa rezervacija. Da se to tretira kao prava zauzetost, FIT-ov
+   sopstveni algoritam ne bi imao gdje da generiše sopstveni raspored - zato su redovi sa
+   `faculty_code = 'FIT'` namjerno isključeni iz provjere (samo TUĐI fakulteti realno blokiraju
+   sale). Dodata i napomena o ovome direktno na "Zauzetost sala" stranici u adminu.
+
+**Usput otkriven i popravljen značajan bag** (nije bio dio primjedbi, ali bez njega frontend
+promjene iz ove runde ne bi ni bile vidljive): `academic_event.day` je varchar kolona u koju Java
+upisuje IME dana ("ponedeljak"...). Admin (`getschedule`) i profesorski (`get_professor_schedule`)
+PHP endpoint su oba radila `(int)$row['day']` da bi dobili broj dana (1-5) za iscrtavanje tabele -
+što na imenu dana UVIJEK daje 0! Ovo je do sada bilo "slučajno maskirano" jer su STARIJI rasporedi
+(generisani prije popravke weekday bug-a iz prve runde) imali `day` upisan kao cifra-string
+("1".."5"), na čemu `(int)` cast ispravno radi. Čim je weekday bug popravljen (ispravno), svježe
+generisani rasporedi su počeli da se prikazuju PRAZNI u oba panela (potvrđeno uživo u browseru -
+raspored sa 127 termina se prikazivao kao prazna tabela). Popravljeno dodavanjem
+`dayNameToWeekdayNum()` helper funkcije (mapira i imena dana i stare cifre-stringove u 1-5) na oba
+mjesta.
+
+### Frontend izmjene ove runde (da se promjene mogu vizuelno pokazati)
+
+- Red "Dnevni fond" ispod svake sedmične tabele u admin prikazu generisanog rasporeda (po
+  semestru), sa bojom (zeleno ≤6h, crveno >6h) - vizuelna potvrda da se limit poštuje.
+- Napomena na "Zauzetost sala" stranici koja objašnjava FIT vs. tuđe zauzetosti (vidi tačku 4
+  gore).
+- Formular za izmjenu predmeta (admin.js) dopunjen poljima iz druge runde koja su ranije bila
+  samo u formi za DODAVANJE, ne i za IZMJENU: `expected_students`, `parallel_groups`, `is_online`,
+  `requires_computer_lab`.
+- Formular za izmjenu sale (admin.js) dopunjen poljem `faculty_code` ("kome sala pripada").
+- Profesorov "Moj raspored" kalendar sada prikazuje tip časa i ime predavača u naslovu događaja
+  (ranije je backend ovo vraćao, ali JS to nije koristio - vidi napomenu iz druge runde).
+
+**Napomena o testiranju:** ova runda je prvi put uključivala i stvarno vizuelno testiranje kroz
+browser (ne samo API/CLI), što je i otkrilo gorenavedeni day-mapping bag - bez tog testiranja bag
+bi ostao neotkriven jer sve API provjere (curl/CLI) prolaze ispravno, problem je bio isključivo u
+tome kako se `day` broj koristi za iscrtavanje HTML tabele.
+
+---
+
 ## Admin panel — Upravljanje profesorima
 
 - [ ] "Upravljanje Profesorima" → malo p — **FRONTEND** (samo tekst naslova), van dogovorenog obima.
@@ -50,10 +112,8 @@ Legenda: `[x]` = urađeno, `[ ]` = nije urađeno (backlog), ~~precrtano~~ = zavr
 - [x] ~~Kategorija "čija je sala" (FIT ima 101, 104, 109, P09; druge na zahtjev)~~ — **URAĐENO**:
       dodata kolona `room.faculty_code` (npr. "FIT"), formulari za dodavanje/izmjenu sale, i
       prikaz u tabeli salama ("Pripada": FIT / *Dijeljena / na zahtjev*).
-      **Napomena (frontend, van obima)**: dugme "Uredi" šalje `data-faculty_code` atribut, ali
-      JS handler za popunjavanje forme za izmjenu (`admin.js`) treba dopuniti da ga pročita i
-      upiše u polje — bez toga se pri izmjeni polje ne popunjava automatski (backend already
-      prima i čuva vrijednost ako se ručno unese).
+      **Riješeno (treća runda)**: `admin.js` edit-forma za salu sada uključuje i polje
+      `faculty_code`, popunjava se automatski pri kliku na "Uredi".
 
 ## Admin panel — Upravljanje nalozima
 
@@ -135,9 +195,8 @@ Legenda: `[x]` = urađeno, `[ ]` = nije urađeno (backlog), ~~precrtano~~ = zavr
       `assistants`). **URAĐENO za profesorov "Moj raspored"**: `get_professor_schedule` u
       [professor_api.php](public/views/api/professor_api.php) sada vraća i `type`/`type_label` i
       ime predavača (`professor`), po uzoru na admin prikaz.
-      **Napomena (frontend, van obima)**: JS u `professor_panel.php` koji gradi naslov događaja
-      u kalendaru trenutno ne koristi nova polja — treba dodati `type_label`/`professor` u
-      `title` da se stvarno i VIDI (backend podatak je sada tu, prikaz treba dopuniti).
+      **Riješeno (treća runda)**: naslov događaja u profesorovom kalendaru sada uključuje tip
+      časa i ime predavača.
 - [ ] Admin nema mogućnost izmjene generisanog rasporeda (sale, paralelne grupe) —
       **POTVRĐENO KAO PRAVI NEDOSTATAK, NIJE IMPLEMENTIRANO (backlog)**: ne postoji nijedan
       endpoint koji dozvoljava izmjenu pojedinačnog generisanog termina (sala/vrijeme). Ovo
@@ -253,17 +312,35 @@ Legenda: `[x]` = urađeno, `[ ]` = nije urađeno (backlog), ~~precrtano~~ = zavr
 **Već radilo (pronađeno, nije trebalo popravku): 3 stavke** — rezervisani termini profesora,
 sedmice kolokvijuma na admin panelu, slanje zahtjeva za kolokvijume.
 
-**Backend spreman, čeka frontend izmjenu (napomene):** prikaz tipa/predavača u profesorovom
-kalendaru, popunjavanje polja "kome pripada sala" pri izmjeni, forma za raspoloživost treba
-dopuniti da profesor uopšte MOŽE unijeti rač. salu/izbor sale/predmet (backend ih već prima i
-čuva ako stignu).
+**Urađeno i testirano uživo (kroz browser), treća runda (na direktnu primjedbu klijentkinje):**
+16. Dnevni limit od 6 sati po godini/semestru (preko svih predmeta te godine) u Java algoritmu,
+    uz load-balancing raspodjelu po danima da limit ne obori procenat uspješnosti generisanja
+17. Algoritam sada izbjegava sale zauzete od strane DRUGIH fakulteta (`room_occupancy`); FIT-ove
+    sopstvene (test) unose namjerno ne tretira kao prepreku - vidi objašnjenje "čudne zauzetosti"
+18. **Značajan bag pronađen i popravljen**: `(int)$row['day']` na varchar koloni sa imenom dana
+    je uvijek davalo 0 - svježe generisani rasporedi su se prikazivali PRAZNI i admin panelu i
+    profesorskom panelu (stariji rasporedi su "slučajno" radili jer im je `day` bio cifra-string
+    iz perioda prije weekday-bug popravke). Popravljeno u oba endpointa.
+19. Frontend: red "Dnevni fond" (sa bojom) ispod svake sedmične tabele u generisanom rasporedu
+20. Frontend: napomena o FIT vs. tuđoj zauzetosti na "Zauzetost sala" stranici
+21. Frontend: edit-forma za predmet dopunjena novim poljima iz 2. runde (ranije samo u "Dodaj")
+22. Frontend: edit-forma za salu dopunjena poljem "kome pripada"
+23. Frontend: profesorov kalendar sada prikazuje tip časa i ime predavača
+
+**Već radilo (pronađeno, nije trebalo popravku): 3 stavke** — rezervisani termini profesora,
+sedmice kolokvijuma na admin panelu, slanje zahtjeva za kolokvijume.
+
+**Backend spreman, čeka frontend izmjenu (napomene):** kalendar UI treba dopuniti da prikaže
+naziv praznika/neradnog dana (podatak već stiže), forma za raspoloživost treba dopuniti da
+profesor uopšte MOŽE unijeti rač. salu/izbor sale/predmet po terminu (backend ih već prima i
+čuva ako stignu, i vezivanje za predmet već utiče na algoritam čim se jednom unese).
 
 **Ostaje kao backlog (veći/rizičniji zahvati, nisu rađeni ovu sesiju):** puna provjera
-konflikata za sve dodijeljene predavače (ne samo prvog), povezivanje zauzetosti sala sa
-generisanjem rasporeda, mogućnost izmjene generisanog rasporeda od strane admina (sala/vrijeme
-pojedinačnog termina), povezivanje `requires_computer_lab`/`preferred_room_id` PO TERMINU
-raspoloživosti sa algoritmom (trenutno se ti zahtjevi čuvaju i vide, ali algoritam i dalje bira
-salu na nivou predmeta, ne pojedinačnog termina).
+konflikata za sve dodijeljene predavače (ne samo prvog), mogućnost izmjene generisanog rasporeda
+od strane admina (sala/vrijeme pojedinačnog termina), povezivanje
+`requires_computer_lab`/`preferred_room_id` PO TERMINU raspoloživosti sa algoritmom (trenutno se
+ti zahtjevi čuvaju i vide, ali algoritam i dalje bira salu na nivou predmeta, ne pojedinačnog
+termina), poštovanje KONKRETNOG vremena (ne samo dana) iz raspoloživosti profesora.
 
 **Van obima (frontend/tekst/dizajn odluke):** sve stavke označene kao "malo p/s/k/d" (samo
 veličina slova u naslovu), ć/č u PDF-u (klijentski jsPDF), preimenovanje kategorija, i pitanja
