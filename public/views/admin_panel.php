@@ -95,6 +95,25 @@ if (isset($_GET['action']) && $_GET['action'] === 'getschedule') {
         // Reverse to show oldest first (1, 2, 3, 4, 5, 6)
         $scheduleIds = array_reverse($scheduleIds);
 
+        // academic_event.day je varchar - Java upisuje ime dana ("ponedeljak"...), ali
+        // stariji redovi (generisani prije popravke weekday bug-a) mogu imati cifru kao
+        // string ("1".."5"). (int)"ponedeljak" bi uvijek dalo 0, pa raspored ostane prazan
+        // za svježe generisane rasporede - ovo ispravno mapira oba oblika u 1..5.
+        if (!function_exists('dayNameToWeekdayNum')) {
+            function dayNameToWeekdayNum($day) {
+                static $map = [
+                    'ponedeljak' => 1, 'monday' => 1,
+                    'utorak' => 2, 'tuesday' => 2,
+                    'srijeda' => 3, 'sreda' => 3, 'wednesday' => 3,
+                    'cetvrtak' => 4, 'četvrtak' => 4, 'thursday' => 4,
+                    'petak' => 5, 'friday' => 5,
+                ];
+                $key = mb_strtolower(trim((string)$day));
+                if (isset($map[$key])) return $map[$key];
+                return is_numeric($day) ? (int)$day : 0;
+            }
+        }
+
         $stmt = $pdo->prepare("
             SELECT 
                 ae.schedule_id,
@@ -140,7 +159,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'getschedule') {
             }
 
             $data['schedules'][$schedId][$sem][] = [
-                'day' => (int)$row['day'],
+                'day' => dayNameToWeekdayNum($row['day']),
                 'start' => substr($row['starts_at'], 11, 5),
                 'end' => substr($row['ends_at'], 11, 5),
                 'course' => $row['coursename'],
@@ -2477,6 +2496,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 return [ev.course, fallbackNameList, typeLine].filter(Boolean).join('<br>');
                             }
 
+                            // Dnevni fond (max 6h/dan po godini/semestru, preko svih predmeta te
+                            // godine kombinovano) - vizuelna potvrda da algoritam poštuje limit.
+                            const MAX_DAILY_HOURS = 6;
+                            function buildDailyHoursFooter(events) {
+                                const tfoot = document.createElement('tfoot');
+                                const tr = document.createElement('tr');
+                                const tdLabel = document.createElement('td');
+                                tdLabel.textContent = 'Dnevni fond';
+                                tdLabel.style.fontWeight = 'bold';
+                                tr.appendChild(tdLabel);
+                                for (let d = 1; d <= 5; d++) {
+                                    const td = document.createElement('td');
+                                    const hoursForDay = timeSlots.filter(slot =>
+                                        events.some(ev => ev.day === d && (ev.start + '-' + ev.end) === slot)
+                                    ).length;
+                                    td.textContent = hoursForDay + 'h';
+                                    td.style.fontWeight = 'bold';
+                                    td.style.textAlign = 'center';
+                                    td.style.color = hoursForDay > MAX_DAILY_HOURS ? '#ef4444' : '#22c55e';
+                                    td.title = hoursForDay > MAX_DAILY_HOURS
+                                        ? 'Prekoračen dnevni limit od ' + MAX_DAILY_HOURS + 'h!'
+                                        : 'U okviru dnevnog limita od ' + MAX_DAILY_HOURS + 'h';
+                                    tr.appendChild(td);
+                                }
+                                tfoot.appendChild(tr);
+                                return tfoot;
+                            }
+
                             function buildTableForSemester(sem, events, scheduleIdx, totalSchedules) {
                                 const wrapper = document.createElement('div');
                                 wrapper.className = 'semester-wrapper';
@@ -2552,6 +2599,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 });
 
                                 table.appendChild(tbody);
+                                table.appendChild(buildDailyHoursFooter(events));
                                 wrapper.appendChild(table);
                                 enableTdSwap(table);
 
@@ -3188,6 +3236,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                         });
 
                                         table.appendChild(tbody);
+                                        table.appendChild(buildDailyHoursFooter(events));
                                         wrapper.appendChild(table);
                                         enableTdSwap(table);
 
@@ -3773,6 +3822,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <h2>Zauzetost sala - Akademska godina: <?= htmlspecialchars($year_label) ?></h2>
                         <p class="info-text">Kliknite na polje (ili prevucite preko više polja) da biste rezervisali
                             termin za fakultet.</p>
+                        <p class="info-text" style="color:#f0b429;">
+                            <strong>Napomena:</strong> algoritam za generisanje rasporeda časova sada izbjegava sale
+                            koje su ovdje označene kao zauzete od strane <em>drugih</em> fakulteta (FEB, MTS, PF, FSJ,
+                            FVU). Termini označeni kao <strong>FIT</strong> namjerno se <em>ne</em> tretiraju kao
+                            prepreka - to je sopstvena zauzetost FIT-a (npr. već generisan raspored), pa ne bi imalo
+                            smisla da FIT-ov algoritam sam sebe blokira. Ako ovdje FIT pokazuje zauzetost skoro cijelog
+                            radnog dana u skoro svakoj sali, to je vjerovatno test/probni podatak, ne stvarna
+                            rezervacija - vrijedi pregledati i po potrebi obrisati.
+                        </p>
                     </div>
 
                     <div class="legend-container">

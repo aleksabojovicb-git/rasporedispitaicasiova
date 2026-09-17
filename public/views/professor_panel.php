@@ -1084,8 +1084,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                         Object.values(semesters).forEach(list => {
                             list.forEach(e => {
+                                const locationLabel = e.room ? e.room : (e.type ? 'ONLINE' : '');
+                                const typeLine = e.type_label
+                                    ? e.type_label + (locationLabel ? ` (${locationLabel})` : '')
+                                    : locationLabel;
+                                const title = [e.course, typeLine, e.professor].filter(Boolean).join(' — ');
                                 events.push({
-                                    title: e.course + (e.room ? ` (${e.room})` : ''),
+                                    title: title,
                                     daysOfWeek: [e.day - 1],
                                     startTime: e.start,
                                     endTime: e.end

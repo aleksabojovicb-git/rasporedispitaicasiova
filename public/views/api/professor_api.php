@@ -19,6 +19,23 @@ try {
     // Ignoriši - kolone već postoje ili nema dozvole da se doda (npr. druga sesija upravo radi isto)
 }
 
+// academic_event.day je varchar - Java upisuje ime dana ("ponedeljak"...), ali stariji
+// redovi (generisani prije popravke weekday bug-a) mogu imati cifru kao string ("1".."5").
+// (int)"ponedeljak" bi uvijek dalo 0, pa bi raspored ostao prazan za svježe generisane
+// rasporede - ovo ispravno mapira oba oblika u 1..5.
+function dayNameToWeekdayNum($day) {
+    static $map = [
+        'ponedeljak' => 1, 'monday' => 1,
+        'utorak' => 2, 'tuesday' => 2,
+        'srijeda' => 3, 'sreda' => 3, 'wednesday' => 3,
+        'cetvrtak' => 4, 'četvrtak' => 4, 'thursday' => 4,
+        'petak' => 5, 'friday' => 5,
+    ];
+    $key = mb_strtolower(trim((string)$day));
+    if (isset($map[$key])) return $map[$key];
+    return is_numeric($day) ? (int)$day : 0;
+}
+
 if (!isset($_SESSION['professor_id'])) {
     echo json_encode(['error' => 'Not authenticated']);
     exit;
@@ -153,7 +170,7 @@ switch ($action) {
                     : ($row['professors'] !== '' ? $row['professors'] : $row['assistants']);
 
                 $data['schedules'][$sid][$sem][] = [
-                    'day' => (int)$row['day'],
+                    'day' => dayNameToWeekdayNum($row['day']),
                     'start' => substr($row['starts_at'], 11, 5),
                     'end' => substr($row['ends_at'], 11, 5),
                     'course' => $row['coursename'],
