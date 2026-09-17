@@ -32,7 +32,8 @@ public class ColloquiumService {
         String day;
         LocalTime startTime;
         LocalTime endTime;
-        int roomId;
+        Integer roomId;
+        boolean isOnline;
         long professorId;
         int scheduleId;
     }
@@ -375,7 +376,7 @@ public class ColloquiumService {
 
     private Map<Integer, TemplateEvent> loadTemplates(Connection conn) throws SQLException {
         Map<Integer, TemplateEvent> map = new HashMap<>();
-        String query = "SELECT course_id, day, starts_at, ends_at, room_id, created_by_professor, schedule_id " +
+        String query = "SELECT course_id, day, starts_at, ends_at, room_id, is_online, created_by_professor, schedule_id " +
                        "FROM academic_event " +
                        "WHERE type_enum = 'EXERCISE' AND locked_by_admin = true";
         try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery(query)) {
@@ -383,7 +384,9 @@ public class ColloquiumService {
                 TemplateEvent t = new TemplateEvent();
                 t.courseId = rs.getInt("course_id");
                 t.day = rs.getString("day");
-                t.roomId = rs.getInt("room_id");
+                int rid = rs.getInt("room_id");
+                t.roomId = rs.wasNull() ? null : rid;
+                t.isOnline = rs.getBoolean("is_online");
                 t.professorId = rs.getLong("created_by_professor");
                 t.scheduleId = rs.getInt("schedule_id");
                 Timestamp start = rs.getTimestamp("starts_at");
@@ -436,35 +439,42 @@ public class ColloquiumService {
 
     private void insertNewColloquiums(Connection conn, List<ProposedColloquium> proposals) throws SQLException {
         String sql = "INSERT INTO academic_event " +
-                "(course_id, type_enum, starts_at, ends_at, room_id, created_by_professor, schedule_id, locked_by_admin, notes, day, is_published) " +
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-        
+                "(course_id, type_enum, starts_at, ends_at, room_id, is_online, created_by_professor, schedule_id, locked_by_admin, notes, day, is_published) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             for (ProposedColloquium p : proposals) {
                 LocalDateTime startDt = LocalDateTime.of(p.finalDate, p.template.startTime);
                 LocalDateTime endDt = LocalDateTime.of(p.finalDate, p.template.endTime);
-                
+
                 ps.setInt(1, p.course.id);
-                ps.setString(2, p.type); 
+                ps.setString(2, p.type);
                 ps.setTimestamp(3, Timestamp.valueOf(startDt));
                 ps.setTimestamp(4, Timestamp.valueOf(endDt));
-                ps.setInt(5, p.template.roomId);
-                ps.setLong(6, p.template.professorId);
-                ps.setInt(7, p.template.scheduleId);
-                // Prompt rule: "ne smijes mijenjati... raspored predavanja". 
+                // Vježbe bez sale (online) imaju room_id NULL - getInt() bi to tiho
+                // pretvorio u 0, sto krsi FK ka room, pa se ovdje eksplicitno salje NULL.
+                if (p.template.roomId == null) {
+                    ps.setNull(5, java.sql.Types.BIGINT);
+                } else {
+                    ps.setInt(5, p.template.roomId);
+                }
+                ps.setBoolean(6, p.template.isOnline);
+                ps.setLong(7, p.template.professorId);
+                ps.setInt(8, p.template.scheduleId);
+                // Prompt rule: "ne smijes mijenjati... raspored predavanja".
                 // But this is inserting NEW colloquiums.
                 // Prompt: "Ako vrijednost 0 -> taj kolokvijum se ne odrzava" (Handled by >0 check)
-                
+
                 // Are we locking these? The prompt implies they are generated ON TOP OF locked schedule.
                 // It doesn't strictly say if colloquiums are locked. Usually they are visible.
-                ps.setBoolean(8, true); // Let's lock them to avoid accidental manual move that breaks the logic, or false?
+                ps.setBoolean(9, true); // Let's lock them to avoid accidental manual move that breaks the logic, or false?
                 // Actually, if we lock them, admins can't move them. Usually they need to be adjustable.
                 // BUT "Kolokvijumi se ne raspoređuju slobodno... u istom terminu kao vježbe".
                 // If the user wants specific rules, maybe locking is correct. I'll stick to true as per prev logic.
-                
-                ps.setString(9, "generated");
-                ps.setString(10, p.template.day);
-                ps.setBoolean(11, true);
+
+                ps.setString(10, "generated");
+                ps.setString(11, p.template.day);
+                ps.setBoolean(12, true);
 
                 ps.addBatch();
             }

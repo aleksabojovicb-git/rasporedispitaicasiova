@@ -1091,7 +1091,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 const title = [e.course, typeLine, e.professor].filter(Boolean).join(' — ');
                                 events.push({
                                     title: title,
-                                    daysOfWeek: [e.day - 1],
+                                    daysOfWeek: [e.day],
                                     startTime: e.start,
                                     endTime: e.end
                                 });

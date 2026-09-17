@@ -297,15 +297,28 @@ if (isset($_GET['action']) && $_GET['action'] === 'generatecolloquiums') {
 
         $outputString = cleanUtf8($outputString ?? '');
 
-        // Parsiranje output-a
-        $isSuccess = true; // Pretpostavljamo uspeh za kolokvijume osim ako ne vrati gresku
+        // Parsiranje output-a - ColloquiumService.generateColloquiums() vraća "OK" ili
+        // "GRESKA: <poruka>"; sve ostalo u output-u (npr. dijagnostički ispisi konekcije
+        // ili stack trace uhvaćen preko 2>&1) ne smije da se prikaže kao da je uspjeh.
+        $isSuccess = true;
         $message = trim($outputString);
+
+        if (stripos($outputString, 'GRESKA') !== false) {
+            $isSuccess = false;
+            $greskaPos = stripos($outputString, 'GRESKA');
+            $message = trim(substr($outputString, $greskaPos));
+            $lines = explode("\n", $message);
+            $message = trim($lines[0]);
+        } elseif (empty($message)) {
+            $isSuccess = false;
+            $message = 'Java program nije vratio nikakav output.';
+        }
 
         // Formatiranje poruke ako je JSON ili raw text
         $message = str_replace(["\r", "\n"], " ", $message);
         $message = preg_replace('/\s+/', ' ', $message);
 
-        echo json_encode(['status' => 'success', 'message' => $message, 'output' => $outputString], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        echo json_encode(['status' => $isSuccess ? 'success' : 'error', 'message' => $message, 'output' => $outputString], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
     } catch (Exception $e) {
         echo json_encode(['status' => 'error', 'message' => 'Greška: ' . $e->getMessage()]);
@@ -3153,6 +3166,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     });
                                 }
 
+                                const MAX_DAILY_HOURS = 6;
+                                function buildDailyHoursFooter(events) {
+                                    const tfoot = document.createElement('tfoot');
+                                    const tr = document.createElement('tr');
+                                    const tdLabel = document.createElement('td');
+                                    tdLabel.textContent = 'Dnevni fond';
+                                    tdLabel.style.fontWeight = 'bold';
+                                    tr.appendChild(tdLabel);
+                                    for (let d = 1; d <= 5; d++) {
+                                        const td = document.createElement('td');
+                                        const hoursForDay = timeSlots.filter(slot =>
+                                            events.some(ev => ev.day === d && (ev.start + '-' + ev.end) === slot)
+                                        ).length;
+                                        td.textContent = hoursForDay + 'h';
+                                        td.style.fontWeight = 'bold';
+                                        td.style.textAlign = 'center';
+                                        td.style.color = hoursForDay > MAX_DAILY_HOURS ? '#ef4444' : '#22c55e';
+                                        td.title = hoursForDay > MAX_DAILY_HOURS
+                                            ? 'Prekoračen dnevni limit od ' + MAX_DAILY_HOURS + 'h!'
+                                            : 'U okviru dnevnog limita od ' + MAX_DAILY_HOURS + 'h';
+                                        tr.appendChild(td);
+                                    }
+                                    tfoot.appendChild(tr);
+                                    return tfoot;
+                                }
 
                                 function buildTableForSemester(sem, events, scheduleIdx, totalSchedules) {
                                     const wrapper = document.createElement('div');
