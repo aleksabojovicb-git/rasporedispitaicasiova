@@ -2365,7 +2365,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 </select>
                             </div>
                         </div>
-                        
+
+                        <button id='colloquium-pdf-btn' class='action-button add-button' style='margin-bottom: 20px;'>Sačuvaj sve kolokvijume i završni ispit kao PDF (po semestru)</button>
+
                         <div id='colloquium-container'></div>
                     </div>
                     ";
@@ -3777,6 +3779,96 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                             doc.save(`raspored_semestar_${semester}.pdf`);
                         }
+                    </script>
+
+                    <script>
+                        // Sve kolokvijume (K1 + K2) i završni ispit, grupisano po semestru - jedna
+                        // stranica po semestru koji ima podataka, sortirano po datumu unutar semestra.
+                        // Koristi window.allExams (isti podaci koje puni renderScheduleData) umjesto
+                        // trenutno prikazane sedmične mreže, da PDF ne zavisi od toga koji je Tip/Semestar
+                        // trenutno izabran u filterima.
+                        function saveColloquiumScheduleAsPDF() {
+                            const events = window.allExams || [];
+                            if (events.length === 0) {
+                                alert('Nema podataka za PDF - prvo generišite kolokvijume.');
+                                return;
+                            }
+
+                            const {jsPDF} = window.jspdf;
+                            const doc = new jsPDF('landscape', 'pt', 'a4');
+                            doc.setFont("DejaVuSans", "normal");
+
+                            const typeLabels = {COLLOQUIUM_1: 'Kolokvijum 1', COLLOQUIUM_2: 'Kolokvijum 2', EXAM: 'Završni ispit'};
+                            const dayNames = ['', 'Ponedjeljak', 'Utorak', 'Srijeda', 'Četvrtak', 'Petak', 'Subota', 'Nedjelja'];
+                            const baseStyles = {
+                                font: "DejaVuSans",
+                                fontSize: 9,
+                                cellPadding: 4,
+                                overflow: 'linebreak',
+                                cellWidth: 'wrap',
+                                valign: 'middle',
+                                minCellHeight: 24
+                            };
+
+                            let wroteAnyPage = false;
+
+                            for (let sem = 1; sem <= 6; sem++) {
+                                const semEvents = events
+                                    .filter(e => e.semester === sem)
+                                    .slice()
+                                    .sort((a, b) => {
+                                        if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+                                        return a.start.localeCompare(b.start);
+                                    });
+
+                                if (semEvents.length === 0) continue;
+
+                                if (wroteAnyPage) doc.addPage();
+                                wroteAnyPage = true;
+
+                                doc.setFontSize(16);
+                                doc.text(`Kolokvijumi i završni ispit – ${sem}. semestar`, 40, 40);
+
+                                const headers = ['Datum', 'Dan', 'Vrijeme', 'Tip', 'Predmet', 'Sala'];
+                                const rows = semEvents.map(e => [
+                                    e.date || '-',
+                                    dayNames[e.day] || '',
+                                    e.start + ' - ' + e.end,
+                                    typeLabels[e.type] || e.type,
+                                    e.course,
+                                    e.is_online ? 'ONLINE' : (e.room || '')
+                                ]);
+
+                                const pageWidth = doc.internal.pageSize.getWidth();
+                                const marginX = 40;
+                                const usableWidth = pageWidth - (marginX * 2);
+
+                                doc.autoTable({
+                                    head: [headers],
+                                    body: rows,
+                                    startY: 70,
+                                    tableWidth: usableWidth,
+                                    styles: baseStyles,
+                                    headStyles: {
+                                        ...baseStyles,
+                                        fillColor: [147, 51, 234] // ljubicasta (kao dugme 'Generiši kolokvijume')
+                                    },
+                                    bodyStyles: baseStyles
+                                });
+                            }
+
+                            if (!wroteAnyPage) {
+                                alert('Nema podataka za PDF - prvo generišite kolokvijume.');
+                                return;
+                            }
+
+                            doc.save('kolokvijumi_i_zavrsni_ispiti.pdf');
+                        }
+
+                        document.addEventListener('DOMContentLoaded', () => {
+                            const collPdfBtn = document.getElementById('colloquium-pdf-btn');
+                            if (collPdfBtn) collPdfBtn.addEventListener('click', saveColloquiumScheduleAsPDF);
+                        });
                     </script>
 
                     <script>
