@@ -431,7 +431,7 @@ switch ($action) {
 
             $stmt = $pdo->prepare("
             UPDATE course
-            SET colloquium_1_week = ?, colloquium_2_week = ?
+            SET colloquium_1_week = ?, colloquium_2_week = ?, final_exam_week = ?
             WHERE id = ?
         ");
 
@@ -443,8 +443,9 @@ switch ($action) {
 
                 $c1 = $r['colloquium_1_week'] ?: null;
                 $c2 = $r['colloquium_2_week'] ?: null;
+                $examWeek = $r['final_exam_week'] ?: null;
 
-                $stmt->execute([$c1, $c2, $id]);
+                $stmt->execute([$c1, $c2, $examWeek, $id]);
                 $count++;
             }
 

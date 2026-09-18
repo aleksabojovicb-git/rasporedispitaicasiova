@@ -351,6 +351,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <th>Uloga</th>
                         <th>Kolokvijum 1 (sedmica)</th>
                         <th>Kolokvijum 2 (sedmica)</th>
+                        <th>Završni ispit (sedmica)</th>
                     </tr>
                     </thead>
                     <tbody id="coursesTableBody">
@@ -364,8 +365,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $summerStart = $academicYear ? strtotime($academicYear['summer_semester_start']) : null;
 
                         $stmt = $pdo->prepare("
-                            SELECT c.id, c.name, c.semester, cp.is_assistant, 
-                                   c.colloquium_1_week, c.colloquium_2_week
+                            SELECT c.id, c.name, c.semester, cp.is_assistant,
+                                   c.colloquium_1_week, c.colloquium_2_week, c.final_exam_week
                             FROM course_professor cp
                             JOIN course c ON c.id = cp.course_id
                             WHERE cp.professor_id = ?
@@ -375,12 +376,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $courses = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
                         if (!$courses) {
-                            echo "<tr><td colspan='5'>Nema pridruženih predmeta.</td></tr>";
+                            echo "<tr><td colspan='6'>Nema pridruženih predmeta.</td></tr>";
                         } else {
                             foreach ($courses as $c) {
                                 $role = $c['is_assistant'] ? 'Asistent' : 'Profesor';
                                 $col1Val = $c['colloquium_1_week'];
                                 $col2Val = $c['colloquium_2_week'];
+                                $examVal = $c['final_exam_week'];
 
                                 $isWinter = ($c['semester'] % 2 != 0);
                                 $semStart = $isWinter ? $winterStart : $summerStart;
@@ -431,12 +433,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                             <?php endfor; ?>
                                         </select>
                                     </td>
+                                    <td>
+                                        <select class="form-select form-select-sm exam-week-select"
+                                                data-course-id="<?php echo (int)$c['id']; ?>">
+                                            <option value="">-- Izaberi --</option>
+                                            <option value="0" <?php echo ($examVal == 0) ? 'selected' : ''; ?>>Ne
+                                                održava se
+                                            </option>
+                                            <?php for ($w = 14; $w <= 20; $w++):
+                                                $dateLabel = "";
+                                                if ($semStart) {
+                                                    $wStart = strtotime("+" . ($w - 1) . " weeks", $semStart);
+                                                    $wEnd = strtotime("+6 days", $wStart);
+                                                    $dateLabel = " (" . date('d.m.Y', $wStart) . "-" . date('d.m.Y', $wEnd) . ")";
+                                                }
+                                                ?>
+                                                <option value="<?php echo $w; ?>" <?php echo ($examVal == $w) ? 'selected' : ''; ?>>
+                                                    <?php echo $w; ?>. sedmica<?php echo $dateLabel; ?>
+                                                </option>
+                                            <?php endfor; ?>
+                                        </select>
+                                    </td>
                                 </tr>
                                 <?php
                             }
                         }
                     } catch (PDOException $e) {
-                        echo "<tr><td colspan='5'>Greška: " . htmlspecialchars($e->getMessage()) . "</td></tr>";
+                        echo "<tr><td colspan='6'>Greška: " . htmlspecialchars($e->getMessage()) . "</td></tr>";
                     }
                     ?>
                     </tbody>
@@ -698,9 +721,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     const courseId = row.getAttribute('data-course-id');
                     const col1Select = row.querySelector('.colloquium-1-select');
                     const col2Select = row.querySelector('.colloquium-2-select');
+                    const examSelect = row.querySelector('.exam-week-select');
 
                     const col1Value = col1Select.value;
                     const col2Value = col2Select.value;
+                    const examValue = examSelect.value;
 
                     // Validacija: ako su oba odabrana i nisu "ne odrzava se", col2 > col1
                     if (col1Value && col2Value && col1Value !== '1' && col2Value !== '1') {
@@ -715,10 +740,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         row.classList.remove('table-danger');
                     }
 
+                    // Validacija: završni ispit (ako se održava) mora biti poslije Kolokvijuma 2
+                    if (examValue && examValue !== '0' && col2Value && col2Value !== '1') {
+                        if (parseInt(examValue) <= parseInt(col2Value)) {
+                            hasValidationError = true;
+                            row.classList.add('table-danger');
+                            showMessage('danger', 'Greška: Završni ispit mora biti nakon Kolokvijuma 2');
+                        }
+                    }
+
                     data.push({
                         course_id: courseId,
                         colloquium_1_week: col1Value || null,
-                        colloquium_2_week: col2Value || null
+                        colloquium_2_week: col2Value || null,
+                        final_exam_week: examValue || null
                     });
                 });
 

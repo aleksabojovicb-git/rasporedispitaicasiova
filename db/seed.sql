@@ -148,6 +148,7 @@ CREATE TABLE public.course (
     major character varying(100),
     colloquium_1_week integer,
     colloquium_2_week integer,
+    final_exam_week integer,
     requires_computer_lab boolean DEFAULT false,
     expected_students integer,
     parallel_groups integer DEFAULT 1,

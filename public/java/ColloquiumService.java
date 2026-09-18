@@ -15,14 +15,16 @@ public class ColloquiumService {
         int semester;
         Integer c1Week;
         Integer c2Week;
+        Integer examWeek;
         String major;
 
-        public Course(int id, String name, int semester, Integer c1Week, Integer c2Week, String major) {
+        public Course(int id, String name, int semester, Integer c1Week, Integer c2Week, Integer examWeek, String major) {
             this.id = id;
             this.name = name;
             this.semester = semester;
             this.c1Week = c1Week;
             this.c2Week = c2Week;
+            this.examWeek = examWeek;
             this.major = major;
         }
     }
@@ -90,20 +92,27 @@ public class ColloquiumService {
 
                 List<ProposedColloquium> col1List = new ArrayList<>();
                 List<ProposedColloquium> col2List = new ArrayList<>();
+                // Za razliku od kolokvijuma, final_exam_week nije obavezno polje - ova
+                // funkcija je nova i za postojeće predmete niko je još nije popunio, pa
+                // izostanak (null ili 0) samo znači da se za taj predmet ispit ne
+                // generiše automatski, umjesto da blokira cijelo generisanje.
+                List<ProposedColloquium> examList = new ArrayList<>();
 
                 for (Course c : semCourses) {
                     TemplateEvent t = templates.get(c.id);
-                    if (t == null) continue; 
+                    if (t == null) continue;
 
                     if (c.c1Week == null) return "Za predmet " + c.name + " nije definisana sedmica za Kolokvijum 1.";
                     if (c.c1Week > 0) col1List.add(new ProposedColloquium(c, "COLLOQUIUM_1", c.c1Week, t));
 
                     if (c.c2Week == null) return "Za predmet " + c.name + " nije definisana sedmica za Kolokvijum 2.";
                     if (c.c2Week > 0) col2List.add(new ProposedColloquium(c, "COLLOQUIUM_2", c.c2Week, t));
+
+                    if (c.examWeek != null && c.examWeek > 0) examList.add(new ProposedColloquium(c, "EXAM", c.examWeek, t));
                 }
 
                 try {
-                    processSemester(col1List, col2List, semester);
+                    processSemester(col1List, col2List, examList, semester);
                 } catch (Exception e) {
                     return "GRESKA: " + e.getMessage();
                 }
@@ -113,6 +122,10 @@ public class ColloquiumService {
                     finalProposals.add(p);
                 }
                 for (ProposedColloquium p : col2List) {
+                    calculateDate(p, semStart);
+                    finalProposals.add(p);
+                }
+                for (ProposedColloquium p : examList) {
                     calculateDate(p, semStart);
                     finalProposals.add(p);
                 }
@@ -143,13 +156,15 @@ public class ColloquiumService {
         }
     }
 
-    private void processSemester(List<ProposedColloquium> col1, List<ProposedColloquium> col2, int semester)
-            throws Exception {
-        // Both rounds share one occupancy map, so the weekly limits count colloquium 1
-        // and colloquium 2 together instead of each round filling a week on its own.
+    private void processSemester(List<ProposedColloquium> col1, List<ProposedColloquium> col2,
+            List<ProposedColloquium> exams, int semester) throws Exception {
+        // All three rounds share one occupancy map, so the weekly limits count colloquium 1,
+        // colloquium 2 and the final exam together instead of each round filling a week on
+        // its own (a course's exam could otherwise land in the same week as its colloquium).
         Map<Integer, WeekStatus> schedule = new TreeMap<>();
         placeRound(col1, semester, schedule);
         placeRound(col2, semester, schedule);
+        placeRound(exams, semester, schedule);
     }
 
     private void placeRound(List<ProposedColloquium> proposals, int semester, Map<Integer, WeekStatus> schedule)
@@ -359,16 +374,18 @@ public class ColloquiumService {
 
     private List<Course> loadCourses(Connection conn) throws SQLException {
         List<Course> list = new ArrayList<>();
-        String query = "SELECT id, name, semester, colloquium_1_week, colloquium_2_week, major FROM course";
+        String query = "SELECT id, name, semester, colloquium_1_week, colloquium_2_week, final_exam_week, major FROM course";
         try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery(query)) {
             while (rs.next()) {
                 Integer c1 = rs.getInt("colloquium_1_week");
                 if (rs.wasNull()) c1 = null;
                 Integer c2 = rs.getInt("colloquium_2_week");
                 if (rs.wasNull()) c2 = null;
+                Integer examWeek = rs.getInt("final_exam_week");
+                if (rs.wasNull()) examWeek = null;
                 String major = rs.getString("major");
                 if (rs.wasNull()) major = null;
-                list.add(new Course(rs.getInt("id"), rs.getString("name"), rs.getInt("semester"), c1, c2, major));
+                list.add(new Course(rs.getInt("id"), rs.getString("name"), rs.getInt("semester"), c1, c2, examWeek, major));
             }
         }
         return list;
@@ -427,10 +444,11 @@ public class ColloquiumService {
     }
 
     private void deleteOldColloquiums(Connection conn) throws SQLException {
-        // Only wipe what a previous run of this generator produced. Colloquiums a
-        // professor entered by hand carry no 'generated' note and must survive.
+        // Only wipe what a previous run of this generator produced. Colloquiums/exams
+        // entered by hand (or the seeded 'Redovni'/'Popravni ispitni rok' demo rows)
+        // carry no 'generated' note and must survive.
         String sql = "DELETE FROM academic_event " +
-                "WHERE type_enum IN ('COLLOQUIUM', 'COLLOQUIUM_1', 'COLLOQUIUM_2') " +
+                "WHERE type_enum IN ('COLLOQUIUM', 'COLLOQUIUM_1', 'COLLOQUIUM_2', 'EXAM') " +
                 "AND notes = 'generated'";
         try (Statement stmt = conn.createStatement()) {
             stmt.executeUpdate(sql);

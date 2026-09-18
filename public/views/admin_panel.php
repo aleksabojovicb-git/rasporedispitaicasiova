@@ -188,6 +188,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'getschedule') {
             LEFT JOIN room r ON ae.room_id = r.id
             WHERE (ae.type_enum IN ('EXAM', 'COLLOQUIUM') AND ae.schedule_id = ?)
                OR ae.type_enum IN ('COLLOQUIUM_1', 'COLLOQUIUM_2')
+               OR (ae.type_enum = 'EXAM' AND ae.notes = 'generated')
             ORDER BY ae.starts_at ASC
         ");
         $examStmt->execute([$examScheduleId]);
@@ -2236,6 +2237,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 <th>Asistenti</th>
                                 <th>Kolokvijum 1</th>
                                 <th>Kolokvijum 2</th>
+                                <th>Završni ispit</th>
                             </tr>
                             <?php
                             try {
@@ -2264,7 +2266,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     }
                                 }
 
-                                $stmt = $pdo->query("SELECT c.id, c.name, c.semester, c.colloquium_1_week, c.colloquium_2_week, p.full_name, cp.is_assistant
+                                $stmt = $pdo->query("SELECT c.id, c.name, c.semester, c.colloquium_1_week, c.colloquium_2_week, c.final_exam_week, p.full_name, cp.is_assistant
                                                     FROM course c
                                                     LEFT JOIN course_professor cp ON cp.course_id = c.id
                                                     LEFT JOIN professor p ON p.id = cp.professor_id
@@ -2280,6 +2282,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                             'semester' => (int)$row['semester'],
                                             'col1' => $row['colloquium_1_week'],
                                             'col2' => $row['colloquium_2_week'],
+                                            'examWeek' => $row['final_exam_week'],
                                             'professors' => [],
                                             'assistants' => []
                                         ];
@@ -2295,7 +2298,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 }
 
                                 if (empty($courses)) {
-                                    echo "<tr><td colspan='5'>Nema predmeta za prikaz.</td></tr>";
+                                    echo "<tr><td colspan='6'>Nema predmeta za prikaz.</td></tr>";
                                 } else {
                                     foreach ($courses as $course) {
                                         $profList = !empty($course['professors']) ? implode(', ', array_unique($course['professors'])) : '—';
@@ -2303,6 +2306,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                                         $col1Label = formatColloquiumWeekLabel($course['col1'], $course['semester'], $winterStart, $summerStart);
                                         $col2Label = formatColloquiumWeekLabel($course['col2'], $course['semester'], $winterStart, $summerStart);
+                                        $examLabel = formatColloquiumWeekLabel($course['examWeek'], $course['semester'], $winterStart, $summerStart);
 
                                         echo '<tr>';
                                         echo '<td>' . htmlspecialchars($course['name']) . '</td>';
@@ -2310,11 +2314,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                         echo '<td>' . htmlspecialchars($asstList) . '</td>';
                                         echo '<td>' . htmlspecialchars($col1Label) . '</td>';
                                         echo '<td>' . htmlspecialchars($col2Label) . '</td>';
+                                        echo '<td>' . htmlspecialchars($examLabel) . '</td>';
                                         echo '</tr>';
                                     }
                                 }
                             } catch (PDOException $e) {
-                                echo "<tr><td colspan='5'>Greška: " . htmlspecialchars($e->getMessage()) . "</td></tr>";
+                                echo "<tr><td colspan='6'>Greška: " . htmlspecialchars($e->getMessage()) . "</td></tr>";
                             }
                             ?>
                         </table>
@@ -2341,6 +2346,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 <select id='coll-type-select' class='form-control' style='width: 200px; background: #333; color: white; border: 1px solid #555; padding: 8px; border-radius: 4px;'>
                                     <option value='COLLOQUIUM_1'>Kolokvijum 1</option>
                                     <option value='COLLOQUIUM_2'>Kolokvijum 2</option>
+                                    <option value='EXAM'>Završni ispit</option>
                                 </select>
                             </div>
                             <div>
@@ -2395,9 +2401,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             // Store exams for filtering
                             window.allExams = data.exams || [];
 
-                            // Check for Colloquiums
+                            // Check for Colloquiums/Exams
                             const hasColloquiums = window.allExams.some(e =>
-                                e.type === 'COLLOQUIUM_1' || e.type === 'COLLOQUIUM_2'
+                                e.type === 'COLLOQUIUM_1' || e.type === 'COLLOQUIUM_2' || e.type === 'EXAM'
                             );
 
                             if (colSection) {
