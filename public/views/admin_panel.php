@@ -191,8 +191,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'getschedule') {
             JOIN course c ON ae.course_id = c.id
             LEFT JOIN room r ON ae.room_id = r.id
             WHERE (ae.type_enum IN ('EXAM', 'COLLOQUIUM') AND ae.schedule_id = ?)
-               OR ae.type_enum IN ('COLLOQUIUM_1', 'COLLOQUIUM_2')
-               OR (ae.type_enum = 'EXAM' AND ae.notes = 'generated')
+               OR (ae.type_enum IN ('COLLOQUIUM_1', 'COLLOQUIUM_2', 'EXAM') AND ae.notes = 'generated')
             ORDER BY ae.starts_at ASC
         ");
         $examStmt->execute([$examScheduleId]);
