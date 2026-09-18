@@ -97,8 +97,9 @@ if (isset($_GET['action']) && $_GET['action'] === 'getschedule') {
 
         // academic_event.day je varchar - Java upisuje ime dana ("ponedeljak"...), ali
         // stariji redovi (generisani prije popravke weekday bug-a) mogu imati cifru kao
-        // string ("1".."5"). (int)"ponedeljak" bi uvijek dalo 0, pa raspored ostane prazan
-        // za svježe generisane rasporede - ovo ispravno mapira oba oblika u 1..5.
+        // string ("1".."7"). (int)"ponedeljak" bi uvijek dalo 0, pa raspored ostane prazan
+        // za svježe generisane rasporede - ovo ispravno mapira oba oblika u 1..7 (koristi
+        // ga i exam/kolokvijum upit ispod, ne samo glavni raspored).
         if (!function_exists('dayNameToWeekdayNum')) {
             function dayNameToWeekdayNum($day) {
                 static $map = [
@@ -107,6 +108,8 @@ if (isset($_GET['action']) && $_GET['action'] === 'getschedule') {
                     'srijeda' => 3, 'sreda' => 3, 'wednesday' => 3,
                     'cetvrtak' => 4, 'četvrtak' => 4, 'thursday' => 4,
                     'petak' => 5, 'friday' => 5,
+                    'subota' => 6, 'saturday' => 6,
+                    'nedjelja' => 7, 'nedelja' => 7, 'sunday' => 7,
                 ];
                 $key = mb_strtolower(trim((string)$day));
                 if (isset($map[$key])) return $map[$key];
@@ -182,6 +185,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'getschedule') {
                 c.name AS coursename,
                 r.code AS roomcode,
                 ae.type_enum,
+                ae.is_online,
                 c.semester
             FROM academic_event ae
             JOIN course c ON ae.course_id = c.id
@@ -197,11 +201,12 @@ if (isset($_GET['action']) && $_GET['action'] === 'getschedule') {
         $data['exams'] = [];
         foreach ($examRows as $row) {
             $data['exams'][] = [
-                'day' => $row['day'],
+                'day' => dayNameToWeekdayNum($row['day']),
                 'start' => substr($row['starts_at'], 11, 5),
                 'end' => substr($row['ends_at'], 11, 5),
                 'course' => $row['coursename'],
                 'room' => $row['roomcode'],
+                'is_online' => (bool)$row['is_online'],
                 'date' => substr($row['starts_at'], 0, 10),
                 'type' => $row['type_enum'],
                 'semester' => (int)$row['semester']
@@ -3957,17 +3962,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     tdTime.classList.add('no-drag');
                                     tr.appendChild(tdTime);
 
-                                    const getDayIdx = (dayStr) => {
-                                        const map = {
-                                            'Ponedjeljak': 1,
-                                            'Utorak': 2,
-                                            'Srijeda': 3,
-                                            'Četvrtak': 4,
-                                            'Petak': 5,
-                                            'Subota': 6,
-                                            'Nedjelja': 7
-                                        };
-                                        return map[dayStr] || 0;
+                                    // e.day je vec broj 1..7 (admin_panel.php normalizuje preko
+                                    // dayNameToWeekdayNum prije slanja - baza cuva ime dana kao
+                                    // varchar, npr. "ponedeljak", ne "Ponedjeljak").
+                                    const getDayIdx = (day) => {
+                                        const n = parseInt(day, 10);
+                                        return Number.isFinite(n) ? n : 0;
                                     };
 
                                     for (let d = 1; d <= 6; d++) {
@@ -3975,7 +3975,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                         const cellEvs = events.filter(e => getDayIdx(e.day) === d && (e.start + '-' + e.end) === slot);
 
                                         if (cellEvs.length > 0) {
-                                            td.innerHTML = cellEvs.map(e => `<strong style="color:#ecc94b">${e.course}</strong><br>(${e.room})`).join('<br>'); // Highlight course
+                                            td.innerHTML = cellEvs.map(e => `<strong style="color:#ecc94b">${e.course}</strong><br>(${e.is_online ? 'ONLINE' : (e.room || '')})`).join('<br>'); // Highlight course
                                             // Make cell border subtle but distinct
                                             td.style.border = '1px solid #444';
                                         }
