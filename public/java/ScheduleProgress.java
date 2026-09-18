@@ -27,27 +27,47 @@ public class ScheduleProgress {
 
     public static synchronized void write(int curSchedule, int totalSchedules, int curCourse, int totalCourses,
             String message, boolean done, Boolean success, String error) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("{");
+        sb.append("\"running\":").append(!done).append(",");
+        sb.append("\"done\":").append(done).append(",");
+        sb.append("\"success\":").append(success == null ? "null" : success.toString()).append(",");
+        sb.append("\"current_schedule\":").append(curSchedule).append(",");
+        sb.append("\"total_schedules\":").append(totalSchedules).append(",");
+        sb.append("\"current_course\":").append(curCourse).append(",");
+        sb.append("\"total_courses\":").append(totalCourses).append(",");
+        sb.append("\"message\":\"").append(escape(message)).append("\",");
+        sb.append("\"error\":").append(error == null ? "null" : "\"" + escape(error) + "\"").append(",");
+        sb.append("\"updated_at\":").append(System.currentTimeMillis() / 1000L);
+        sb.append("}");
+        writeJson("schedule_progress.json", sb.toString());
+    }
+
+    // Isti oblik napretka (running/done/success/message/error), ali bez
+    // schedule/course brojača - za generisanja koja nemaju međukorake da
+    // prijave (npr. kolokvijumi), samo početak i kraj.
+    public static synchronized void writeSimple(String fileName, String message, boolean done, Boolean success,
+            String error) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("{");
+        sb.append("\"running\":").append(!done).append(",");
+        sb.append("\"done\":").append(done).append(",");
+        sb.append("\"success\":").append(success == null ? "null" : success.toString()).append(",");
+        sb.append("\"message\":\"").append(escape(message)).append("\",");
+        sb.append("\"error\":").append(error == null ? "null" : "\"" + escape(error) + "\"").append(",");
+        sb.append("\"updated_at\":").append(System.currentTimeMillis() / 1000L);
+        sb.append("}");
+        writeJson(fileName, sb.toString());
+    }
+
+    private static void writeJson(String fileName, String json) {
         try {
             Path dir = resolveProjectRoot().resolve("storage");
             Files.createDirectories(dir);
-            Path target = dir.resolve("schedule_progress.json");
-            Path tmp = dir.resolve("schedule_progress.json.tmp");
+            Path target = dir.resolve(fileName);
+            Path tmp = dir.resolve(fileName + ".tmp");
 
-            StringBuilder sb = new StringBuilder();
-            sb.append("{");
-            sb.append("\"running\":").append(!done).append(",");
-            sb.append("\"done\":").append(done).append(",");
-            sb.append("\"success\":").append(success == null ? "null" : success.toString()).append(",");
-            sb.append("\"current_schedule\":").append(curSchedule).append(",");
-            sb.append("\"total_schedules\":").append(totalSchedules).append(",");
-            sb.append("\"current_course\":").append(curCourse).append(",");
-            sb.append("\"total_courses\":").append(totalCourses).append(",");
-            sb.append("\"message\":\"").append(escape(message)).append("\",");
-            sb.append("\"error\":").append(error == null ? "null" : "\"" + escape(error) + "\"").append(",");
-            sb.append("\"updated_at\":").append(System.currentTimeMillis() / 1000L);
-            sb.append("}");
-
-            Files.write(tmp, sb.toString().getBytes(StandardCharsets.UTF_8));
+            Files.write(tmp, json.getBytes(StandardCharsets.UTF_8));
             try {
                 Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
             } catch (IOException atomicNotSupported) {

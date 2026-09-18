@@ -9,6 +9,25 @@ public class ValidacijaTermina {
         }
 
         String akcija = args[0];
+
+        // Posebno obrađeno PRIJE konstruisanja EventValidationService: taj konstruktor
+        // eager-loaduje CIJELU bazu (sve academic_event redove - 15000+ i raste sa svakim
+        // generisanjem rasporeda, sve courses/rooms/professors/holidays), a ColloquiumService
+        // tu instancu uopšte ne koristi - otvara sopstvenu, mnogo jeftiniju konekciju. Taj
+        // nepotrebni eager-load je ono što je 'Generiši kolokvijume' činilo dovoljno sporim
+        // da Render-ov proxy prekine konekciju sa HTTP 520 prije nego što Java stigne da
+        // odgovori.
+        if (akcija.equals("generisiKolokvijume")) {
+            ColloquiumService colService = new ColloquiumService();
+            String rezultat = colService.generateColloquiums();
+            boolean uspjesno = "OK".equals(rezultat.trim());
+            String poruka = uspjesno ? "Kolokvijumi su uspješno generisani." : rezultat;
+            ScheduleProgress.writeSimple("colloquium_progress.json", poruka, true, uspjesno,
+                    uspjesno ? null : rezultat);
+            System.out.println(rezultat);
+            return;
+        }
+
         Connection conn = null;
         try {
             conn = BazaInicijalizacija.uspostaviKonekciju();
@@ -130,10 +149,6 @@ public class ValidacijaTermina {
             } else if (akcija.equals("generisiKompletan")) {
                 ScheduleResult scheduleResult = service.generateSixSchedulesWithDifferentPriorities();
                 rezultat = scheduleResult.message;
-
-            } else if (akcija.equals("generisiKolokvijume")) {
-                ColloquiumService colService = new ColloquiumService();
-                rezultat = colService.generateColloquiums();
 
             } else {
                 System.out.println("GRESKA: Nepoznata akcija");

@@ -252,77 +252,114 @@ if (isset($_GET['action']) && $_GET['action'] === 'generatecolloquiums') {
             exit;
         }
 
-        // Formiranje Java komande
-        $separator = (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') ? ';' : ':';
-        $classpath = $javaDir . $separator . $jarFile;
-
-        // Komanda za pokretanje Java programa - akcija generisiKolokvijume
-        $command = sprintf(
-            'java -cp "%s" ValidacijaTermina generisiKolokvijume 2>&1',
-            $classpath
-        );
-
-        // Izvršavanje komande i hvatanje output-a
-        $outputString = shell_exec($command);
-
-        // Ako shell_exec vrati null, pokušaj sa exec
-        if ($outputString === null) {
-            $output = [];
-            $returnCode = 0;
-            exec($command, $output, $returnCode);
-            $outputString = implode("\n", $output);
+        $storageDir = $projectRoot . DIRECTORY_SEPARATOR . 'storage';
+        if (!is_dir($storageDir)) {
+            mkdir($storageDir, 0777, true);
         }
+        $progressFile = $storageDir . DIRECTORY_SEPARATOR . 'colloquium_progress.json';
+        $logFile = $storageDir . DIRECTORY_SEPARATOR . 'colloquium_generation.log';
 
-        // Funkcija za očišćavanje UTF-8 stringa
-        /* Already defined inside current file scope if in same execution,
-           but here cleanUtf8 is locally defined inside the if block of generateschedule
-           so proper way is to define it once or redefine safely?
-           Actually, PHP functions are global if not in namespace/class.
-           Wait, function cleanUtf8 inside an IF block is conditionally defined.
-           I should check provided context. The previous cleanUtf8 was inside `if (isset($_GET['action']) && $_GET['action'] === 'generateschedule')`.
-           If I am here, that block didn't run. So I should define it or reuse it if defined.
-           Safest is to check `function_exists`.
-        */
-        if (!function_exists('cleanUtf8')) {
-            function cleanUtf8($string)
-            {
-                if (!mb_check_encoding($string, 'UTF-8')) {
-                    $string = mb_convert_encoding($string, 'UTF-8', mb_detect_encoding($string, 'UTF-8, ISO-8859-1, Windows-1252', true));
+        // Concurrency guard - isti obrazac kao generateschedule (vidi tamo za objašnjenje
+        // 10-minutne staleness granice).
+        if (file_exists($progressFile)) {
+            $existingRaw = @file_get_contents($progressFile);
+            $existing = ($existingRaw !== false) ? json_decode($existingRaw, true) : null;
+            if (is_array($existing) && ($existing['done'] ?? true) === false) {
+                $updatedAt = (int) ($existing['updated_at'] ?? 0);
+                if ($updatedAt > 0 && (time() - $updatedAt) < 600) {
+                    echo json_encode(['status' => 'error', 'message' => 'Generisanje kolokvijuma je već u toku, sačekajte da se završi.']);
+                    exit;
                 }
-                $string = mb_convert_encoding($string, 'UTF-8', 'UTF-8');
-                $string = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/u', '', $string);
-                return $string;
             }
         }
 
-        $outputString = cleanUtf8($outputString ?? '');
+        // Resetuj progress fajl PRIJE pokretanja procesa - isti razlog kao kod
+        // generateschedule (spriječi da polling vidi zaostali done:true).
+        file_put_contents($progressFile, json_encode([
+            'running' => true,
+            'done' => false,
+            'success' => null,
+            'message' => 'Pokretanje generisanja...',
+            'error' => null,
+            'updated_at' => time(),
+        ]));
 
-        // Parsiranje output-a - ColloquiumService.generateColloquiums() vraća "OK" ili
-        // "GRESKA: <poruka>"; sve ostalo u output-u (npr. dijagnostički ispisi konekcije
-        // ili stack trace uhvaćen preko 2>&1) ne smije da se prikaže kao da je uspjeh.
-        $isSuccess = true;
-        $message = trim($outputString);
+        // Formiranje Java komande
+        $separator = (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') ? ';' : ':';
+        $classpath = $javaDir . $separator . $jarFile;
+        $command = ['java', '-cp', $classpath, 'ValidacijaTermina', 'generisiKolokvijume'];
 
-        if (stripos($outputString, 'GRESKA') !== false) {
-            $isSuccess = false;
-            $greskaPos = stripos($outputString, 'GRESKA');
-            $message = trim(substr($outputString, $greskaPos));
-            $lines = explode("\n", $message);
-            $message = trim($lines[0]);
-        } elseif (empty($message)) {
-            $isSuccess = false;
-            $message = 'Java program nije vratio nikakav output.';
+        // Pokreni Java ASINHRONO - isti razlog kao kod generateschedule: shell_exec
+        // je blokirao HTTP zahtjev dok Java ne završi, pa je Render (proxy timeout)
+        // prekidao konekciju sa HTTP 520 prije nego što bi Java stigla da odgovori.
+        // Napredak se prati preko $progressFile (vidi ScheduleProgress.writeSimple
+        // u ValidacijaTermina.java), stdout/stderr idu u $logFile radi debagovanja.
+        $descriptorspec = [
+            0 => ['pipe', 'r'],
+            1 => ['file', $logFile, 'a'],
+            2 => ['file', $logFile, 'a'],
+        ];
+        $process = proc_open($command, $descriptorspec, $pipes, $projectRoot, null, ['bypass_shell' => true]);
+
+        if (!is_resource($process)) {
+            file_put_contents($progressFile, json_encode([
+                'running' => false, 'done' => true, 'success' => false,
+                'message' => 'Java proces nije mogao biti pokrenut.',
+                'error' => 'proc_open failed', 'updated_at' => time(),
+            ]));
+            echo json_encode(['status' => 'error', 'message' => 'Java proces nije mogao biti pokrenut. Proverite da li je Java instaliran i u PATH-u.']);
+            exit;
         }
 
-        // Formatiranje poruke ako je JSON ili raw text
-        $message = str_replace(["\r", "\n"], " ", $message);
-        $message = preg_replace('/\s+/', ' ', $message);
+        fclose($pipes[0]);
+        // Namjerno NEMA proc_close(): PHP treba odmah da vrati odgovor dok Java
+        // nastavlja u pozadini (vidi generateschedule).
 
-        echo json_encode(['status' => $isSuccess ? 'success' : 'error', 'message' => $message, 'output' => $outputString], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        echo json_encode(['status' => 'started', 'message' => 'Generisanje kolokvijuma je pokrenuto.']);
 
     } catch (Exception $e) {
         echo json_encode(['status' => 'error', 'message' => 'Greška: ' . $e->getMessage()]);
+    } catch (Error $e) {
+        echo json_encode(['status' => 'error', 'message' => 'Fatalna greška: ' . $e->getMessage()]);
     }
+    exit;
+}
+
+if (isset($_GET['action']) && $_GET['action'] === 'generatecolloquiums_status') {
+    while (ob_get_level()) {
+        ob_end_clean();
+    }
+    header('Content-Type: application/json; charset=utf-8');
+
+    if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'ADMIN') {
+        echo json_encode(['status' => 'error', 'message' => 'Nemate dozvolu za ovu akciju.']);
+        exit;
+    }
+
+    $projectRoot = dirname(__DIR__, 2);
+    $progressFile = $projectRoot . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR . 'colloquium_progress.json';
+
+    $default = ['running' => false, 'done' => true, 'success' => null, 'message' => '', 'error' => null];
+
+    if (!file_exists($progressFile)) {
+        echo json_encode($default, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        exit;
+    }
+
+    // @ + retry - isti razlog kao generateschedule_status (Java atomično piše
+    // preko tmp+rename, pa PHP povremeno naiđe na prolazni Windows read error).
+    $rawContents = @file_get_contents($progressFile);
+    if ($rawContents === false) {
+        $rawContents = @file_get_contents($progressFile);
+    }
+    $data = ($rawContents !== false) ? json_decode($rawContents, true) : null;
+    if (!is_array($data)) {
+        $stillRunning = ['running' => true, 'done' => false, 'success' => null, 'message' => 'Generisanje u toku...', 'error' => null];
+        echo json_encode($rawContents === false ? $stillRunning : $default, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        exit;
+    }
+
+    echo json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     exit;
 }
 
@@ -3748,6 +3785,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             statusDiv.innerHTML = '<p style="color: #9333ea;">Generisanje kolokvijuma u toku, molimo sačekajte...</p>';
 
                             try {
+                                // Pokreni generisanje - ovo se odmah vraća, Java radi u pozadini
+                                // (vidi admin_panel.php akciju 'generatecolloquiums' - proc_open, ne blokira).
                                 const res = await fetch('admin_panel.php?action=generatecolloquiums');
                                 if (!res.ok) throw new Error('HTTP error ' + res.status);
 
@@ -3761,21 +3800,60 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                                 if (data.status === 'error') {
                                     statusDiv.innerHTML = '<p style="color: #ef4444; padding: 12px; background: rgba(239, 68, 68, 0.1); border-radius: 8px; border: 1px solid #ef4444;">Greška: ' + data.message + '</p>';
-                                } else {
-                                    statusDiv.innerHTML = '<p style="color: #22c55e; padding: 12px; background: rgba(34, 197, 94, 0.1); border-radius: 8px; border: 1px solid #22c55e;">✓ ' + data.message + '</p>';
+                                    return;
+                                }
 
-                                    // Refresh schedule
-                                    const schedRes = await fetch('admin_panel.php?action=getschedule');
-                                    const schedData = await schedRes.json();
-                                    if (schedData.error) {
-                                        statusDiv.innerHTML += '<p style="color: #ef4444;">Greška pri učitavanju rasporeda: ' + schedData.error + '</p>';
-                                    } else {
-                                        container.style.display = 'block';
-                                        if (typeof renderScheduleData === 'function') {
-                                            renderScheduleData(schedData);
-                                        } else {
-                                            console.error('renderScheduleData function not found');
+                                // Pollinguj dok Java piše napredak u storage/colloquium_progress.json.
+                                const finalData = await new Promise((resolve, reject) => {
+                                    const startedAt = Date.now();
+                                    const maxWaitMs = 10 * 60 * 1000; // safety - ne pollinguj vjecno ako proces crash-uje
+
+                                    const poll = async () => {
+                                        try {
+                                            const pollRes = await fetch('admin_panel.php?action=generatecolloquiums_status');
+                                            if (!pollRes.ok) {
+                                                throw new Error('HTTP greška pri provjeri napretka: ' + pollRes.status);
+                                            }
+                                            const pollData = await pollRes.json();
+
+                                            if (pollData.done) {
+                                                resolve(pollData);
+                                                return;
+                                            }
+
+                                            statusDiv.innerHTML = '<p style="color: #9333ea;">' + (pollData.message || 'Generisanje kolokvijuma u toku, molimo sačekajte...') + '</p>';
+
+                                            if (Date.now() - startedAt > maxWaitMs) {
+                                                reject(new Error('Generisanje predugo traje (preko 10 minuta) - proverite server log.'));
+                                                return;
+                                            }
+
+                                            setTimeout(poll, 1500);
+                                        } catch (pollError) {
+                                            reject(pollError);
                                         }
+                                    };
+                                    poll();
+                                });
+
+                                if (finalData.success === false) {
+                                    statusDiv.innerHTML = '<p style="color: #ef4444; padding: 12px; background: rgba(239, 68, 68, 0.1); border-radius: 8px; border: 1px solid #ef4444;">Greška: ' + (finalData.message || finalData.error) + '</p>';
+                                    return;
+                                }
+
+                                statusDiv.innerHTML = '<p style="color: #22c55e; padding: 12px; background: rgba(34, 197, 94, 0.1); border-radius: 8px; border: 1px solid #22c55e;">✓ ' + finalData.message + '</p>';
+
+                                // Refresh schedule
+                                const schedRes = await fetch('admin_panel.php?action=getschedule');
+                                const schedData = await schedRes.json();
+                                if (schedData.error) {
+                                    statusDiv.innerHTML += '<p style="color: #ef4444;">Greška pri učitavanju rasporeda: ' + schedData.error + '</p>';
+                                } else {
+                                    container.style.display = 'block';
+                                    if (typeof renderScheduleData === 'function') {
+                                        renderScheduleData(schedData);
+                                    } else {
+                                        console.error('renderScheduleData function not found');
                                     }
                                 }
                             } catch (e) {
